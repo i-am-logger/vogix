@@ -12,10 +12,14 @@
 }:
 
 let
-  # Read theme directories from the themes directory
-  themeDirs = builtins.attrNames (
+  # Read theme directories (only dirs containing .toml variant files are themes)
+  allDirs = builtins.attrNames (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir vogix16Themes)
   );
+  hasTomlFiles = dir:
+    builtins.any (f: lib.hasSuffix ".toml" f)
+      (builtins.attrNames (builtins.readDir "${vogix16Themes}/${dir}"));
+  themeDirs = builtins.filter hasTomlFiles allDirs;
 
   # Parse a single TOML variant file
   parseVariantFile =

@@ -11,7 +11,12 @@
       url = "github:cachix/devenv";
       inputs = {
         nixpkgs.follows = "nixpkgs";
-        cachix.inputs.nixpkgs.follows = "nixpkgs";
+        cachix.follows = "crate2nix/cachix";
+        flake-compat.follows = "crate2nix/flake-compat";
+        flake-parts.follows = "crate2nix/flake-parts";
+        git-hooks.inputs.gitignore.follows = "crate2nix/pre-commit-hooks/gitignore";
+        crate2nix.follows = "crate2nix";
+        rust-overlay.follows = "rust-overlay";
       };
     };
     rust-overlay = {
@@ -22,15 +27,21 @@
       url = "github:nix-community/crate2nix";
       inputs = {
         nixpkgs.follows = "nixpkgs";
-        cachix.inputs.nixpkgs.follows = "nixpkgs";
+        cachix.inputs = {
+          nixpkgs.follows = "nixpkgs";
+          git-hooks.follows = "crate2nix/pre-commit-hooks";
+        };
+        # Make crate2nix_stable share all deps with crate2nix (no separate copies)
         crate2nix_stable = {
           inputs = {
+            crate2nix_stable.follows = "crate2nix/crate2nix_stable";
             nixpkgs.follows = "nixpkgs";
-            cachix.inputs.nixpkgs.follows = "nixpkgs";
-            crate2nix_stable.inputs = {
-              nixpkgs.follows = "nixpkgs";
-              cachix.inputs.nixpkgs.follows = "nixpkgs";
-            };
+            cachix.follows = "crate2nix/cachix";
+            devshell.follows = "crate2nix/devshell";
+            flake-compat.follows = "crate2nix/flake-compat";
+            flake-parts.follows = "crate2nix/flake-parts";
+            nix-test-runner.follows = "crate2nix/nix-test-runner";
+            pre-commit-hooks.follows = "crate2nix/pre-commit-hooks";
           };
         };
       };
