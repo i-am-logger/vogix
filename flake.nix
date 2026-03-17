@@ -7,12 +7,34 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    devenv.url = "github:cachix/devenv";
-    devenv.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
-    crate2nix.url = "github:nix-community/crate2nix";
-    crate2nix.inputs.nixpkgs.follows = "nixpkgs";
+    devenv = {
+      url = "github:cachix/devenv";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        cachix.inputs.nixpkgs.follows = "nixpkgs";
+      };
+    };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    crate2nix = {
+      url = "github:nix-community/crate2nix";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        cachix.inputs.nixpkgs.follows = "nixpkgs";
+        crate2nix_stable = {
+          inputs = {
+            nixpkgs.follows = "nixpkgs";
+            cachix.inputs.nixpkgs.follows = "nixpkgs";
+            crate2nix_stable.inputs = {
+              nixpkgs.follows = "nixpkgs";
+              cachix.inputs.nixpkgs.follows = "nixpkgs";
+            };
+          };
+        };
+      };
+    };
 
     # Base16/Base24 color schemes - forked with directory-based structure
     # Each theme is a directory with variant files (dark.yaml, light.yaml, etc.)
