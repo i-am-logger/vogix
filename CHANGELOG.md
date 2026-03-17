@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.1...vogix-v0.6.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* deduplicate nixpkgs in flake.lock via follows ([#161](https://github.com/i-am-logger/vogix/issues/161)) ([24ad2a2](https://github.com/i-am-logger/vogix/commit/24ad2a2e8e33a21887207612bca18404445fd29a))
+
 ## [0.6.1](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.0...vogix-v0.6.1) (2026-01-25)
 
 
