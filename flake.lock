@@ -8,10 +8,7 @@
         "flake-compat": [
           "crate2nix"
         ],
-        "git-hooks": [
-          "crate2nix",
-          "pre-commit-hooks"
-        ],
+        "git-hooks": "git-hooks",
         "nixpkgs": [
           "nixpkgs"
         ]
@@ -34,7 +31,6 @@
     "crate2nix": {
       "inputs": {
         "cachix": "cachix",
-        "crate2nix_stable": "crate2nix_stable",
         "devshell": "devshell",
         "flake-compat": "flake-compat",
         "flake-parts": "flake-parts",
@@ -45,64 +41,16 @@
         "pre-commit-hooks": "pre-commit-hooks"
       },
       "locked": {
-        "lastModified": 1773440526,
-        "narHash": "sha256-OcX1MYqUdoalY3/vU67PEx8m6RvqGxX0LwKonjzXn7I=",
-        "owner": "nix-community",
+        "lastModified": 1773799810,
+        "narHash": "sha256-0VyaHRFWoAbkNFvG892c5nXKyLnOhyiY/LVzOWX9dcc=",
+        "owner": "i-am-logger",
         "repo": "crate2nix",
-        "rev": "e697d3049c909580128caa856ab8eb709556a97b",
+        "rev": "49d369e525db13646a790b53f8ff870778499293",
         "type": "github"
       },
       "original": {
-        "owner": "nix-community",
-        "repo": "crate2nix",
-        "type": "github"
-      }
-    },
-    "crate2nix_stable": {
-      "inputs": {
-        "cachix": [
-          "crate2nix",
-          "cachix"
-        ],
-        "crate2nix_stable": [
-          "crate2nix",
-          "crate2nix_stable"
-        ],
-        "devshell": [
-          "crate2nix",
-          "devshell"
-        ],
-        "flake-compat": [
-          "crate2nix",
-          "flake-compat"
-        ],
-        "flake-parts": [
-          "crate2nix",
-          "flake-parts"
-        ],
-        "nix-test-runner": [
-          "crate2nix",
-          "nix-test-runner"
-        ],
-        "nixpkgs": [
-          "nixpkgs"
-        ],
-        "pre-commit-hooks": [
-          "crate2nix",
-          "pre-commit-hooks"
-        ]
-      },
-      "locked": {
-        "lastModified": 1769627083,
-        "narHash": "sha256-SUuruvw1/moNzCZosHaa60QMTL+L9huWdsCBN6XZIic=",
-        "owner": "nix-community",
-        "repo": "crate2nix",
-        "rev": "7c33e664668faecf7655fa53861d7a80c9e464a2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-community",
-        "ref": "0.15.0",
+        "owner": "i-am-logger",
+        "ref": "fix/remove-crate2nix-stable-input",
         "repo": "crate2nix",
         "type": "github"
       }
@@ -124,7 +72,7 @@
           "crate2nix",
           "flake-parts"
         ],
-        "git-hooks": "git-hooks",
+        "git-hooks": "git-hooks_2",
         "nix": "nix",
         "nixd": "nixd",
         "nixpkgs": [
@@ -207,6 +155,34 @@
     "git-hooks": {
       "inputs": {
         "flake-compat": [
+          "crate2nix",
+          "cachix",
+          "flake-compat"
+        ],
+        "gitignore": "gitignore",
+        "nixpkgs": [
+          "crate2nix",
+          "cachix",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1765404074,
+        "narHash": "sha256-+ZDU2d+vzWkEJiqprvV5PR26DVFN2vgddwG5SnPZcUM=",
+        "owner": "cachix",
+        "repo": "git-hooks.nix",
+        "rev": "2d6f58930fbcd82f6f9fd59fb6d13e37684ca529",
+        "type": "github"
+      },
+      "original": {
+        "owner": "cachix",
+        "repo": "git-hooks.nix",
+        "type": "github"
+      }
+    },
+    "git-hooks_2": {
+      "inputs": {
+        "flake-compat": [
           "devenv",
           "flake-compat"
         ],
@@ -235,6 +211,29 @@
       }
     },
     "gitignore": {
+      "inputs": {
+        "nixpkgs": [
+          "crate2nix",
+          "cachix",
+          "git-hooks",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1709087332,
+        "narHash": "sha256-HG2cCnktfHsKV0s4XW83gU3F57gaTljL9KNSuG6bnQs=",
+        "owner": "hercules-ci",
+        "repo": "gitignore.nix",
+        "rev": "637db329424fd7e46cf4185293b9cc8c88c95394",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "gitignore.nix",
+        "type": "github"
+      }
+    },
+    "gitignore_2": {
       "inputs": {
         "nixpkgs": [
           "crate2nix",
@@ -396,7 +395,7 @@
           "crate2nix",
           "flake-compat"
         ],
-        "gitignore": "gitignore",
+        "gitignore": "gitignore_2",
         "nixpkgs": [
           "crate2nix",
           "nixpkgs"
