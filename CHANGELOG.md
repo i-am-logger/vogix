@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.3...vogix-v0.6.4) (2026-03-18)
+
+
+### Bug Fixes
+
+* use crate2nix fork without crate2nix_stable input ([#165](https://github.com/i-am-logger/vogix/issues/165)) ([58b3561](https://github.com/i-am-logger/vogix/commit/58b3561e518c14bf2aad629b161091e49c0672f6))
+
 ## [0.6.3](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.2...vogix-v0.6.3) (2026-03-18)
 
 
