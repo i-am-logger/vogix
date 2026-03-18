@@ -24,26 +24,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crate2nix = {
-      url = "github:nix-community/crate2nix";
+      url = "github:i-am-logger/crate2nix/fix/remove-crate2nix-stable-input";
       inputs = {
         nixpkgs.follows = "nixpkgs";
-        cachix.inputs = {
-          nixpkgs.follows = "nixpkgs";
-          git-hooks.follows = "crate2nix/pre-commit-hooks";
-        };
-        # Make crate2nix_stable share all deps with crate2nix (no separate copies)
-        crate2nix_stable = {
-          inputs = {
-            crate2nix_stable.follows = "crate2nix/crate2nix_stable";
-            nixpkgs.follows = "nixpkgs";
-            cachix.follows = "crate2nix/cachix";
-            devshell.follows = "crate2nix/devshell";
-            flake-compat.follows = "crate2nix/flake-compat";
-            flake-parts.follows = "crate2nix/flake-parts";
-            nix-test-runner.follows = "crate2nix/nix-test-runner";
-            pre-commit-hooks.follows = "crate2nix/pre-commit-hooks";
-          };
-        };
+        cachix.inputs.nixpkgs.follows = "nixpkgs";
       };
     };
 
