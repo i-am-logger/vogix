@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.2...vogix-v0.6.3) (2026-03-18)
+
+
+### Bug Fixes
+
+* deduplicate all flake.lock inputs and fix theme import ([#163](https://github.com/i-am-logger/vogix/issues/163)) ([0ae2f7f](https://github.com/i-am-logger/vogix/commit/0ae2f7f59ad749e6db3bcf9aa68751c2d24b4f1a))
+
 ## [0.6.2](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.1...vogix-v0.6.2) (2026-03-17)
 
 
