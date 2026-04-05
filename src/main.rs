@@ -10,17 +10,17 @@ mod symlink;
 mod template;
 mod theme;
 
-use clap::CommandFactory;
-use cli::{CacheCommands, Cli, Commands};
+use cli::{CacheCommands, Cli, Commands, SessionCommands, ThemeCommands};
 use commands::{
-    handle_cache_clean, handle_completions, handle_list, handle_refresh, handle_status,
+    handle_cache_clean, handle_completions, handle_daemon, handle_list, handle_refresh,
+    handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
+    handle_session_undo, handle_status,
     handle_theme_change,
 };
 use errors::Result;
 use log::error;
 
 fn main() {
-    // Initialize logger with minimal format (no timestamps)
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp(None)
         .format_target(false)
@@ -35,40 +35,38 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse_args();
 
-    // Handle subcommands first
-    if let Some(ref command) = cli.command {
-        match command {
-            Commands::List { scheme, variants } => {
-                return handle_list(scheme.as_ref(), *variants);
-            }
-            Commands::Status => {
-                return handle_status();
-            }
-            Commands::Completions { shell } => {
-                return handle_completions(*shell);
-            }
-            Commands::Cache { command } => {
-                return match command {
-                    CacheCommands::Clean => handle_cache_clean(),
-                };
-            }
-            Commands::Refresh => {
-                return handle_refresh(cli.quiet);
-            }
-        }
-    }
+    match cli.command {
+        Commands::Theme { command } => match command {
+            ThemeCommands::List { scheme, variants } => handle_list(scheme.as_ref(), variants),
+            ThemeCommands::Status => handle_status(),
+            ThemeCommands::Set {
+                scheme,
+                theme,
+                variant,
+                quiet,
+            } => handle_theme_change(scheme, theme, variant, quiet),
+            ThemeCommands::Refresh { quiet } => handle_refresh(quiet),
+        },
 
-    // Handle theme change flags (-s, -t, -v)
-    if cli.has_theme_changes() {
-        return handle_theme_change(&cli);
-    }
+        Commands::Session { command } => match command {
+            SessionCommands::Save { name } => handle_session_save(&name),
+            SessionCommands::Restore { name, json, dry_run } => {
+                if let Some(path) = json {
+                    handle_session_restore_file(&path, dry_run)
+                } else {
+                    handle_session_restore(&name, dry_run)
+                }
+            }
+            SessionCommands::List => handle_session_list(),
+            SessionCommands::Undo => handle_session_undo(),
+        },
 
-    // No command and no flags - show help
-    Cli::command().print_help()?;
-    println!();
-    Ok(())
+        Commands::Completions { shell } => handle_completions(shell),
+
+        Commands::Cache { command } => match command {
+            CacheCommands::Clean => handle_cache_clean(),
+        },
+
+        Commands::Daemon => handle_daemon(),
+    }
 }
-
-// Note: navigate_variant() tests are in src/theme/types.rs (ThemeInfo::navigate)
-// since they test the luminance-based navigation logic directly.
-// Integration tests in nix/vm/tests/ cover the full CLI behavior.

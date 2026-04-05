@@ -1,9 +1,10 @@
 //! Theme change command - handle -t, -v, -s flags.
 
-use crate::cli::Cli;
+use crate::cli::is_variant_navigation;
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
 use crate::reload::ReloadDispatcher;
+use crate::scheme::Scheme;
 use crate::state::State;
 use crate::symlink::SymlinkManager;
 use crate::theme;
@@ -11,8 +12,13 @@ use log::{debug, info, warn};
 
 use super::refresh::maybe_render_templates;
 
-/// Handle theme/variant/scheme changes via flags (-t, -v, -s)
-pub fn handle_theme_change(cli: &Cli) -> Result<()> {
+/// Handle theme/variant/scheme changes
+pub fn handle_theme_change(
+    scheme: Option<Scheme>,
+    theme: Option<String>,
+    variant: Option<String>,
+    quiet: bool,
+) -> Result<()> {
     let mut state = State::load()?;
     let config = Config::load()?;
 
@@ -21,21 +27,21 @@ pub fn handle_theme_change(cli: &Cli) -> Result<()> {
     let old_variant = state.current_variant.clone();
 
     // Update scheme if provided
-    if let Some(scheme) = cli.scheme {
+    if let Some(scheme) = scheme {
         state.current_scheme = scheme;
     }
 
     // Track if theme changed (we'll need to resolve variant for new theme)
-    let theme_changed = cli.theme.is_some() && cli.theme.as_ref() != Some(&state.current_theme);
+    let theme_changed = theme.is_some() && theme.as_ref() != Some(&state.current_theme);
 
     // Update theme if provided
-    if let Some(ref theme) = cli.theme {
+    if let Some(theme) = &theme {
         state.current_theme = theme.clone();
     }
 
     // Update variant if provided, OR resolve default variant if theme changed
-    if let Some(ref variant) = cli.variant {
-        if cli.is_variant_navigation() {
+    if let Some(variant) = &variant {
+        if is_variant_navigation(&Some(variant.clone())) {
             state.current_variant = navigate_variant(&state, variant)?;
         } else {
             // Resolve variant: could be an exact variant name OR a polarity request (dark/light)
@@ -106,7 +112,7 @@ pub fn handle_theme_change(cli: &Cli) -> Result<()> {
 
     // Reload applications
     let reload_dispatcher = ReloadDispatcher::new();
-    let reload_result = reload_dispatcher.reload_apps(&config, cli.quiet);
+    let reload_result = reload_dispatcher.reload_apps(&config, quiet);
 
     // Log appropriate message based on reload results
     let theme_variant = format!("{}-{}", state.current_theme, state.current_variant);

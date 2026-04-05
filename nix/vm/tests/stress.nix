@@ -25,8 +25,8 @@ testLib.mkTest "stress" ''
 
   themes_cycle = ["aikido", "nordic", "matrix", "desert", "aikido"]
   for i, theme in enumerate(themes_cycle):
-      machine.succeed(f"su - vogix -c 'vogix -t {theme}'")
-      status = machine.succeed("su - vogix -c 'vogix status'")
+      machine.succeed(f"su - vogix -c 'vogix theme set -t {theme}'")
+      status = machine.succeed("su - vogix -c 'vogix theme status'")
       assert theme in status.lower(), f"Rapid switch {i}: theme should be {theme}!"
   print("    ✓ Rapid theme switching works")
 
@@ -34,8 +34,8 @@ testLib.mkTest "stress" ''
   # aikido uses night/day for dark/light polarities
   variants_cycle = [("dark", "night"), ("light", "day"), ("dark", "night"), ("light", "day"), ("dark", "night")]
   for i, (polarity, expected_variant) in enumerate(variants_cycle):
-      machine.succeed(f"su - vogix -c 'vogix -v {polarity}'")
-      status = machine.succeed("su - vogix -c 'vogix status'")
+      machine.succeed(f"su - vogix -c 'vogix theme set -v {polarity}'")
+      status = machine.succeed("su - vogix -c 'vogix theme status'")
       assert expected_variant in status.lower(), f"Rapid switch {i}: variant should be {expected_variant} (requested {polarity})!"
   print("    ✓ Rapid variant switching works")
 
@@ -51,8 +51,8 @@ testLib.mkTest "stress" ''
       ("aikido", "dark", "night"),
   ]
   for i, (theme, polarity, expected_variant) in enumerate(combinations):
-      machine.succeed(f"su - vogix -c 'vogix -t {theme} -v {polarity}'")
-      status = machine.succeed("su - vogix -c 'vogix status'")
+      machine.succeed(f"su - vogix -c 'vogix theme set -t {theme} -v {polarity}'")
+      status = machine.succeed("su - vogix -c 'vogix theme status'")
       assert theme in status.lower(), f"Combo switch {i}: theme should be {theme}!"
       assert expected_variant in status.lower(), f"Combo switch {i}: variant should be {expected_variant} (requested {polarity})!"
   print("    ✓ Rapid combined switching works")

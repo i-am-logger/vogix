@@ -31,6 +31,10 @@ let
 
   cfg = config.vogix;
 
+  # Behavior module for kanata config generation
+  behaviorModule = import ./behavior { inherit lib; };
+  kanataConfig = behaviorModule.mkKanataConfig { };
+
   # Import vogix16 themes for console colors
   vogix16Import = import ./vogix16-import.nix {
     inherit lib vogix16Themes;
@@ -165,6 +169,26 @@ in
           themeColors = loadedTheme.variants.${variantName}.colors;
         in
         mkConsoleColors themeColors;
+    })
+
+    # OpenRGB: SMBus access for DDR5 RGB, motherboard RGB, GPU RGB
+    # Vogix uses OpenRGB as its peripheral RGB backend
+    {
+      boot.kernelModules = [ "i2c-dev" "i2c-piix4" ];
+      boot.kernelParams = [ "acpi_enforce_resources=lax" ];
+    }
+
+    # Kanata service for behavior module (evdev key remapping)
+    # System-wide: nav layer, Super→Ctrl, CapsLock toggle
+    (mkIf (kanataConfig != null) {
+      services.kanata = {
+        enable = true;
+        keyboards.default = {
+          devices = [ ];
+          config = kanataConfig;
+          extraDefCfg = "process-unmapped-keys yes";
+        };
+      };
     })
   ]);
 }

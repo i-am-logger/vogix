@@ -59,6 +59,11 @@ let
   generators = import ./generators.nix { inherit lib pkgs; };
   inherit (generators) appGenerators availableApps isAppEnabled;
 
+  # Import behavior module
+  behaviorModule = import ../behavior { inherit lib pkgs; };
+  behaviorCfg = cfg.behavior;
+  behaviorDefaults = behaviorModule.defaults;
+
   # Merge all themes with user themes
   allThemes = themeUtils.mergeThemes cfg.themes;
 
@@ -203,6 +208,64 @@ in
   inherit (optionsModule) options;
 
   config = mkIf cfg.enable (mkMerge [
+    # Behavior: generate hyprland and kanata configs
+    # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
+    # to avoid infinite recursion between config definition and evaluation)
+    (
+      let
+        # Generate help scripts for each mode
+        helpScripts = behaviorModule.mkHelpScripts behaviorCfg;
+        globalHelpScript = behaviorModule.mkGlobalHelpScript behaviorCfg;
+
+        helpScriptPackages = builtins.attrValues helpScripts
+          ++ (lib.optional (globalHelpScript != null) globalHelpScript);
+      in
+      {
+        # Merge defaults into behavior config
+        programs.vogix.behavior = {
+          keybindings = lib.mkDefault behaviorDefaults.keybindings;
+          modes = {
+            app = lib.mkDefault behaviorDefaults.modes.app;
+            desktop = lib.mkDefault behaviorDefaults.modes.desktop;
+            arrange = lib.mkDefault behaviorDefaults.modes.arrange;
+            theme = lib.mkDefault behaviorDefaults.modes.theme;
+
+            # Derive mode border colors from vogix semantic theme
+            modeColors =
+              let
+                colors = cfg.colors or { };
+                toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
+              in
+              {
+                app = {
+                  active = toRgb (colors.foreground-border or "585b70");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
+                desktop = {
+                  active = toRgb (colors.active or "89b4fa");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
+                arrange = {
+                  active = toRgb (colors.warning or "f9e2af");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
+                theme = {
+                  active = toRgb (colors.success or "a6e3a1");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
+              };
+          };
+
+          # Generated outputs for downstream consumption
+          generatedHyprland = behaviorModule.mkHyprlandConfig behaviorCfg;
+          generatedKanata = behaviorModule.mkKanataConfig behaviorCfg;
+        };
+
+        # Install help scripts
+        home.packages = helpScriptPackages;
+      }
+    )
+
     {
       # Install vogix binary
       home.packages = [ cfg.package ];

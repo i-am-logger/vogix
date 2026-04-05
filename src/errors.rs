@@ -60,6 +60,20 @@ pub enum VogixError {
     /// Template rendering failed
     #[error("template error: {0}")]
     Template(#[source] tera::Error),
+
+    /// JSON serialization/deserialization failed
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    /// Generic error with message
+    #[error("{0}")]
+    Generic(String),
+}
+
+impl From<String> for VogixError {
+    fn from(s: String) -> Self {
+        Self::Generic(s)
+    }
 }
 
 // Convenience constructors for structured errors

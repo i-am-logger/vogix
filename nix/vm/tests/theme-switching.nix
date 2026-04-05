@@ -73,10 +73,10 @@ testLib.mkTest "theme-switching" ''
                   print(f"  Captured mtime for {app_name}: {mtime_result}")
 
   # SWITCH TO LIGHT VARIANT
-  switch_output = machine.succeed("su - vogix -c 'vogix -v light 2>&1'")
+  switch_output = machine.succeed("su - vogix -c 'vogix theme set -v light 2>&1'")
   print(f"Switch command output:\n{switch_output}")
 
-  new_state = machine.succeed("su - vogix -c 'vogix status'")
+  new_state = machine.succeed("su - vogix -c 'vogix theme status'")
   # status shows actual variant name (day), not polarity (light)
   assert "day" in new_state.lower()
   print("✓ Status command reports 'day' (light) variant")
@@ -161,7 +161,7 @@ testLib.mkTest "theme-switching" ''
   print(f"\n✓ ALL {len(app_configs_before)} app configs verified - colors switched from dark to light!")
 
   # Switch back to dark (night)
-  machine.succeed("su - vogix -c 'vogix -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -v dark'")
   current_back = machine.succeed(f"su - vogix -c 'readlink {current_theme}'")
   assert "night" in current_back.lower(), "Failed to switch back to night (dark)!"
   print("✓ Switched back to night (dark) variant")
@@ -187,8 +187,8 @@ testLib.mkTest "theme-switching" ''
           current_before = machine.succeed(f"su - vogix -c 'readlink {current_theme}'")
           alacritty_before = machine.succeed("su - vogix -c 'cat ~/.config/alacritty/alacritty.toml 2>/dev/null || echo NOTFOUND'")
 
-          machine.succeed(f"su - vogix -c 'vogix -t {theme_name}'")
-          new_state = machine.succeed("su - vogix -c 'vogix status'")
+          machine.succeed(f"su - vogix -c 'vogix theme set -t {theme_name}'")
+          new_state = machine.succeed("su - vogix -c 'vogix theme status'")
           assert theme_name in new_state, f"Status doesn't show {theme_name} theme!"
           print(f"✓ Status command reports '{theme_name}' theme")
 
@@ -203,7 +203,7 @@ testLib.mkTest "theme-switching" ''
               assert alacritty_before != alacritty_after, f"App config didn't change after switching to {theme_name}!"
               print("✓ App config updated (colors changed)")
 
-          machine.succeed("su - vogix -c 'vogix -t aikido'")
+          machine.succeed("su - vogix -c 'vogix theme set -t aikido'")
           current_back = machine.succeed(f"su - vogix -c 'readlink {current_theme}'")
           assert "aikido" in current_back.lower(), "Failed to switch back to aikido!"
           print(f"✓ Successfully switched back to aikido from {theme_name}")

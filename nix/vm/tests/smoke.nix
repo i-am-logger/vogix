@@ -26,7 +26,7 @@ testLib.mkTest "smoke" ''
   print("✓ vogix binary found")
 
   print("\n=== Test: Check Status Command ===")
-  output = machine.succeed("su - vogix -c 'vogix status'")
+  output = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "theme:" in output
   assert "variant:" in output
   assert "scheme:" in output
@@ -34,7 +34,7 @@ testLib.mkTest "smoke" ''
   print(f"Output: {output}")
 
   print("\n=== Test: List Themes ===")
-  output = machine.succeed("su - vogix -c 'vogix list'")
+  output = machine.succeed("su - vogix -c 'vogix theme list'")
   assert "aikido" in output or "Available themes:" in output
   print("✓ List command works")
   print(f"Output: {output}")

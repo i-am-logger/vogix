@@ -8,42 +8,22 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(about = env!("CARGO_PKG_DESCRIPTION"), long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Commands>,
-
-    /// Set the color scheme (vogix16, base16, base24, ansi16)
-    #[arg(short = 's', long, global = true)]
-    pub scheme: Option<Scheme>,
-
-    /// Set the theme name
-    #[arg(short = 't', long, global = true)]
-    pub theme: Option<String>,
-
-    /// Set the variant (e.g., dark, light, dawn, moon)
-    /// Use "darker" or "lighter" to navigate within the current theme
-    #[arg(short = 'v', long, global = true)]
-    pub variant: Option<String>,
-
-    /// Suppress non-error output
-    #[arg(short = 'q', long, global = true)]
-    pub quiet: bool,
+    pub command: Commands,
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// List all available themes
-    #[command(alias = "ls")]
-    List {
-        /// Filter by scheme (vogix16, base16, base24, ansi16)
-        #[arg(short = 's', long)]
-        scheme: Option<Scheme>,
-
-        /// Show variants for each theme
-        #[arg(long)]
-        variants: bool,
+    /// Manage themes (colors, schemes, variants)
+    Theme {
+        #[command(subcommand)]
+        command: ThemeCommands,
     },
 
-    /// Show current theme and variant status
-    Status,
+    /// Manage desktop sessions (save/restore workspaces)
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
+    },
 
     /// Generate shell completions
     Completions {
@@ -57,8 +37,84 @@ pub enum Commands {
         command: CacheCommands,
     },
 
+    /// Run the vogix daemon (session auto-save, event monitoring)
+    Daemon,
+}
+
+#[derive(Subcommand)]
+pub enum ThemeCommands {
+    /// List available themes
+    #[command(alias = "ls")]
+    List {
+        /// Filter by scheme (vogix16, base16, base24, ansi16)
+        #[arg(short = 's', long)]
+        scheme: Option<Scheme>,
+
+        /// Show variants for each theme
+        #[arg(long)]
+        variants: bool,
+    },
+
+    /// Show current theme status
+    Status,
+
+    /// Set theme, variant, or scheme
+    Set {
+        /// Color scheme (vogix16, base16, base24, ansi16)
+        #[arg(short = 's', long)]
+        scheme: Option<Scheme>,
+
+        /// Theme name
+        #[arg(short = 't', long)]
+        theme: Option<String>,
+
+        /// Variant (e.g., dark, light, dawn, moon, darker, lighter)
+        #[arg(short = 'v', long)]
+        variant: Option<String>,
+
+        /// Suppress non-error output
+        #[arg(short = 'q', long)]
+        quiet: bool,
+    },
+
     /// Refresh current theme (reapply without changes)
-    Refresh,
+    Refresh {
+        /// Suppress non-error output
+        #[arg(short = 'q', long)]
+        quiet: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SessionCommands {
+    /// Save current desktop session
+    Save {
+        /// Session name (default: "last")
+        #[arg(default_value = "last")]
+        name: String,
+    },
+
+    /// Restore a saved desktop session
+    Restore {
+        /// Session name (default: "last")
+        #[arg(default_value = "last")]
+        name: String,
+
+        /// Restore from a JSON file path instead of a named session
+        #[arg(long)]
+        json: Option<String>,
+
+        /// Validate and print session without launching apps
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// List saved sessions
+    #[command(alias = "ls")]
+    List,
+
+    /// Undo last window change (restore from autosave stack)
+    Undo,
 }
 
 #[derive(Subcommand)]
@@ -69,15 +125,10 @@ pub enum CacheCommands {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum CompletionShell {
-    /// Bash shell
     Bash,
-    /// Zsh shell
     Zsh,
-    /// Fish shell
     Fish,
-    /// PowerShell
     Pwsh,
-    /// Elvish shell
     Elvish,
 }
 
@@ -85,19 +136,14 @@ impl Cli {
     pub fn parse_args() -> Self {
         Self::parse()
     }
+}
 
-    /// Check if any theme change flags were provided
-    pub fn has_theme_changes(&self) -> bool {
-        self.scheme.is_some() || self.theme.is_some() || self.variant.is_some()
-    }
-
-    /// Check if variant is a navigation command (darker/lighter)
-    pub fn is_variant_navigation(&self) -> bool {
-        if let Some(ref v) = self.variant {
-            matches!(v.to_lowercase().as_str(), "darker" | "lighter")
-        } else {
-            false
-        }
+/// Helper to check if a variant is a navigation command
+pub fn is_variant_navigation(variant: &Option<String>) -> bool {
+    if let Some(v) = variant {
+        matches!(v.to_lowercase().as_str(), "darker" | "lighter")
+    } else {
+        false
     }
 }
 
@@ -105,82 +151,190 @@ impl Cli {
 mod tests {
     use super::*;
 
-    fn cli_with_flags(scheme: Option<Scheme>, theme: Option<&str>, variant: Option<&str>) -> Cli {
-        Cli {
-            command: None,
-            scheme,
-            theme: theme.map(String::from),
-            variant: variant.map(String::from),
-            quiet: false,
-        }
-    }
-
-    #[test]
-    fn test_has_theme_changes_none() {
-        let cli = cli_with_flags(None, None, None);
-        assert!(!cli.has_theme_changes());
-    }
-
-    #[test]
-    fn test_has_theme_changes_scheme_only() {
-        let cli = cli_with_flags(Some(Scheme::Base16), None, None);
-        assert!(cli.has_theme_changes());
-    }
-
-    #[test]
-    fn test_has_theme_changes_theme_only() {
-        let cli = cli_with_flags(None, Some("gruvbox"), None);
-        assert!(cli.has_theme_changes());
-    }
-
-    #[test]
-    fn test_has_theme_changes_variant_only() {
-        let cli = cli_with_flags(None, None, Some("dark"));
-        assert!(cli.has_theme_changes());
-    }
-
-    #[test]
-    fn test_has_theme_changes_all_flags() {
-        let cli = cli_with_flags(Some(Scheme::Base16), Some("gruvbox"), Some("dark"));
-        assert!(cli.has_theme_changes());
-    }
-
     #[test]
     fn test_is_variant_navigation_darker() {
-        let cli = cli_with_flags(None, None, Some("darker"));
-        assert!(cli.is_variant_navigation());
+        assert!(is_variant_navigation(&Some("darker".to_string())));
     }
 
     #[test]
     fn test_is_variant_navigation_lighter() {
-        let cli = cli_with_flags(None, None, Some("lighter"));
-        assert!(cli.is_variant_navigation());
+        assert!(is_variant_navigation(&Some("lighter".to_string())));
     }
 
     #[test]
     fn test_is_variant_navigation_case_insensitive() {
-        let cli = cli_with_flags(None, None, Some("DARKER"));
-        assert!(cli.is_variant_navigation());
-
-        let cli = cli_with_flags(None, None, Some("Lighter"));
-        assert!(cli.is_variant_navigation());
+        assert!(is_variant_navigation(&Some("DARKER".to_string())));
+        assert!(is_variant_navigation(&Some("Lighter".to_string())));
     }
 
     #[test]
     fn test_is_variant_navigation_normal_variant() {
-        let cli = cli_with_flags(None, None, Some("dark"));
-        assert!(!cli.is_variant_navigation());
-
-        let cli = cli_with_flags(None, None, Some("light"));
-        assert!(!cli.is_variant_navigation());
-
-        let cli = cli_with_flags(None, None, Some("moon"));
-        assert!(!cli.is_variant_navigation());
+        assert!(!is_variant_navigation(&Some("dark".to_string())));
+        assert!(!is_variant_navigation(&Some("light".to_string())));
     }
 
     #[test]
     fn test_is_variant_navigation_none() {
-        let cli = cli_with_flags(None, None, None);
-        assert!(!cli.is_variant_navigation());
+        assert!(!is_variant_navigation(&None));
+    }
+
+    // ── CLI parsing tests ──
+
+    #[test]
+    fn test_parse_theme_list() {
+        let cli = Cli::try_parse_from(["vogix", "theme", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Theme {
+                command: ThemeCommands::List { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_theme_status() {
+        let cli = Cli::try_parse_from(["vogix", "theme", "status"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Theme {
+                command: ThemeCommands::Status
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_theme_set_with_flags() {
+        let cli = Cli::try_parse_from(["vogix", "theme", "set", "-t", "catppuccin", "-v", "mocha"])
+            .unwrap();
+        if let Commands::Theme {
+            command: ThemeCommands::Set { theme, variant, .. },
+        } = cli.command
+        {
+            assert_eq!(theme.unwrap(), "catppuccin");
+            assert_eq!(variant.unwrap(), "mocha");
+        } else {
+            panic!("Expected Theme Set command");
+        }
+    }
+
+    #[test]
+    fn test_parse_theme_refresh() {
+        let cli = Cli::try_parse_from(["vogix", "theme", "refresh"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Theme {
+                command: ThemeCommands::Refresh { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_session_save_default() {
+        let cli = Cli::try_parse_from(["vogix", "session", "save"]).unwrap();
+        if let Commands::Session {
+            command: SessionCommands::Save { name },
+        } = cli.command
+        {
+            assert_eq!(name, "last");
+        } else {
+            panic!("Expected Session Save command");
+        }
+    }
+
+    #[test]
+    fn test_parse_session_save_named() {
+        let cli = Cli::try_parse_from(["vogix", "session", "save", "work"]).unwrap();
+        if let Commands::Session {
+            command: SessionCommands::Save { name },
+        } = cli.command
+        {
+            assert_eq!(name, "work");
+        } else {
+            panic!("Expected Session Save command");
+        }
+    }
+
+    #[test]
+    fn test_parse_session_restore() {
+        let cli = Cli::try_parse_from(["vogix", "session", "restore"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Session {
+                command: SessionCommands::Restore { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_session_list() {
+        let cli = Cli::try_parse_from(["vogix", "session", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Session {
+                command: SessionCommands::List
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_daemon() {
+        let cli = Cli::try_parse_from(["vogix", "daemon"]).unwrap();
+        assert!(matches!(cli.command, Commands::Daemon));
+    }
+
+    #[test]
+    fn test_parse_cache_clean() {
+        let cli = Cli::try_parse_from(["vogix", "cache", "clean"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Cache {
+                command: CacheCommands::Clean
+            }
+        ));
+    }
+
+    // ── Property: all valid subcommands parse without error ──
+
+    #[test]
+    fn test_all_subcommands_parse() {
+        let valid_commands = [
+            vec!["vogix", "theme", "list"],
+            vec!["vogix", "theme", "status"],
+            vec!["vogix", "theme", "set", "-t", "test"],
+            vec!["vogix", "theme", "set", "-v", "darker"],
+            vec!["vogix", "theme", "set", "-s", "base16"],
+            vec!["vogix", "theme", "refresh"],
+            vec!["vogix", "session", "save"],
+            vec!["vogix", "session", "save", "myname"],
+            vec!["vogix", "session", "restore"],
+            vec!["vogix", "session", "restore", "myname"],
+            vec!["vogix", "session", "list"],
+            vec!["vogix", "daemon"],
+            vec!["vogix", "cache", "clean"],
+        ];
+        for args in &valid_commands {
+            assert!(
+                Cli::try_parse_from(args).is_ok(),
+                "Failed to parse: {:?}",
+                args
+            );
+        }
+    }
+
+    // ── Property: invalid subcommands fail gracefully ──
+
+    #[test]
+    fn test_invalid_commands_fail() {
+        let invalid_commands = [
+            vec!["vogix", "invalid"],
+            vec!["vogix", "theme", "invalid"],
+            vec!["vogix", "session", "invalid"],
+            vec!["vogix", "theme", "set"], // set with no flags is valid but does nothing
+        ];
+        // "set" with no flags is actually valid (clap allows optional args)
+        // Only truly invalid subcommands should fail
+        assert!(Cli::try_parse_from(["vogix", "invalid"]).is_err());
+        assert!(Cli::try_parse_from(["vogix", "theme", "invalid"]).is_err());
+        assert!(Cli::try_parse_from(["vogix", "session", "invalid"]).is_err());
     }
 }

@@ -18,6 +18,9 @@ let
   appDiscovery = import ../lib/applications.nix { inherit lib; };
   inherit (appDiscovery) availableApps;
 
+  # Import behavior options
+  behaviorOptions = import ../behavior/options.nix { inherit lib; };
+
   # Per-app options (dynamically generated)
   appOptions = lib.listToAttrs (
     map
@@ -100,7 +103,8 @@ in
       description = "Semantic color API for the selected theme and variant. Used by application modules.";
     };
   }
-  // appOptions;
+  // appOptions
+  // behaviorOptions;
 
   # Export for use by other modules
   inherit availableApps vogix;

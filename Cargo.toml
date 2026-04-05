@@ -34,6 +34,9 @@ thiserror = "2.0"
 # Date/time for state timestamps
 chrono = "0.4"
 
+# Signal handling (SIGTERM on shutdown)
+ctrlc = { version = "3.4", features = ["termination"] }
+
 # Sway IPC
 swayipc = { version = "3.0", optional = true }
 

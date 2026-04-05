@@ -21,30 +21,30 @@ let
 in
 testLib.mkTest "scheme-switching" ''
   print("=== Test: Scheme Switching ===")
-  status_before = machine.succeed("su - vogix -c 'vogix status'")
+  status_before = machine.succeed("su - vogix -c 'vogix theme status'")
   print(f"Status before scheme change: {status_before}")
 
   # Switch to base16 scheme - must specify a base16 theme since current theme (aikido) is vogix16-only
-  machine.succeed("su - vogix -c 'vogix -s base16 -t dracula'")
-  status_after = machine.succeed("su - vogix -c 'vogix status'")
+  machine.succeed("su - vogix -c 'vogix theme set -s base16 -t dracula'")
+  status_after = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "base16" in status_after.lower(), "Scheme not updated to base16!"
   print("✓ Scheme switched to base16")
 
   # Switch back to vogix16 - must specify a vogix16 theme
-  machine.succeed("su - vogix -c 'vogix -s vogix16 -t aikido -v night'")
-  status_back = machine.succeed("su - vogix -c 'vogix status'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  status_back = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "vogix16" in status_back.lower(), "Scheme not switched back to vogix16!"
   print("✓ Scheme switched back to vogix16")
 
   print("\n=== Test: Cross-Scheme Theme Switching (vogix16 → base16) ===")
   # Console reload may fail in VM (no real TTY), which is expected behavior
 
-  machine.succeed("su - vogix -c 'vogix -s vogix16 -t aikido -v night'")
-  status_before = machine.succeed("su - vogix -c 'vogix status'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  status_before = machine.succeed("su - vogix -c 'vogix theme status'")
   print(f"Before: {status_before.strip()}")
 
   # Switch to base16 scheme with dracula theme
-  switch_output = machine.succeed("su - vogix -c 'vogix -s base16 -t dracula 2>&1'")
+  switch_output = machine.succeed("su - vogix -c 'vogix theme set -s base16 -t dracula 2>&1'")
   print(f"Switch output: {switch_output}")
 
   # CRITICAL BUG CHECK 1: Apps must be configured
@@ -77,7 +77,7 @@ testLib.mkTest "scheme-switching" ''
           f"Full output:\n{switch_output}"
       )
 
-  status_after = machine.succeed("su - vogix -c 'vogix status'")
+  status_after = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "base16" in status_after.lower(), "Scheme not switched to base16!"
   assert "dracula" in status_after.lower(), "Theme not switched to dracula!"
   print("✓ Cross-scheme switch to base16/dracula succeeded")
@@ -106,7 +106,7 @@ testLib.mkTest "scheme-switching" ''
       if "[INFO" in switch_output and "Applied:" in switch_output:
           print("✓ CLI shows [INFO] when all reloads succeed (correct)")
 
-  machine.succeed("su - vogix -c 'vogix -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
   print("✓ Switched back to vogix16/aikido")
 
   print("\n=== Test: Full Scheme Switching Cycle ===")
@@ -124,7 +124,7 @@ testLib.mkTest "scheme-switching" ''
           print(f"    ⚠ Switch failed: {switch_result[1][:200]}")
           return False
 
-      status_after = machine.succeed("su - vogix -c 'vogix status'")
+      status_after = machine.succeed("su - vogix -c 'vogix theme status'")
       print(f"    After: {status_after.strip()}")
 
       if to_scheme.lower() not in status_after.lower():
@@ -134,7 +134,7 @@ testLib.mkTest "scheme-switching" ''
       print(f"    ✓ Switched to {to_scheme}")
       return True
 
-  machine.succeed("su - vogix -c 'vogix -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
 
   # Test vogix16 -> base16
   base16_themes_to_try = ["dracula", "gruvbox-dark-medium", "nord", "monokai"]
@@ -153,7 +153,7 @@ testLib.mkTest "scheme-switching" ''
   else:
       print("⚠ No base16 themes available for testing")
 
-  machine.succeed("su - vogix -c 'vogix -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
   print("\n✓ Scheme switching test complete!")
 
   print("\n=== Test: Console Palette Format Validation ===")

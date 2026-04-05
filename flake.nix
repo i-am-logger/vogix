@@ -171,6 +171,9 @@
           # State persistence, consistency
           state = import ./nix/vm/tests/state.nix testArgs;
 
+          # Session save/restore/undo
+          session = import ./nix/vm/tests/session.nix testArgs;
+
           # Runtime size inspection
           runtime-size = import ./nix/vm/tests/runtime-size.nix testArgs;
 

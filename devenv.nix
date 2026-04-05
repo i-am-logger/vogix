@@ -131,8 +131,14 @@ in
     # Use treefmt for all formatting
     treefmt.enable = true;
 
-    # Keep clippy for Rust linting (not just formatting)
-    clippy.enable = true;
+    # Clippy for Rust linting — use custom entry to ensure cc is in PATH
+    clippy = {
+      enable = true;
+      entry = lib.mkForce "${pkgs.writeShellScript "clippy-with-cc" ''
+        export PATH="${pkgs.gcc}/bin:$PATH"
+        ${config.languages.rust.toolchainPackage}/bin/cargo-clippy clippy --manifest-path ./Cargo.toml -- -D warnings
+      ''}";
+    };
   };
 
   # https://devenv.sh/outputs/
