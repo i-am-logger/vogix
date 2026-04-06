@@ -115,8 +115,11 @@ in
 
   config = mkIf cfg.enable (mkMerge [
     {
-      # Make vogix CLI available system-wide
-      environment.systemPackages = [ pkgs.vogix ];
+      # Make vogix CLI + dependencies available system-wide
+      environment.systemPackages = [
+        pkgs.vogix
+        pkgs.tmux  # Required for F12 system console
+      ];
 
       # Add security wrappers for console theme switching
       security.wrappers = {

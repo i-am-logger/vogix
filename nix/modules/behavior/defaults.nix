@@ -94,6 +94,10 @@ _:
         terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
         launcher = { key = "super + space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
 
+        # ── Mac-style function keys ──
+        desktopModeF3 = { key = "F3"; action = "submap, desktop"; description = "Desktop mode (Mission Control)"; };
+        launcherF4 = { key = "F4"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher (Launchpad)"; };
+
         # ── Audio ──
         volumeUp = { key = "XF86AudioRaiseVolume"; action = "exec, pamixer -i 5"; description = "Volume up"; };
         volumeDown = { key = "XF86AudioLowerVolume"; action = "exec, pamixer -d 5"; description = "Volume down"; };
@@ -119,6 +123,9 @@ _:
 
         # ── Help ──
         help = { key = "super + slash"; action = "exec, vogix-modes-global"; description = "Show keybindings"; };
+
+        # ── System console (fullscreen tmux overlay, available everywhere) ──
+        console = { key = "F12"; action = "exec, hyprctl --batch 'dispatch togglespecialworkspace console ; dispatch submap console ; dispatch focuswindow class:vogix-console ; dispatch resizewindowpixel exact 90% 75%,class:vogix-console ; dispatch centerwindow'"; description = "Toggle system console"; };
 
         # ── Desktop mode entry ──
         enterDesktop = { key = "Scroll_Lock"; action = "submap, desktop"; description = "Enter desktop mode (CapsLock tap)"; };
@@ -170,6 +177,10 @@ _:
         enterArrange = { key = "a"; action = "submap, arrange"; description = "Arrange mode"; };
         enterTheme = { key = "v"; action = "submap, theme"; description = "Theme mode (vogix)"; };
 
+        # ── Console + history ──
+        console = { key = "F12"; action = "togglespecialworkspace, console"; description = "System console"; };
+        undoSession = { key = "u"; action = "exec, vogix session undo"; description = "Undo last window change"; };
+
         help = { key = "slash"; action = "exec, vogix-modes-desktop"; description = "Show keybindings"; };
 
         exitDesktop = { key = "Scroll_Lock"; action = "submap, reset"; description = "Back to app mode"; };
@@ -215,6 +226,7 @@ _:
         toggleSplit = { key = "o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
         swap = { key = "s"; action = "swapnext,"; description = "Swap with neighbor"; };
 
+        console = { key = "F12"; action = "togglespecialworkspace, console"; description = "System console"; };
         help = { key = "slash"; action = "exec, vogix-modes-arrange"; description = "Show keybindings"; };
       };
     };
@@ -237,7 +249,19 @@ _:
 
         showStatus = { key = "space"; action = "exec, vogix status | xargs notify-send 'Vogix'"; description = "Show current theme"; };
 
+        console = { key = "F12"; action = "togglespecialworkspace, console"; description = "System console"; };
         help = { key = "slash"; action = "exec, vogix-modes-theme"; description = "Show keybindings"; };
+      };
+    };
+    # Console mode: system terminal overlay (tmux)
+    # Keys pass through to tmux — only F12/Escape exit the mode
+    # NO catchall — unlike other modes, unbound keys go to the terminal
+    console = {
+      enter = null;
+      # No exit key — F12 and Escape are handled in bindings (they need to close the workspace too)
+      bindings = {
+        exitConsoleF12 = { key = "F12"; action = "exec, hyprctl --batch 'dispatch togglespecialworkspace console ; dispatch submap reset'"; description = "Close console"; };
+        exitConsoleEsc = { key = "escape"; action = "exec, hyprctl --batch 'dispatch togglespecialworkspace console ; dispatch submap reset'"; description = "Exit to app mode"; };
       };
     };
   };

@@ -31,6 +31,7 @@ let
     desktop = { active = "rgb(89b4fa)"; inactive = "rgb(313244)"; };
     arrange = { active = "rgb(f9e2af)"; inactive = "rgb(313244)"; };
     theme = { active = "rgb(a6e3a1)"; inactive = "rgb(313244)"; };
+    console = { active = "rgb(cba6f7)"; inactive = "rgb(3b2d4f)"; }; # special — system console
   };
 
   # Resolve colors for a mode (from modeColors config or fallback)
@@ -43,11 +44,19 @@ let
     let
       parts = lib.splitString ", " action;
       isSubmap = builtins.length parts == 2 && builtins.head parts == "submap";
+      isConsole = builtins.length parts == 2 && builtins.head parts == "togglespecialworkspace";
       target = if isSubmap then lib.last parts else null;
       colors = if isSubmap then getModeColors modeColors target else null;
+      consoleColors = getModeColors modeColors "console";
     in
     if isSubmap then
       "exec, hyprctl --batch 'keyword general:col.active_border ${colors.active} ; keyword general:col.inactive_border ${colors.inactive} ; dispatch submap ${target}'"
+    else if isConsole then
+      let
+        wsName = lib.last parts;
+        appColors = getModeColors modeColors "app";
+      in
+      "exec, hyprctl dispatch togglespecialworkspace ${wsName} && (hyprctl workspaces -j | grep -q '\"special:${wsName}\"' && hyprctl --batch 'keyword general:col.active_border ${consoleColors.active} ; keyword general:col.inactive_border ${consoleColors.inactive}' || hyprctl --batch 'keyword general:col.active_border ${appColors.active} ; keyword general:col.inactive_border ${appColors.inactive}')"
     else
       action;
 

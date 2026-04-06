@@ -253,6 +253,10 @@ in
                   active = toRgb (colors.success or "a6e3a1");
                   inactive = toRgb (colors.background-selection or "313244");
                 };
+                console = {
+                  active = toRgb (colors.special or "cba6f7");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
               };
           };
 
