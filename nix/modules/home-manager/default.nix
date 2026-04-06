@@ -160,8 +160,12 @@ let
         configFileName = if appModule != null then appModule.configFile or "config" else "config";
         themeFileName = if appModule != null then appModule.themeFile or null else null;
         reloadMethod = if appModule != null then appModule.reloadMethod or null else null;
-        # Full path to the config file symlink in user's ~/.config
-        configPath = "${config.xdg.configHome}/${app}/${configFileName}";
+        dataDir = if appModule != null then appModule.dataDir or null else null;
+        # Full path to the config file symlink
+        configPath =
+          if dataDir != null
+          then "${config.xdg.dataHome}/${dataDir}/${configFileName}"
+          else "${config.xdg.configHome}/${app}/${configFileName}";
         themeFilePath =
           if themeFileName != null then "${config.xdg.configHome}/${app}/${themeFileName}" else null;
       in
@@ -175,6 +179,17 @@ let
         ${optionalString (reloadMethod ? command) "reload_command = \"\"\"${reloadMethod.command}\"\"\""}''
     )
     themedApps;
+
+  # Shader config section
+  shaderSection = optionalString cfg.appearance.shader.enable ''
+
+    # Monochromatic screen shader (auto-generated from theme palette)
+    [shader]
+    enabled = true
+    intensity = ${toString cfg.appearance.shader.intensity}
+    brightness = ${toString cfg.appearance.shader.brightness}
+    saturation = ${toString cfg.appearance.shader.saturation}
+  '';
 
   # Generate full config.toml content
   configToml = ''
@@ -196,7 +211,7 @@ let
     base16 = "${schemeSources.base16}"
     base24 = "${schemeSources.base24}"
     ansi16 = "${schemeSources.ansi16}"
-
+    ${shaderSection}
     ${themesSection}
 
     # Application reload methods
@@ -328,7 +343,11 @@ in
             appModule = appGenerators.${app} or null;
             configFileName = if appModule != null then appModule.configFile or "config" else "config";
             themeFileName = if appModule != null then appModule.themeFile or null else null;
-            configDir = "${config.xdg.configHome}/${app}";
+            # Some apps store configs in ~/.local/share instead of ~/.config
+            dataDir = if appModule != null then appModule.dataDir or null else null;
+            configDir = if dataDir != null
+              then "${config.xdg.dataHome}/${dataDir}"
+              else "${config.xdg.configHome}/${app}";
             stateDir = "${config.xdg.stateHome}/vogix/current-theme/${app}";
           in
           ''
@@ -356,6 +375,47 @@ in
             ''}
           ''
         ) themedApps}
+      '';
+    }
+
+    # Apply ANSI 16 colors to terminal via OSC 4 sequences on every interactive shell
+    # Reads palette from current-theme/console/palette and sets colors 0-15
+    {
+      programs.bash.initExtra = mkIf (config.programs.bash.enable or false) ''
+        # Vogix: set terminal ANSI colors from theme palette
+        _vogix_palette="''${XDG_STATE_HOME:-$HOME/.local/state}/vogix/current-theme/console/palette"
+        if [ -f "$_vogix_palette" ]; then
+          _i=0
+          while IFS= read -r _color; do
+            _hex="''${_color#\#}"
+            printf '\033]4;%d;#%s\033\\' "$_i" "$_hex"
+            _i=$((_i + 1))
+          done < "$_vogix_palette"
+          # Set background (OSC 11) and foreground (OSC 10) from color 0 and 7
+          _bg=$(sed -n '1p' "$_vogix_palette"); _bg="''${_bg#\#}"
+          _fg=$(sed -n '8p' "$_vogix_palette"); _fg="''${_fg#\#}"
+          printf '\033]10;#%s\033\\' "$_fg"
+          printf '\033]11;#%s\033\\' "$_bg"
+        fi
+        unset _vogix_palette _i _color _hex _bg _fg
+      '';
+
+      programs.zsh.initExtra = mkIf (config.programs.zsh.enable or false) ''
+        # Vogix: set terminal ANSI colors from theme palette
+        _vogix_palette="''${XDG_STATE_HOME:-$HOME/.local/state}/vogix/current-theme/console/palette"
+        if [ -f "$_vogix_palette" ]; then
+          _i=0
+          while IFS= read -r _color; do
+            _hex="''${_color#\#}"
+            printf '\033]4;%d;#%s\033\\' "$_i" "$_hex"
+            _i=$((_i + 1))
+          done < "$_vogix_palette"
+          _bg=$(sed -n '1p' "$_vogix_palette"); _bg="''${_bg#\#}"
+          _fg=$(sed -n '8p' "$_vogix_palette"); _fg="''${_fg#\#}"
+          printf '\033]10;#%s\033\\' "$_fg"
+          printf '\033]11;#%s\033\\' "$_bg"
+        fi
+        unset _vogix_palette _i _color _hex _bg _fg
       '';
     }
 

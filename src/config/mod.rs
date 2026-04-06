@@ -22,7 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 
 // Re-export types
-pub use types::{AppMetadata, TemplatesConfig, ThemeSourcesConfig};
+pub use types::{AppMetadata, ShaderConfig, TemplatesConfig, ThemeSourcesConfig};
 
 /// Main configuration loaded from runtime manifest
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -32,6 +32,7 @@ pub struct Config {
     pub apps: HashMap<String, AppMetadata>,
     pub templates: Option<TemplatesConfig>,
     pub theme_sources: Option<ThemeSourcesConfig>,
+    pub shader: Option<ShaderConfig>,
 }
 
 impl Default for Config {
@@ -42,6 +43,7 @@ impl Default for Config {
             apps: HashMap::new(),
             templates: None,
             theme_sources: None,
+            shader: None,
         }
     }
 }
@@ -83,12 +85,16 @@ impl Config {
         // Parse theme sources config
         let theme_sources = Self::parse_theme_sources(&manifest);
 
+        // Parse shader config
+        let shader = Self::parse_shader(&manifest);
+
         Ok(Config {
             default_theme,
             default_variant,
             apps,
             templates,
             theme_sources,
+            shader,
         })
     }
 
@@ -115,6 +121,10 @@ impl Config {
                             .get("reload_command")
                             .and_then(|v| v.as_str())
                             .map(String::from);
+                        let theme_file_path = app_data
+                            .get("theme_file_path")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
 
                         Some((
                             app_name.clone(),
@@ -124,6 +134,7 @@ impl Config {
                                 reload_signal,
                                 process_name,
                                 reload_command,
+                                theme_file_path,
                             },
                         ))
                     })
@@ -164,6 +175,34 @@ impl Config {
                     ansi16: PathBuf::from(ansi16),
                 })
             })
+    }
+
+    /// Parse the [shader] section from manifest
+    fn parse_shader(manifest: &toml::Value) -> Option<ShaderConfig> {
+        let table = manifest.get("shader")?.as_table()?;
+        let enabled = table
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let intensity = table
+            .get("intensity")
+            .and_then(|v| v.as_float())
+            .unwrap_or(1.0) as f32;
+        let brightness = table
+            .get("brightness")
+            .and_then(|v| v.as_float())
+            .unwrap_or(1.0) as f32;
+        let saturation = table
+            .get("saturation")
+            .and_then(|v| v.as_float())
+            .unwrap_or(1.0) as f32;
+
+        Some(ShaderConfig {
+            enabled,
+            intensity,
+            brightness,
+            saturation,
+        })
     }
 
     /// Get the config path (~/.local/state/vogix/config.toml)

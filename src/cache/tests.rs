@@ -51,6 +51,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             base24: themes_path.clone(),
             ansi16: themes_path,
         }),
+        shader: None,
     }
 }
 
@@ -117,6 +118,7 @@ theme[temp_end]="{{ colors.danger }}"
             base24: themes_path.clone(),
             ansi16: themes_path,
         }),
+        shader: None,
     }
 }
 

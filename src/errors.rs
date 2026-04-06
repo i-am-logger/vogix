@@ -68,6 +68,38 @@ pub enum VogixError {
     /// Generic error with message
     #[error("{0}")]
     Generic(String),
+
+    /// hyprctl binary not found in PATH
+    #[error("hyprctl not found — is Hyprland installed?")]
+    HyprctlNotFound,
+
+    /// Hyprland compositor is not running
+    #[error("Hyprland is not running (HYPRLAND_INSTANCE_SIGNATURE not set)")]
+    HyprlandNotRunning,
+
+    /// hyprctl command failed
+    #[error("hyprctl failed (exit {code}): {detail}")]
+    HyprctlFailed { code: i32, detail: String },
+
+    /// Failed to write shader file
+    #[error("failed to write shader: {}", path.display())]
+    ShaderWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    /// Failed to remove shader file
+    #[error("failed to remove shader: {}", path.display())]
+    ShaderRemove {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    /// No runtime directory available
+    #[error("no runtime directory (XDG_RUNTIME_DIR not set)")]
+    NoRuntimeDir,
 }
 
 impl From<String> for VogixError {

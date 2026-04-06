@@ -18,9 +18,11 @@ _:
   # Settings path in home-manager config
   settingsPath = "programs.btop.settings";
 
-  # Reload method: touch the config symlink to trigger btop's file watcher
+  # Reload method: SIGUSR2 triggers btop's config + theme reload
   reloadMethod = {
-    method = "touch";
+    method = "signal";
+    signal = "SIGUSR2";
+    process_name = "btop";
   };
 
   # Global settings applied to all schemes (merged with scheme-specific settings)

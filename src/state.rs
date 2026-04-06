@@ -175,4 +175,24 @@ mod tests {
         assert!(serialized.contains("current_theme = \"dracula\""));
         assert!(serialized.contains("current_variant = \"default\""));
     }
+
+    #[test]
+    fn test_state_backward_compat_ignores_unknown_fields() {
+        // State files with extra fields should still load fine
+        let temp_dir = TempDir::new().unwrap();
+        let state_path = temp_dir.path().join("state.toml");
+        fs::write(
+            &state_path,
+            r#"
+current_scheme = "vogix16"
+current_theme = "aikido"
+current_variant = "night"
+shader_enabled = true
+"#,
+        )
+        .unwrap();
+
+        let loaded = State::load_from(&state_path).unwrap();
+        assert_eq!(loaded.current_theme, "aikido");
+    }
 }

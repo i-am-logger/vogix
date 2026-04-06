@@ -21,6 +21,38 @@ pub struct ThemeSourcesConfig {
     pub ansi16: PathBuf,
 }
 
+/// Configuration for the monochromatic screen shader
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ShaderConfig {
+    /// Whether shader is enabled (set by Nix option)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Blend intensity between original and monochrome [0.0..1.0]
+    #[serde(default = "default_one")]
+    pub intensity: f32,
+    /// Output brightness multiplier [0.1..2.0]
+    #[serde(default = "default_one")]
+    pub brightness: f32,
+    /// Color saturation adjustment [0.0..2.0]
+    #[serde(default = "default_one")]
+    pub saturation: f32,
+}
+
+fn default_one() -> f32 {
+    1.0
+}
+
+impl Default for ShaderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            intensity: 1.0,
+            brightness: 1.0,
+            saturation: 1.0,
+        }
+    }
+}
+
 /// Metadata for an application that can be themed
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppMetadata {
@@ -32,4 +64,6 @@ pub struct AppMetadata {
     pub process_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reload_command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_file_path: Option<String>,
 }

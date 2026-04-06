@@ -10,7 +10,7 @@
 //! - `paths`: Path resolution (XDG, cache paths, theme sources)
 //! - `renderer`: Template rendering to cache
 
-mod paths;
+pub mod paths;
 mod renderer;
 #[cfg(test)]
 mod tests;

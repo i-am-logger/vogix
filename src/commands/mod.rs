@@ -14,6 +14,7 @@ mod daemon;
 mod list;
 mod refresh;
 pub mod session;
+pub mod shader;
 mod status;
 mod theme_change;
 
@@ -22,6 +23,9 @@ pub use completions::handle_completions;
 pub use daemon::handle_daemon;
 pub use list::handle_list;
 pub use refresh::handle_refresh;
-pub use session::{handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save, handle_session_undo};
+pub use session::{
+    handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
+    handle_session_undo,
+};
 pub use status::handle_status;
 pub use theme_change::handle_theme_change;

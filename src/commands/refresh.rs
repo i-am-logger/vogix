@@ -31,6 +31,11 @@ pub fn handle_refresh(quiet: bool) -> Result<()> {
     let reload_dispatcher = ReloadDispatcher::new();
     let reload_result = reload_dispatcher.reload_apps(&config, quiet);
 
+    // Auto-apply shader if configured
+    if let Err(e) = super::shader::maybe_apply_shader(&config, &state) {
+        warn!("Shader apply failed: {}", e);
+    }
+
     if reload_result.has_failures() {
         warn!(
             "Refreshed current state ({}/{} reloaded, {} failed)",

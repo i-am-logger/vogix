@@ -91,6 +91,38 @@ in
       description = "Custom theme definitions.";
     };
 
+    appearance = {
+      shader = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable monochromatic screen shader. Auto-generates a Hyprland
+            screen_shader from the theme's base00-07 palette hue.
+            Applied automatically on every theme change.
+          '';
+        };
+
+        intensity = mkOption {
+          type = types.float;
+          default = 0.7;
+          description = "Blend intensity between original and monochrome [0.0..1.0].";
+        };
+
+        brightness = mkOption {
+          type = types.float;
+          default = 1.0;
+          description = "Output brightness multiplier [0.1..2.0].";
+        };
+
+        saturation = mkOption {
+          type = types.float;
+          default = 1.0;
+          description = "Color saturation adjustment [0.0..2.0].";
+        };
+      };
+    };
+
     enableDaemon = mkOption {
       type = types.bool;
       default = false;

@@ -23,10 +23,10 @@ _:
     foreground-bright = baseColors.base07;
 
     # Functional colors (base08-0F)
-    danger = baseColors.base08;
+    success = baseColors.base08;
     warning = baseColors.base09;
     notice = baseColors.base0A;
-    success = baseColors.base0B;
+    danger = baseColors.base0B;
     active = baseColors.base0C;
     link = baseColors.base0D;
     highlight = baseColors.base0E;

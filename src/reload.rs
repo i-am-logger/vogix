@@ -114,6 +114,10 @@ impl ReloadDispatcher {
                     .map_err(|e| {
                         VogixError::reload_with_source("failed to touch config file", e)
                     })?;
+                // Also touch theme file if present (hybrid apps like btop)
+                if let Some(theme_path) = &metadata.theme_file_path {
+                    let _ = Command::new("touch").arg("-h").arg(theme_path).status();
+                }
                 Ok("touched to trigger auto-reload".to_string())
             }
             "none" => Ok("no reload needed (changes take effect on next use)".to_string()),
@@ -124,34 +128,51 @@ impl ReloadDispatcher {
         }
     }
 
-    /// Send a Unix signal to a process
+    /// Send a Unix signal to a process by name using native Rust
     fn send_signal(&self, process_name: &str, signal: &str) -> Result<()> {
-        // Check if process is running
-        let pgrep = Command::new("pgrep")
-            .arg(process_name)
-            .output()
-            .map_err(|e| VogixError::reload_with_source("failed to run pgrep", e))?;
+        use std::fs;
 
-        if !pgrep.status.success() {
+        let sig = match signal.trim_start_matches("SIG") {
+            "USR1" => 10,
+            "USR2" => 12,
+            "HUP" => 1,
+            "TERM" => 15,
+            "INT" => 2,
+            s => {
+                return Err(VogixError::reload(format!("unsupported signal: {}", s)));
+            }
+        };
+
+        // Find PIDs by scanning /proc
+        let mut found = false;
+        if let Ok(entries) = fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let pid_str = name.to_string_lossy();
+
+                // Only numeric directories are PIDs
+                if !pid_str.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
+
+                // Read /proc/{pid}/comm for the process name
+                let comm_path = entry.path().join("comm");
+                if let Ok(comm) = fs::read_to_string(&comm_path) {
+                    if comm.trim() == process_name {
+                        if let Ok(pid) = pid_str.parse::<i32>() {
+                            // Send signal via libc
+                            unsafe { libc::kill(pid, sig) };
+                            found = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !found {
             return Err(VogixError::reload(format!(
                 "process '{}' is not running",
                 process_name
-            )));
-        }
-
-        // Send signal using killall
-        let output = Command::new("killall")
-            .arg("-s")
-            .arg(signal)
-            .arg(process_name)
-            .output()
-            .map_err(|e| VogixError::reload_with_source("failed to send signal", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VogixError::reload(format!(
-                "failed to send signal to '{}': {}",
-                process_name, stderr
             )));
         }
 
@@ -202,6 +223,7 @@ mod tests {
             reload_signal: None,
             process_name: None,
             reload_command: None,
+            theme_file_path: None,
         };
 
         // Test that touch method doesn't crash
@@ -224,6 +246,7 @@ mod tests {
             reload_signal: None,
             process_name: None,
             reload_command: None,
+            theme_file_path: None,
         };
 
         let result = dispatcher.reload_app("test", &metadata);
@@ -248,6 +271,7 @@ mod tests {
                 reload_signal: None,
                 process_name: None,
                 reload_command: Some("exit 1".to_string()), // This will fail
+                theme_file_path: None,
             },
         );
         apps.insert(
@@ -258,6 +282,7 @@ mod tests {
                 reload_signal: None,
                 process_name: None,
                 reload_command: None,
+                theme_file_path: None,
             },
         );
 
@@ -267,6 +292,7 @@ mod tests {
             apps,
             templates: None,
             theme_sources: None,
+            shader: None,
         };
 
         let result = dispatcher.reload_apps(&config, false);

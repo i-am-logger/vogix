@@ -114,6 +114,11 @@ pub fn handle_theme_change(
     let reload_dispatcher = ReloadDispatcher::new();
     let reload_result = reload_dispatcher.reload_apps(&config, quiet);
 
+    // Auto-apply shader if configured (updates tint color for new theme)
+    if let Err(e) = super::shader::maybe_apply_shader(&config, &state) {
+        warn!("Shader apply failed: {}", e);
+    }
+
     // Log appropriate message based on reload results
     let theme_variant = format!("{}-{}", state.current_theme, state.current_variant);
     if reload_result.has_failures() {

@@ -5,6 +5,7 @@ mod config;
 mod errors;
 mod reload;
 mod scheme;
+mod shader;
 mod state;
 mod symlink;
 mod template;
@@ -14,8 +15,7 @@ use cli::{CacheCommands, Cli, Commands, SessionCommands, ThemeCommands};
 use commands::{
     handle_cache_clean, handle_completions, handle_daemon, handle_list, handle_refresh,
     handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
-    handle_session_undo, handle_status,
-    handle_theme_change,
+    handle_session_undo, handle_status, handle_theme_change,
 };
 use errors::Result;
 use log::error;
@@ -50,7 +50,11 @@ fn run() -> Result<()> {
 
         Commands::Session { command } => match command {
             SessionCommands::Save { name } => handle_session_save(&name),
-            SessionCommands::Restore { name, json, dry_run } => {
+            SessionCommands::Restore {
+                name,
+                json,
+                dry_run,
+            } => {
                 if let Some(path) = json {
                     handle_session_restore_file(&path, dry_run)
                 } else {
