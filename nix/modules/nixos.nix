@@ -118,7 +118,7 @@ in
       # Make vogix CLI + dependencies available system-wide
       environment.systemPackages = [
         pkgs.vogix
-        pkgs.tmux  # Required for F12 system console
+        pkgs.tmux # Required for F12 system console
       ];
 
       # Add security wrappers for console theme switching

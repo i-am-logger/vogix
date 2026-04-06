@@ -11,7 +11,7 @@ mod symlink;
 mod template;
 mod theme;
 
-use cli::{CacheCommands, Cli, Commands, SessionCommands, ThemeCommands};
+use cli::{CacheCommands, Cli, Commands, SessionCommands, ShaderCommands, ThemeCommands};
 use commands::{
     handle_cache_clean, handle_completions, handle_daemon, handle_list, handle_refresh,
     handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
@@ -63,6 +63,12 @@ fn run() -> Result<()> {
             }
             SessionCommands::List => handle_session_list(),
             SessionCommands::Undo => handle_session_undo(),
+        },
+
+        Commands::Shader { command } => match command {
+            ShaderCommands::On => commands::shader::handle_shader_on(),
+            ShaderCommands::Off => commands::shader::handle_shader_off(),
+            ShaderCommands::Toggle => commands::shader::handle_shader_toggle(),
         },
 
         Commands::Completions { shell } => handle_completions(shell),

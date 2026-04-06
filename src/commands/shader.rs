@@ -1,8 +1,7 @@
-//! Automatic shader application on theme change.
+//! Shader management — auto-apply on theme change + manual toggle.
 //!
-//! The shader is a property of every theme — auto-generated from
-//! the base00-07 palette hue. No CLI needed; it's applied automatically
-//! when `[shader] enabled = true` in config (set by Nix module).
+//! The shader auto-applies when `[shader] enabled = true` in config.
+//! Manual toggle via `vogix shader on/off/toggle` for quick switching.
 
 use crate::config::Config;
 use crate::errors::Result;
@@ -61,4 +60,56 @@ fn load_current_theme_colors(
     );
 
     crate::theme::load_theme_colors(&variant_path, state.current_scheme)
+}
+
+/// Turn shader on — apply current theme's monochromatic tint.
+pub fn handle_shader_on() -> Result<()> {
+    let config = Config::load()?;
+    let state = State::load()?;
+
+    let shader_config = config.shader.as_ref();
+    let params = match shader_config {
+        Some(sc) => ShaderParams {
+            intensity: sc.intensity,
+            brightness: sc.brightness,
+            saturation: sc.saturation,
+        },
+        None => ShaderParams::default(),
+    };
+
+    let colors = load_current_theme_colors(&config, &state)?;
+    shader::apply_from_colors(&colors, &params)?;
+
+    log::info!("Shader on");
+    Ok(())
+}
+
+/// Turn shader off.
+pub fn handle_shader_off() -> Result<()> {
+    shader::disable()?;
+    log::info!("Shader off");
+    Ok(())
+}
+
+/// Toggle shader — check if active, flip it.
+pub fn handle_shader_toggle() -> Result<()> {
+    // Check if shader is currently active by reading hyprctl
+    let output = std::process::Command::new("hyprctl")
+        .args(["getoption", "decoration:screen_shader", "-j"])
+        .output();
+
+    let is_active = match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            // If the shader path is set (not empty), it's active
+            stdout.contains("/vogix/") && !stdout.contains("[[EMPTY]]")
+        }
+        _ => false,
+    };
+
+    if is_active {
+        handle_shader_off()
+    } else {
+        handle_shader_on()
+    }
 }

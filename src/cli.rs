@@ -37,8 +37,24 @@ pub enum Commands {
         command: CacheCommands,
     },
 
+    /// Toggle monochromatic screen shader
+    Shader {
+        #[command(subcommand)]
+        command: ShaderCommands,
+    },
+
     /// Run the vogix daemon (session auto-save, event monitoring)
     Daemon,
+}
+
+#[derive(Subcommand)]
+pub enum ShaderCommands {
+    /// Turn shader on (applies current theme's monochromatic tint)
+    On,
+    /// Turn shader off
+    Off,
+    /// Toggle shader on/off
+    Toggle,
 }
 
 #[derive(Subcommand)]
@@ -293,6 +309,41 @@ mod tests {
         ));
     }
 
+    // ── Shader command tests ──
+
+    #[test]
+    fn test_parse_shader_on() {
+        let cli = Cli::try_parse_from(["vogix", "shader", "on"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Shader {
+                command: ShaderCommands::On
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_shader_off() {
+        let cli = Cli::try_parse_from(["vogix", "shader", "off"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Shader {
+                command: ShaderCommands::Off
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_shader_toggle() {
+        let cli = Cli::try_parse_from(["vogix", "shader", "toggle"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Shader {
+                command: ShaderCommands::Toggle
+            }
+        ));
+    }
+
     // ── Property: all valid subcommands parse without error ──
 
     #[test]
@@ -311,6 +362,9 @@ mod tests {
             vec!["vogix", "session", "list"],
             vec!["vogix", "daemon"],
             vec!["vogix", "cache", "clean"],
+            vec!["vogix", "shader", "on"],
+            vec!["vogix", "shader", "off"],
+            vec!["vogix", "shader", "toggle"],
         ];
         for args in &valid_commands {
             assert!(

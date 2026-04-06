@@ -10,8 +10,8 @@ use crate::errors::Result;
 use log::{error, info, warn};
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Find Hyprland's event socket path
@@ -78,9 +78,7 @@ pub fn handle_daemon() -> Result<()> {
     };
 
     // Set read timeout so we can check the shutdown flag periodically
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     info!("Connected to Hyprland, watching for window events");
 
@@ -127,8 +125,12 @@ pub fn handle_daemon() -> Result<()> {
 
         match event {
             // State-changing events — mark for save
-            "openwindow" | "closewindow" | "movewindow" | "changefloatingmode"
-            | "movetoworkspace" | "movetoworkspacesilent" => {
+            "openwindow"
+            | "closewindow"
+            | "movewindow"
+            | "changefloatingmode"
+            | "movetoworkspace"
+            | "movetoworkspacesilent" => {
                 info!("Session changed ({}), will save after debounce", event);
                 pending_save = true;
                 // Save immediately if enough time passed
