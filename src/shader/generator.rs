@@ -66,7 +66,7 @@ pub struct ShaderParams {
 impl Default for ShaderParams {
     fn default() -> Self {
         Self {
-            intensity: 1.0,
+            intensity: 0.7,
             brightness: 1.0,
             saturation: 1.0,
         }
