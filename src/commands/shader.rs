@@ -63,18 +63,29 @@ fn load_current_theme_colors(
 }
 
 /// Turn shader on — apply current theme's monochromatic tint.
-pub fn handle_shader_on() -> Result<()> {
+/// Optional overrides for intensity/brightness/saturation.
+pub fn handle_shader_on(
+    intensity: Option<f32>,
+    brightness: Option<f32>,
+    saturation: Option<f32>,
+) -> Result<()> {
     let config = Config::load()?;
     let state = State::load()?;
 
     let shader_config = config.shader.as_ref();
-    let params = match shader_config {
+    let base = match shader_config {
         Some(sc) => ShaderParams {
             intensity: sc.intensity,
             brightness: sc.brightness,
             saturation: sc.saturation,
         },
         None => ShaderParams::default(),
+    };
+
+    let params = ShaderParams {
+        intensity: intensity.unwrap_or(base.intensity),
+        brightness: brightness.unwrap_or(base.brightness),
+        saturation: saturation.unwrap_or(base.saturation),
     };
 
     let colors = load_current_theme_colors(&config, &state)?;
@@ -110,6 +121,6 @@ pub fn handle_shader_toggle() -> Result<()> {
     if is_active {
         handle_shader_off()
     } else {
-        handle_shader_on()
+        handle_shader_on(None, None, None)
     }
 }

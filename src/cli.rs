@@ -50,7 +50,19 @@ pub enum Commands {
 #[derive(Subcommand)]
 pub enum ShaderCommands {
     /// Turn shader on (applies current theme's monochromatic tint)
-    On,
+    On {
+        /// Blend intensity [0.0..1.0]
+        #[arg(short = 'i', long)]
+        intensity: Option<f32>,
+
+        /// Brightness multiplier [0.1..2.0]
+        #[arg(short = 'b', long)]
+        brightness: Option<f32>,
+
+        /// Color saturation [0.0..2.0]
+        #[arg(short = 's', long)]
+        saturation: Option<f32>,
+    },
     /// Turn shader off
     Off,
     /// Toggle shader on/off
@@ -317,9 +329,30 @@ mod tests {
         assert!(matches!(
             cli.command,
             Commands::Shader {
-                command: ShaderCommands::On
+                command: ShaderCommands::On { .. }
             }
         ));
+    }
+
+    #[test]
+    fn test_parse_shader_on_with_params() {
+        let cli =
+            Cli::try_parse_from(["vogix", "shader", "on", "-i", "0.5", "-b", "1.2"]).unwrap();
+        if let Commands::Shader {
+            command:
+                ShaderCommands::On {
+                    intensity,
+                    brightness,
+                    saturation,
+                },
+        } = cli.command
+        {
+            assert!((intensity.unwrap() - 0.5).abs() < 0.01);
+            assert!((brightness.unwrap() - 1.2).abs() < 0.01);
+            assert!(saturation.is_none());
+        } else {
+            panic!("Expected Shader On");
+        }
     }
 
     #[test]

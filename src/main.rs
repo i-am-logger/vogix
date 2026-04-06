@@ -66,7 +66,11 @@ fn run() -> Result<()> {
         },
 
         Commands::Shader { command } => match command {
-            ShaderCommands::On => commands::shader::handle_shader_on(),
+            ShaderCommands::On {
+                intensity,
+                brightness,
+                saturation,
+            } => commands::shader::handle_shader_on(intensity, brightness, saturation),
             ShaderCommands::Off => commands::shader::handle_shader_off(),
             ShaderCommands::Toggle => commands::shader::handle_shader_toggle(),
         },
