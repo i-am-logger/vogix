@@ -57,7 +57,9 @@ in
   dataDir = "bespec";
 
   reloadMethod = {
-    method = "touch";
+    method = "signal";
+    signal = "USR1";
+    process_name = "bespec";
   };
 
   schemes = {

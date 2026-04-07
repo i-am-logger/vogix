@@ -4,6 +4,33 @@ _:
   # Wezterm colors file loaded by main config via dofile()
   configFile = "colors.lua";
 
+  # Smart Ctrl+C/V keybindings for Super→Ctrl remap (macOS Command behavior)
+  # Injected into programs.wezterm.extraConfig by the home-manager module
+  keybindings = ''
+    -- Vogix: Smart Ctrl+C/V (Super→Ctrl remap behavior)
+    config.keys = {
+      {
+        key = 'c',
+        mods = 'CTRL',
+        action = wezterm.action_callback(function(window, pane)
+          local sel = window:get_selection_text_for_pane(pane)
+          if sel and sel ~= "" then
+            window:perform_action(wezterm.action.CopyTo('Clipboard'), pane)
+          else
+            window:perform_action(wezterm.action.SendKey{key='c', mods='CTRL'}, pane)
+          end
+        end),
+      },
+      {
+        key = 'v',
+        mods = 'CTRL',
+        action = wezterm.action.PasteFrom('Clipboard'),
+      },
+    }
+
+    return config
+  '';
+
   reloadMethod = {
     method = "command";
     command = "touch -h \"$HOME/.config/wezterm/wezterm.lua\" 2>/dev/null || true";

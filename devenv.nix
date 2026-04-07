@@ -102,8 +102,11 @@ in
         };
         statix.enable = true;
 
-        # Rust
-        rustfmt.enable = true;
+        # Rust — use devenv toolchain (supports edition 2024)
+        rustfmt = {
+          enable = true;
+          package = config.languages.rust.toolchainPackage;
+        };
 
         # Python
         black.enable = true;
@@ -128,17 +131,8 @@ in
   };
 
   git-hooks.hooks = {
-    # Use treefmt for all formatting
     treefmt.enable = true;
-
-    # Clippy for Rust linting — use custom entry to ensure cc is in PATH
-    clippy = {
-      enable = true;
-      entry = lib.mkForce "${pkgs.writeShellScript "clippy-with-cc" ''
-        export PATH="${pkgs.gcc}/bin:$PATH"
-        ${config.languages.rust.toolchainPackage}/bin/cargo-clippy clippy --manifest-path ./Cargo.toml -- -D warnings
-      ''}";
-    };
+    clippy.enable = true;
   };
 
   # https://devenv.sh/outputs/

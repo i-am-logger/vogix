@@ -215,3 +215,54 @@ reload_command = "polybar-msg cmd restart"
         Some("polybar-msg cmd restart")
     );
 }
+
+#[test]
+fn test_parse_hardware() {
+    let manifest = r##"
+[hardware."kraken-ring"]
+command = "liquidctl --match kraken set external color fixed {{base01}}"
+
+[hardware."keychron-k2-he"]
+command = "openrgb -d 'Keychron K2 HE' -m static -c {{base01}}"
+"##;
+
+    let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
+    let hardware = Config::parse_hardware(&manifest_value);
+
+    assert_eq!(hardware.len(), 2);
+
+    let kraken = hardware.get("kraken-ring").unwrap();
+    assert!(kraken.command.contains("liquidctl"));
+    assert!(kraken.command.contains("{{base01}}"));
+
+    let keychron = hardware.get("keychron-k2-he").unwrap();
+    assert!(keychron.command.contains("openrgb"));
+}
+
+#[test]
+fn test_parse_hardware_empty() {
+    let manifest = r##"
+[default]
+theme = "aikido"
+variant = "dark"
+"##;
+
+    let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
+    let hardware = Config::parse_hardware(&manifest_value);
+
+    assert!(hardware.is_empty());
+}
+
+#[test]
+fn test_parse_hardware_missing_command() {
+    let manifest = r##"
+[hardware."broken-device"]
+not_command = "something"
+"##;
+
+    let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
+    let hardware = Config::parse_hardware(&manifest_value);
+
+    // Device without "command" key should be skipped
+    assert!(hardware.is_empty());
+}

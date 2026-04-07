@@ -159,15 +159,46 @@ let
       themeSubmap = optionalString (themeMode != null)
         (mkSubmapBlock modeColors modKey "theme" themeMode "desktop");
 
+      # Console mode → passthrough submap (only F12 exits, no catchall — keys go to terminal)
+      # Bindings are emitted raw (no wrapSubmapAction) so native dispatchers work for animation
+      consoleMode = modes.console or null;
+      consoleSubmap = optionalString (consoleMode != null)
+        (
+          let
+            bindings = consoleMode.bindings or { };
+            bindLines = concatStringsSep "\n" (
+              mapAttrsToList
+                (_: b:
+                  let
+                    hyprBind = toHyprlandBind modKey (b.key or "");
+                  in
+                  "bind = ${hyprBind}, ${b.action or ""}"
+                )
+                bindings
+            );
+          in
+          ''
+            submap = console
+            ${bindLines}
+            submap = reset
+          ''
+        );
+
       submapConfigs = concatStringsSep "\n\n" (
         builtins.filter (s: s != "") [
           desktopSubmap
           arrangeSubmap
           themeSubmap
+          consoleSubmap
         ]
       );
 
       mouseBinds = mkMouseBindings modKey (cfg.mouse or { });
+
+      inputCfg = cfg.input or { };
+      touchpadCfg = cfg.touchpad or { };
+      layoutsCfg = cfg.layouts or { };
+      miscCfg = cfg.misc or { };
     in
     {
       settings = {
@@ -178,6 +209,55 @@ let
           workspace_back_and_forth = false;
           allow_workspace_cycles = false;
         };
+
+        # Input settings
+        input = {
+          repeat_delay = inputCfg.repeatDelay or 200;
+          sensitivity = inputCfg.sensitivity or 0.0;
+          left_handed = inputCfg.leftHanded or false;
+          natural_scroll = if inputCfg.naturalScroll or true then "yes" else "no";
+          float_switch_override_focus = inputCfg.floatSwitchOverrideFocus or 2;
+          numlock_by_default = if inputCfg.numlockByDefault or false then "on" else "off";
+
+          touchpad = {
+            natural_scroll = if touchpadCfg.naturalScroll or true then 1 else 0;
+            disable_while_typing = touchpadCfg.disableWhileTyping or true;
+            scroll_factor = touchpadCfg.scrollFactor or 0.3;
+          };
+        };
+
+        # Layout
+        general.layout = cfg.layout or "dwindle";
+        dwindle = layoutsCfg.dwindle or { pseudotile = true; preserve_split = true; force_split = 2; };
+        master = layoutsCfg.master or { new_status = "slave"; new_on_top = true; };
+
+        # Misc
+        misc = {
+          font_family = miscCfg.fontFamily or "Fira Code Nerd Font";
+          disable_hyprland_logo = miscCfg.disableLogo or true;
+          disable_autoreload = miscCfg.disableAutoreload or false;
+          always_follow_on_dnd = miscCfg.alwaysFollowOnDnd or true;
+          layers_hog_keyboard_focus = miscCfg.layersHogKeyboardFocus or true;
+          animate_manual_resizes = miscCfg.animateManualResizes or true;
+          enable_swallow = miscCfg.enableSwallow or false;
+          focus_on_activate = miscCfg.focusOnActivate or true;
+        };
+
+        # Gestures
+        gestures = cfg.gestures or { };
+
+        # Console window rules
+        windowrule = lib.optionals (consoleMode != null) [
+          "match:class ^(vogix-console)$, workspace special:console"
+          "match:class ^(vogix-console)$, float true"
+          "match:class ^(vogix-console)$, size 90% 75%"
+          "match:class ^(vogix-console)$, center true"
+        ];
+
+        # Console workspace
+        workspace = lib.optionals (consoleMode != null) [
+          "special:console, persistent:true, gapsout:0, gapsin:0, shadow:false, on-created-empty:wezterm start --class vogix-console -- tmux new-session -A -s console"
+        ];
       };
 
       extraConfig = optionalString (submapConfigs != "") submapConfigs;

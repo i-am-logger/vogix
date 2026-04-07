@@ -27,6 +27,7 @@ out vec4 fragColor;
 const vec3 themeColor = vec3({R}, {G}, {B});
 const float intensity = {INTENSITY};
 const float brightness = {BRIGHTNESS};
+const float isDark = {IS_DARK};
 
 // Theme functional colors (base08-0F) — preserved through tinting
 {FUNCTIONAL_COLORS}
@@ -42,7 +43,13 @@ void main() {
     vec4 pixColor = texture(tex, v_texcoord);
 
     float luminance = dot(pixColor.rgb, vec3({LUMA_R}, {LUMA_G}, {LUMA_B}));
-    vec3 mono = luminance * themeColor * brightness;
+
+    // Dark: multiply — pulls toward black with theme hue
+    vec3 darkMono = luminance * themeColor * brightness;
+    // Light: screen blend — pulls toward white with theme hue
+    vec3 lightMono = (1.0 - (1.0 - luminance) * (1.0 - themeColor)) * brightness;
+
+    vec3 mono = mix(lightMono, darkMono, isDark);
 
     // Functional colors are preserved, everything else gets tinted
     float preserve = functionalMatch(pixColor.rgb);
@@ -66,7 +73,7 @@ pub struct ShaderParams {
 impl Default for ShaderParams {
     fn default() -> Self {
         Self {
-            intensity: 0.7,
+            intensity: 0.5,
             brightness: 1.0,
             saturation: 1.0,
         }
@@ -101,19 +108,26 @@ pub fn generate_glsl(
     let mut func_consts = String::new();
     let mut func_dists = String::new();
     for (i, key) in FUNCTIONAL_KEYS.iter().enumerate() {
-        if let Some(hex) = colors.get(*key) {
-            if let Some((r, g, b)) = super::color::hex_to_rgb(hex) {
-                func_consts.push_str(&format!(
-                    "const vec3 func{} = vec3({:.4}, {:.4}, {:.4});\n",
-                    i, r, g, b
-                ));
-                func_dists.push_str(&format!(
-                    "    closest = min(closest, distance(c, func{}));\n",
-                    i
-                ));
-            }
+        if let Some(hex) = colors.get(*key)
+            && let Some((r, g, b)) = super::color::hex_to_rgb(hex)
+        {
+            func_consts.push_str(&format!(
+                "const vec3 func{} = vec3({:.4}, {:.4}, {:.4});\n",
+                i, r, g, b
+            ));
+            func_dists.push_str(&format!(
+                "    closest = min(closest, distance(c, func{}));\n",
+                i
+            ));
         }
     }
+
+    // Detect polarity from base00 background luminance
+    let is_dark = colors
+        .get("base00")
+        .and_then(|hex| super::color::hex_to_rgb(hex))
+        .map(|(r, g, b)| r * LUMA_R + g * LUMA_G + b * LUMA_B < 0.5)
+        .unwrap_or(true);
 
     SHADER_TEMPLATE
         .replace("{R}", &format!("{:.4}", color.r))
@@ -127,6 +141,7 @@ pub fn generate_glsl(
             "{BRIGHTNESS}",
             &format!("{:.4}", params.brightness.clamp(0.1, 2.0)),
         )
+        .replace("{IS_DARK}", if is_dark { "1.0" } else { "0.0" })
         .replace("{LUMA_R}", &format!("{:.4}", LUMA_R))
         .replace("{LUMA_G}", &format!("{:.4}", LUMA_G))
         .replace("{LUMA_B}", &format!("{:.4}", LUMA_B))
@@ -343,5 +358,35 @@ mod tests {
         assert!(s.r >= 0.0 && s.r <= 1.0);
         assert!(s.g >= 0.0 && s.g <= 1.0);
         assert!(s.b >= 0.0 && s.b <= 1.0);
+    }
+
+    fn dark_colors() -> HashMap<String, String> {
+        let mut c = test_colors();
+        c.insert("base00".into(), "#1e1e2e".into()); // dark bg
+        c
+    }
+
+    fn light_colors() -> HashMap<String, String> {
+        let mut c = test_colors();
+        c.insert("base00".into(), "#eff1f5".into()); // light bg
+        c
+    }
+
+    #[test]
+    fn generate_dark_theme_uses_multiply() {
+        let src = generate_glsl(&green(), &ShaderParams::default(), &dark_colors());
+        assert!(src.contains("const float isDark = 1.0;"));
+    }
+
+    #[test]
+    fn generate_light_theme_uses_screen() {
+        let src = generate_glsl(&green(), &ShaderParams::default(), &light_colors());
+        assert!(src.contains("const float isDark = 0.0;"));
+    }
+
+    #[test]
+    fn generate_no_base00_defaults_dark() {
+        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_colors());
+        assert!(src.contains("const float isDark = 1.0;"));
     }
 }

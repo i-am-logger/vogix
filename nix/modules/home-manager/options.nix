@@ -61,37 +61,37 @@ in
       description = "The vogix package to use.";
     };
 
-    scheme = mkOption {
-      type = types.str;
-      default = "vogix16";
-      description = "Color scheme to use (vogix16, base16, base24, ansi16).";
-    };
-
-    theme = mkOption {
-      type = types.str;
-      default = "aikido";
-      description = "Theme to use.";
-    };
-
-    variant = mkOption {
-      type = types.str;
-      default = "night";
-      description = "Variant name (e.g., night, day, dark, light, moon, dawn).";
-    };
-
-    themes = mkOption {
-      type = types.attrsOf types.path;
-      default = { };
-      example = literalExpression ''
-        {
-          aikido = ./themes/aikido.nix;
-          synthwave = ./themes/synthwave.nix;
-        }
-      '';
-      description = "Custom theme definitions.";
-    };
-
     appearance = {
+      scheme = mkOption {
+        type = types.str;
+        default = "vogix16";
+        description = "Color scheme to use (vogix16, base16, base24, ansi16).";
+      };
+
+      theme = mkOption {
+        type = types.str;
+        default = "aikido";
+        description = "Theme to use.";
+      };
+
+      variant = mkOption {
+        type = types.str;
+        default = "night";
+        description = "Variant name (e.g., night, day, dark, light, moon, dawn).";
+      };
+
+      themes = mkOption {
+        type = types.attrsOf types.path;
+        default = { };
+        example = literalExpression ''
+          {
+            aikido = ./themes/aikido.nix;
+            synthwave = ./themes/synthwave.nix;
+          }
+        '';
+        description = "Custom theme definitions.";
+      };
+
       shader = {
         enable = mkOption {
           type = types.bool;
@@ -105,7 +105,7 @@ in
 
         intensity = mkOption {
           type = types.float;
-          default = 0.7;
+          default = 0.5;
           description = "Blend intensity between original and monochrome [0.0..1.0].";
         };
 
@@ -134,6 +134,13 @@ in
       internal = true;
       description = "Semantic color API for the selected theme and variant. Used by application modules.";
     };
+
+    themeApply = mkOption {
+      type = types.attrsOf types.str;
+      default = { };
+      description = "Hardware theme apply commands. Keys are device names, values are shell commands with {{color}} placeholders resolved at runtime.";
+    };
+
   }
   // appOptions
   // behaviorOptions;

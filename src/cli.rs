@@ -67,6 +67,23 @@ pub enum ShaderCommands {
     Off,
     /// Toggle shader on/off
     Toggle,
+    /// Show shader status and current parameters
+    Status,
+    /// Set blend intensity [0.0..1.0]
+    Intensity {
+        /// Intensity value
+        value: f32,
+    },
+    /// Set brightness multiplier [0.1..2.0]
+    Brightness {
+        /// Brightness value
+        value: f32,
+    },
+    /// Set color saturation [0.0..2.0]
+    Saturation {
+        /// Saturation value
+        value: f32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -336,8 +353,7 @@ mod tests {
 
     #[test]
     fn test_parse_shader_on_with_params() {
-        let cli =
-            Cli::try_parse_from(["vogix", "shader", "on", "-i", "0.5", "-b", "1.2"]).unwrap();
+        let cli = Cli::try_parse_from(["vogix", "shader", "on", "-i", "0.5", "-b", "1.2"]).unwrap();
         if let Commands::Shader {
             command:
                 ShaderCommands::On {

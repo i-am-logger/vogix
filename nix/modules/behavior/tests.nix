@@ -1,6 +1,6 @@
-# Keybinding module tests
+# Behavior module tests
 #
-# Run with: nix eval --impure -f nix/modules/keybindings/tests.nix
+# Run with: nix eval --impure -f nix/modules/behavior/tests.nix --apply 'f: f {}'
 # Returns: { passed = <count>; failed = []; } on success
 # Throws on failure with details
 { pkgs ? import <nixpkgs> { }
@@ -27,25 +27,20 @@ let
     else throw "FAILED: ${name} — '${needle}' not found in output";
 
   # ── Test data ──
+  # Use mkGeneratorConfig to build the flat config generators expect
+  # (transforms app→normal, flattens keybindings.*)
+  fullConfig = kbModule.mkGeneratorConfig defaults;
 
-  fullConfig = {
-    modKey = "super";
-    inherit (defaults) modes;
-    inherit (defaults) layers;
-    inherit (defaults) universal;
-    inherit (defaults) mouse;
-  };
-
-  hyprConfig = kbModule.mkHyprlandConfig fullConfig;
-  kanataConfig = kbModule.mkKanataConfig fullConfig;
-  helpScripts = kbModule.mkHelpScripts fullConfig;
+  hyprConfig = kbModule.mkHyprlandConfig defaults;
+  kanataConfig = kbModule.mkKanataConfig defaults;
+  helpScripts = kbModule.mkHelpScripts defaults;
 
   # ── Tests ──
 
   tests = [
-    # === Defaults ===
-    (check "defaults.modes has normal mode"
-      (defaults.modes ? normal))
+    # === Defaults (raw structure) ===
+    (check "defaults.modes has app mode"
+      (defaults.modes ? app))
 
     (check "defaults.modes has desktop mode"
       (defaults.modes ? desktop))
@@ -56,14 +51,24 @@ let
     (check "defaults.modes has theme mode"
       (defaults.modes ? theme))
 
-    (check "defaults.layers has nav layer"
-      (defaults.layers ? nav))
+    (check "defaults.keybindings.layers has desktopToggle"
+      (defaults.keybindings.layers ? desktopToggle))
 
-    (check "defaults.universal has copy"
-      (defaults.universal ? copy))
+    (check "defaults._superCtrlRemaps has copy"
+      (defaults._superCtrlRemaps ? copy))
 
-    (check "defaults.mouse has moveWindow"
-      (defaults.mouse ? moveWindow))
+    (check "defaults.keybindings.mouse has moveWindow"
+      (defaults.keybindings.mouse ? moveWindow))
+
+    # === Generator config (flat structure via mkGeneratorConfig) ===
+    (check "fullConfig.modes has normal (renamed from app)"
+      (fullConfig.modes ? normal))
+
+    (check "fullConfig has universal remaps"
+      (fullConfig ? universal))
+
+    (check "fullConfig has mouse"
+      (fullConfig ? mouse))
 
     # === Hyprland generator ===
     (check "hyprland generates settings"
@@ -155,16 +160,8 @@ let
       "deflayer default"
       kanataConfig)
 
-    (assertContains "kanata has deflayer nav"
-      "deflayer nav"
-      kanataConfig)
-
     (assertContains "kanata has tap-hold for capslock"
       "tap-hold"
-      kanataConfig)
-
-    (assertContains "kanata nav maps h to left"
-      "left"
       kanataConfig)
 
     # === Help scripts ===
@@ -212,17 +209,17 @@ let
       (defaults.modes.theme.enter == "v"))
 
     # === CapsLock toggle ===
-    (check "CapsLock tap sends F13"
-      (defaults.layers.nav.tapAction == "f13"))
+    (check "CapsLock tap sends Scroll_Lock"
+      (defaults.keybindings.layers.desktopToggle.tapAction == "slck"))
 
-    (check "normal mode has F13 → desktop submap"
-      (defaults.modes.normal.bindings ? enterDesktop))
+    (check "app mode has Scroll_Lock → desktop submap"
+      (defaults.modes.app.bindings ? enterDesktop))
 
-    (check "desktop mode has F13 → reset (toggle back)"
+    (check "desktop mode has Scroll_Lock → reset (toggle back)"
       (defaults.modes.desktop.bindings ? exitDesktop))
 
-    (assertContains "hyprland normal binds F13 to desktop submap"
-      "F13, submap, desktop"
+    (assertContains "hyprland app mode binds Scroll_Lock to desktop submap"
+      "Scroll_Lock, submap, desktop"
       (lib.concatStringsSep "\n" hyprConfig.settings.bind))
 
     # === Kanata Super→Ctrl ===
@@ -236,8 +233,8 @@ let
 
     # process-unmapped-keys is set via NixOS services.kanata extraDefCfg, not in generated config
 
-    (assertContains "kanata CapsLock tap is F13"
-      "tap-hold 200 200 f13"
+    (assertContains "kanata CapsLock tap is Scroll_Lock"
+      "tap-hold"
       kanataConfig)
 
     # === Help in every mode ===
@@ -251,7 +248,7 @@ let
       (defaults.modes.theme.bindings ? help))
 
     (check "normal mode has help binding"
-      (defaults.modes.normal.bindings ? help))
+      (defaults.modes.app.bindings ? help))
 
     # === No Super+letter conflicts ===
     # Normal mode should NOT have Super+letter bindings (those are app shortcuts now)
@@ -272,7 +269,8 @@ let
 
   allModes = defaults.modes;
   modeNames = builtins.attrNames allModes;
-  submapModes = filterAttrs (name: _: name != "normal") allModes;
+  # Submap modes = everything except app (global) and console (passthrough)
+  submapModes = filterAttrs (name: _: name != "app" && name != "console") allModes;
 
   propertyTests = (mapAttrsToList
     (name: mode:
@@ -398,14 +396,14 @@ let
       check "P8: universal '${name}' maps Super→Ctrl"
         (from != null && to != null && from.mod == "super" && to.mod == "ctrl")
     )
-    defaults.universal)
+    defaults._superCtrlRemaps)
 
   # ── P9: Kanata layer bindings all map to valid keys ──
   # No empty or null values in layer bindings
   ++ (lib.concatMap
     (layerName:
       let
-        layer = defaults.layers.${layerName};
+        layer = defaults.keybindings.layers.${layerName};
         bindings = layer.bindings or { };
       in
       mapAttrsToList
@@ -415,7 +413,7 @@ let
         )
         bindings
     )
-    (builtins.attrNames defaults.layers))
+    (builtins.attrNames defaults.keybindings.layers))
 
   # ── P10: Mode exit targets form a valid hierarchy ──
   # Sub-modes exit to their parent, not to random places

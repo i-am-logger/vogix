@@ -300,6 +300,23 @@
         "type": "github"
       }
     },
+    "liquidctl-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1775539741,
+        "narHash": "sha256-tOKjBnrpMZSz4SEbnJhelfH+X9F3fSpZ62CiGDoSFZs=",
+        "owner": "i-am-logger",
+        "repo": "liquidctl",
+        "rev": "708a375c7ef284a05577f956ec24673d03e2b409",
+        "type": "github"
+      },
+      "original": {
+        "owner": "i-am-logger",
+        "ref": "feat/kraken-2024-elite-rgb",
+        "repo": "liquidctl",
+        "type": "github"
+      }
+    },
     "nix": {
       "inputs": {
         "flake-compat": [
@@ -431,6 +448,7 @@
         "devenv": "devenv",
         "home-manager": "home-manager",
         "iterm2-schemes": "iterm2-schemes",
+        "liquidctl-src": "liquidctl-src",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay",
         "tinted-schemes": "tinted-schemes",
@@ -498,11 +516,11 @@
     "vogix16-themes": {
       "flake": false,
       "locked": {
-        "lastModified": 1775472987,
-        "narHash": "sha256-eRlZTiQeTGQRzhj1GzolAQemQ7n0Drd0t/oUiCWioc0=",
+        "lastModified": 1775536832,
+        "narHash": "sha256-j4x1JuSnqfaEcu85bbaZoC6yriylSvsyFdq/OMqYbjo=",
         "owner": "i-am-logger",
         "repo": "vogix16-themes",
-        "rev": "f5b11e43be3273c621e8e91d5b9514e1882c8a49",
+        "rev": "a3a4671c5b7b9e877cdd5e384281651d9a17eb6e",
         "type": "github"
       },
       "original": {

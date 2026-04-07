@@ -22,7 +22,7 @@ use std::fs;
 use std::path::PathBuf;
 
 // Re-export types
-pub use types::{AppMetadata, ShaderConfig, TemplatesConfig, ThemeSourcesConfig};
+pub use types::{AppMetadata, HardwareDevice, ShaderConfig, TemplatesConfig, ThemeSourcesConfig};
 
 /// Main configuration loaded from runtime manifest
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,6 +30,7 @@ pub struct Config {
     pub default_theme: String,
     pub default_variant: String,
     pub apps: HashMap<String, AppMetadata>,
+    pub hardware: HashMap<String, HardwareDevice>,
     pub templates: Option<TemplatesConfig>,
     pub theme_sources: Option<ThemeSourcesConfig>,
     pub shader: Option<ShaderConfig>,
@@ -41,6 +42,7 @@ impl Default for Config {
             default_theme: "aikido".to_string(),
             default_variant: "dark".to_string(),
             apps: HashMap::new(),
+            hardware: HashMap::new(),
             templates: None,
             theme_sources: None,
             shader: None,
@@ -79,6 +81,9 @@ impl Config {
         // Parse app metadata from [apps] section
         let apps = Self::parse_apps(&manifest);
 
+        // Parse hardware devices from [hardware] section
+        let hardware = Self::parse_hardware(&manifest);
+
         // Parse templates config
         let templates = Self::parse_templates(&manifest);
 
@@ -92,6 +97,7 @@ impl Config {
             default_theme,
             default_variant,
             apps,
+            hardware,
             templates,
             theme_sources,
             shader,
@@ -143,6 +149,23 @@ impl Config {
             .unwrap_or_default()
     }
 
+    /// Parse the [hardware] section from manifest
+    fn parse_hardware(manifest: &toml::Value) -> HashMap<String, HardwareDevice> {
+        manifest
+            .get("hardware")
+            .and_then(|h| h.as_table())
+            .map(|hw_table| {
+                hw_table
+                    .iter()
+                    .filter_map(|(device_name, device_data)| {
+                        let command = device_data.get("command")?.as_str()?.to_string();
+                        Some((device_name.clone(), HardwareDevice { command }))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Parse the [templates] section from manifest
     fn parse_templates(manifest: &toml::Value) -> Option<TemplatesConfig> {
         manifest
@@ -187,7 +210,7 @@ impl Config {
         let intensity = table
             .get("intensity")
             .and_then(|v| v.as_float())
-            .unwrap_or(1.0) as f32;
+            .unwrap_or(0.5) as f32;
         let brightness = table
             .get("brightness")
             .and_then(|v| v.as_float())

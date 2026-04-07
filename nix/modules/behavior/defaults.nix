@@ -17,7 +17,56 @@
 _:
 
 {
-  # ── Keybindings (input config) ──
+  # ── Input settings ──
+  input = {
+    repeatDelay = 200;
+    sensitivity = -0.3;
+    naturalScroll = true;
+    leftHanded = true;
+    floatSwitchOverrideFocus = 2;
+    numlockByDefault = false;
+  };
+
+  # ── Touchpad ──
+  touchpad = {
+    naturalScroll = true;
+    disableWhileTyping = true;
+    scrollFactor = 0.3;
+  };
+
+  # ── Layout ──
+  layout = "dwindle";
+
+  layouts = {
+    dwindle = {
+      pseudotile = true;
+      preserve_split = true;
+      force_split = 2;
+      smart_resizing = true;
+      use_active_for_splits = true;
+    };
+    master = {
+      orientation = "center";
+      special_scale_factor = 0.5;
+    };
+  };
+
+  # ── Misc ──
+  misc = {
+    fontFamily = "Fira Code Nerd Font";
+    disableLogo = true;
+    disableAutoreload = false;
+    alwaysFollowOnDnd = true;
+    layersHogKeyboardFocus = true;
+    animateManualResizes = true;
+    enableSwallow = false;
+    focusOnActivate = true;
+  };
+
+  # ── Gestures ──
+  gestures = { };
+
+  # ── Keybindings (modal input) ──
   keybindings = {
     modKey = "super";
 
@@ -125,7 +174,7 @@ _:
         help = { key = "super + slash"; action = "exec, vogix-modes-global"; description = "Show keybindings"; };
 
         # ── System console (fullscreen tmux overlay, available everywhere) ──
-        console = { key = "F12"; action = "exec, hyprctl --batch 'dispatch togglespecialworkspace console ; dispatch submap console ; dispatch focuswindow class:vogix-console ; dispatch resizewindowpixel exact 90% 75%,class:vogix-console ; dispatch centerwindow'"; description = "Toggle system console"; };
+        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "Toggle system console"; };
 
         # ── Desktop mode entry ──
         enterDesktop = { key = "Scroll_Lock"; action = "submap, desktop"; description = "Enter desktop mode (CapsLock tap)"; };
@@ -178,7 +227,7 @@ _:
         enterTheme = { key = "v"; action = "submap, theme"; description = "Theme mode (vogix)"; };
 
         # ── Console + history ──
-        console = { key = "F12"; action = "togglespecialworkspace, console"; description = "System console"; };
+        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
         undoSession = { key = "u"; action = "exec, vogix session undo"; description = "Undo last window change"; };
 
         help = { key = "slash"; action = "exec, vogix-modes-desktop"; description = "Show keybindings"; };
@@ -226,7 +275,7 @@ _:
         toggleSplit = { key = "o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
         swap = { key = "s"; action = "swapnext,"; description = "Swap with neighbor"; };
 
-        console = { key = "F12"; action = "togglespecialworkspace, console"; description = "System console"; };
+        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
         help = { key = "slash"; action = "exec, vogix-modes-arrange"; description = "Show keybindings"; };
       };
     };
@@ -249,7 +298,7 @@ _:
 
         showStatus = { key = "space"; action = "exec, vogix status | xargs notify-send 'Vogix'"; description = "Show current theme"; };
 
-        console = { key = "F12"; action = "togglespecialworkspace, console"; description = "System console"; };
+        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
         help = { key = "slash"; action = "exec, vogix-modes-theme"; description = "Show keybindings"; };
       };
     };
@@ -259,9 +308,10 @@ _:
     console = {
       enter = null;
       # No exit key — F12 and Escape are handled in bindings (they need to close the workspace too)
+      # Two F12 bindings execute sequentially: toggle workspace first (triggers animation), then exit submap
       bindings = {
-        exitConsoleF12 = { key = "F12"; action = "exec, hyprctl --batch 'dispatch togglespecialworkspace console ; dispatch submap reset'"; description = "Close console"; };
-        exitConsoleEsc = { key = "escape"; action = "exec, hyprctl --batch 'dispatch togglespecialworkspace console ; dispatch submap reset'"; description = "Exit to app mode"; };
+        exitConsoleA = { key = "F12"; action = "togglespecialworkspace, console"; description = "Close console"; };
+        exitConsoleB = { key = "F12"; action = "submap, reset"; description = "Return to app mode"; };
       };
     };
   };
