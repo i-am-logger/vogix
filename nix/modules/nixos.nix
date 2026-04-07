@@ -3,11 +3,12 @@
 # Provides system-level integration:
 # - Console colors (TTY) from vogix theme
 # - Security wrappers for console theme switching (chvt, setvtrgb)
+# - Hardware modules (Kraken Elite, Keychron, OpenRGB)
 #
 # NOTE: User configuration (config.toml, app configs) is handled by
 # the home-manager module at ~/.local/state/vogix/
 { vogix16Themes
-,
+, liquidctlSrc
 }:
 
 { config
@@ -81,6 +82,11 @@ let
     ];
 in
 {
+  imports = [
+    ./hardware
+    ./openrgb.nix
+  ];
+
   options.vogix = {
     enable = mkEnableOption "vogix theme management";
 
@@ -139,29 +145,30 @@ in
     }
 
     # Auto-detect console colors from home-manager if enabled
-    (mkIf (cfg.autoFromHomeManager && cfg.theme == null && cfg.variant == null) {
-      console.colors =
-        let
-          selectedThemeName = if hmVogixCfg != null then hmVogixCfg.theme else null;
-          selectedPolarity = if hmVogixCfg != null then hmVogixCfg.variant else null;
+    (
+      let
+        selectedThemeName = if hmVogixCfg != null then hmVogixCfg.appearance.theme else null;
+        selectedPolarity = if hmVogixCfg != null then hmVogixCfg.appearance.variant else null;
 
-          loadedTheme =
-            if selectedThemeName != null && vogix16Import.themes ? ${selectedThemeName} then
-              vogix16Import.themes.${selectedThemeName}
-            else
-              null;
+        loadedTheme =
+          if selectedThemeName != null && vogix16Import.themes ? ${selectedThemeName} then
+            vogix16Import.themes.${selectedThemeName}
+          else
+            null;
 
-          selectedVariantName =
-            if loadedTheme != null then loadedTheme.defaults.${selectedPolarity} or selectedPolarity else null;
+        selectedVariantName =
+          if loadedTheme != null then loadedTheme.defaults.${selectedPolarity} or selectedPolarity else null;
 
-          themeColors =
-            if loadedTheme != null && selectedVariantName != null then
-              loadedTheme.variants.${selectedVariantName}.colors or null
-            else
-              null;
-        in
-        mkIf (themeColors != null) (mkConsoleColors themeColors);
-    })
+        themeColors =
+          if loadedTheme != null && selectedVariantName != null then
+            loadedTheme.variants.${selectedVariantName}.colors or null
+          else
+            null;
+      in
+      mkIf (cfg.autoFromHomeManager && cfg.theme == null && cfg.variant == null && themeColors != null) {
+        console.colors = mkConsoleColors themeColors;
+      }
+    )
 
     # Explicit theme/variant configuration for console
     (mkIf (cfg.theme != null && cfg.variant != null) {
@@ -174,12 +181,16 @@ in
         mkConsoleColors themeColors;
     })
 
-    # OpenRGB: SMBus access for DDR5 RGB, motherboard RGB, GPU RGB
-    # Vogix uses OpenRGB as its peripheral RGB backend
-    {
-      boot.kernelModules = [ "i2c-dev" "i2c-piix4" ];
-      boot.kernelParams = [ "acpi_enforce_resources=lax" ];
-    }
+    # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
+    (mkIf cfg.hardware.kraken-elite.enable {
+      nixpkgs.overlays = [
+        (_final: prev: {
+          liquidctl = prev.liquidctl.overridePythonAttrs (_old: {
+            src = liquidctlSrc;
+          });
+        })
+      ];
+    })
 
     # Kanata service for behavior module (evdev key remapping)
     # System-wide: nav layer, Super→Ctrl, CapsLock toggle

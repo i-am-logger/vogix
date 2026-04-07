@@ -16,6 +16,18 @@ pub struct State {
     pub current_variant: String,
     /// Timestamp of last theme application
     pub last_applied: Option<String>,
+    /// Whether the shader is enabled (None = follow config, Some = user override)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_enabled: Option<bool>,
+    /// Shader intensity override [0.0..1.0] (None = use config default)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_intensity: Option<f32>,
+    /// Shader brightness override [0.1..2.0] (None = use config default)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_brightness: Option<f32>,
+    /// Shader saturation override [0.0..2.0] (None = use config default)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_saturation: Option<f32>,
 }
 
 impl Default for State {
@@ -25,6 +37,10 @@ impl Default for State {
             current_theme: "aikido".to_string(),
             current_variant: "night".to_string(),
             last_applied: None,
+            shader_enabled: None,
+            shader_intensity: None,
+            shader_brightness: None,
+            shader_saturation: None,
         }
     }
 }
@@ -100,7 +116,7 @@ mod tests {
             current_scheme: Scheme::Vogix16,
             current_theme: "test".to_string(),
             current_variant: "dark".to_string(),
-            last_applied: None,
+            ..Default::default()
         };
         assert_eq!(state.current_scheme, Scheme::Vogix16);
         assert_eq!(state.current_theme, "test");
@@ -125,7 +141,7 @@ mod tests {
             current_scheme: Scheme::Base16,
             current_theme: "rose-pine".to_string(),
             current_variant: "moon".to_string(),
-            last_applied: None,
+            ..Default::default()
         };
 
         // Save state to temp path
@@ -167,6 +183,7 @@ mod tests {
             current_theme: "dracula".to_string(),
             current_variant: "default".to_string(),
             last_applied: Some("2024-01-01T00:00:00Z".to_string()),
+            ..Default::default()
         };
 
         let serialized = toml::to_string_pretty(&state).unwrap();

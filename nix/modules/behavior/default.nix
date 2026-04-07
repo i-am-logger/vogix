@@ -32,11 +32,18 @@ let
         desktop = mergeOr (modes.desktop or { }) defaults.modes.desktop;
         arrange = mergeOr (modes.arrange or { }) defaults.modes.arrange;
         theme = mergeOr (modes.theme or { }) defaults.modes.theme;
+        console = mergeOr (modes.console or { }) defaults.modes.console;
       };
       mouse = mergeOr (kb.mouse or { }) defaults.keybindings.mouse;
       layers = mergeOr (kb.layers or { }) defaults.keybindings.layers;
       universal = defaults._superCtrlRemaps;
       modeColors = modes.modeColors or { };
+      input = mergeOr (behaviorCfg.input or { }) defaults.input;
+      touchpad = mergeOr (behaviorCfg.touchpad or { }) defaults.touchpad;
+      layout = behaviorCfg.layout or defaults.layout;
+      layouts = mergeOr (behaviorCfg.layouts or { }) defaults.layouts;
+      misc = mergeOr (behaviorCfg.misc or { }) defaults.misc;
+      gestures = mergeOr (behaviorCfg.gestures or { }) defaults.gestures;
     };
 in
 {

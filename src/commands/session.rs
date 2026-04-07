@@ -11,7 +11,7 @@ use crate::errors::Result;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// A saved window from Hyprland
@@ -42,9 +42,10 @@ struct Session {
 }
 
 fn session_dir() -> PathBuf {
-    let state = std::env::var("XDG_STATE_HOME")
-        .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap()));
-    PathBuf::from(state).join("vogix").join("sessions")
+    let state_dir = dirs::state_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("state")))
+        .expect("could not determine state directory");
+    state_dir.join("vogix").join("sessions")
 }
 
 pub fn session_path(name: &str) -> PathBuf {
@@ -264,7 +265,7 @@ pub fn handle_session_restore(name: &str, dry_run: bool) -> Result<()> {
     restore_from_path(&path, name, dry_run)
 }
 
-fn restore_from_path(path: &PathBuf, label: &str, dry_run: bool) -> Result<()> {
+fn restore_from_path(path: &Path, label: &str, dry_run: bool) -> Result<()> {
     if !path.exists() {
         return Err(format!("Session not found: {:?}", path).into());
     }
@@ -342,26 +343,26 @@ fn restore_from_path(path: &PathBuf, label: &str, dry_run: bool) -> Result<()> {
         }
     };
 
-    if let Some(output) = output {
-        if output.status.success() {
-            let current: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)?;
+    if let Some(output) = output
+        && output.status.success()
+    {
+        let current: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)?;
 
-            for window in &session.windows {
-                // Find matching window by class
-                for client in &current {
-                    let client_class = client["class"].as_str().unwrap_or("");
-                    if client_class == window.class {
-                        let addr = client["address"].as_str().unwrap_or("");
-                        if !addr.is_empty() {
-                            Command::new("hyprctl")
-                                .args([
-                                    "dispatch",
-                                    "movetoworkspacesilent",
-                                    &format!("{},address:{}", window.workspace, addr),
-                                ])
-                                .output()
-                                .ok();
-                        }
+        for window in &session.windows {
+            // Find matching window by class
+            for client in &current {
+                let client_class = client["class"].as_str().unwrap_or("");
+                if client_class == window.class {
+                    let addr = client["address"].as_str().unwrap_or("");
+                    if !addr.is_empty() {
+                        Command::new("hyprctl")
+                            .args([
+                                "dispatch",
+                                "movetoworkspacesilent",
+                                &format!("{},address:{}", window.workspace, addr),
+                            ])
+                            .output()
+                            .ok();
                     }
                 }
             }
@@ -582,219 +583,220 @@ mod tests {
             );
         }
     }
-}
 
-// ── Stack/undo tests ──
+    // ── Stack/undo tests ──
 
-#[test]
-fn test_push_autosave_stack_creates_numbered_files() {
-    let tmp = std::env::temp_dir().join("vogix-test-stack");
-    let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).unwrap();
+    #[test]
+    fn test_push_autosave_stack_creates_numbered_files() {
+        let tmp = std::env::temp_dir().join("vogix-test-stack");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
 
-    // Override session_dir for test
-    let autosave = tmp.join("autosave.json");
-    fs::write(&autosave, r#"{"windows":[],"terminals":[]}"#).unwrap();
+        // Override session_dir for test
+        let autosave = tmp.join("autosave.json");
+        fs::write(&autosave, r#"{"windows":[],"terminals":[]}"#).unwrap();
 
-    // Simulate stack push by renaming
-    let autosave1 = tmp.join("autosave-1.json");
-    fs::rename(&autosave, &autosave1).unwrap();
-    fs::write(&autosave, r#"{"windows":[{"class":"test","title":"t","workspace":"1","floating":false,"size":[0,0],"at":[0,0],"fullscreen":0}],"terminals":[]}"#).unwrap();
+        // Simulate stack push by renaming
+        let autosave1 = tmp.join("autosave-1.json");
+        fs::rename(&autosave, &autosave1).unwrap();
+        fs::write(&autosave, r#"{"windows":[{"class":"test","title":"t","workspace":"1","floating":false,"size":[0,0],"at":[0,0],"fullscreen":0}],"terminals":[]}"#).unwrap();
 
-    assert!(autosave.exists());
-    assert!(autosave1.exists());
+        assert!(autosave.exists());
+        assert!(autosave1.exists());
 
-    // Verify different content
-    let current: Session = serde_json::from_str(&fs::read_to_string(&autosave).unwrap()).unwrap();
-    let prev: Session = serde_json::from_str(&fs::read_to_string(&autosave1).unwrap()).unwrap();
-    assert_eq!(current.windows.len(), 1);
-    assert_eq!(prev.windows.len(), 0);
+        // Verify different content
+        let current: Session =
+            serde_json::from_str(&fs::read_to_string(&autosave).unwrap()).unwrap();
+        let prev: Session = serde_json::from_str(&fs::read_to_string(&autosave1).unwrap()).unwrap();
+        assert_eq!(current.windows.len(), 1);
+        assert_eq!(prev.windows.len(), 0);
 
-    let _ = fs::remove_dir_all(&tmp);
-}
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
-#[test]
-fn test_session_roundtrip_with_all_fields() {
-    let session = Session {
-        windows: vec![
-            HyprWindow {
+    #[test]
+    fn test_session_roundtrip_with_all_fields() {
+        let session = Session {
+            windows: vec![
+                HyprWindow {
+                    class: "brave-browser".to_string(),
+                    title: "Test Page".to_string(),
+                    workspace: "3".to_string(),
+                    floating: true,
+                    size: [1920, 1080],
+                    at: [100, 50],
+                    fullscreen: 1,
+                },
+                HyprWindow {
+                    class: "org.wezfurlong.wezterm".to_string(),
+                    title: "bash".to_string(),
+                    workspace: "1".to_string(),
+                    floating: false,
+                    size: [800, 600],
+                    at: [0, 0],
+                    fullscreen: 0,
+                },
+            ],
+            terminals: vec![
+                WeztermPane {
+                    pane_id: 42,
+                    title: "btop".to_string(),
+                    cwd: "file://yoga/home/logger/".to_string(),
+                },
+                WeztermPane {
+                    pane_id: 99,
+                    title: "✳ lumen".to_string(),
+                    cwd: "file://yoga/home/logger/Code/github/logger/lumen/".to_string(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string_pretty(&session).unwrap();
+        let restored: Session = serde_json::from_str(&json).unwrap();
+
+        // Property: all fields survive roundtrip
+        assert_eq!(restored.windows.len(), 2);
+        assert_eq!(restored.terminals.len(), 2);
+        assert_eq!(restored.windows[0].class, "brave-browser");
+        assert_eq!(restored.windows[0].workspace, "3");
+        assert!(restored.windows[0].floating);
+        assert_eq!(restored.windows[0].size, [1920, 1080]);
+        assert_eq!(restored.windows[0].fullscreen, 1);
+        assert_eq!(restored.windows[1].floating, false);
+        assert_eq!(restored.terminals[0].pane_id, 42);
+        assert_eq!(restored.terminals[1].title, "✳ lumen");
+    }
+
+    // Property: MAX_AUTOSAVE_STACK is reasonable
+    #[test]
+    fn test_max_autosave_stack_bounds() {
+        assert!(MAX_AUTOSAVE_STACK > 0);
+        assert!(MAX_AUTOSAVE_STACK <= 100); // Don't keep too many
+    }
+
+    // Property: pane_launch_command always returns wezterm with --cwd
+    #[test]
+    fn test_pane_launch_always_has_cwd() {
+        let titles = [
+            "btop",
+            "lumen",
+            "claude",
+            "hx",
+            "bash",
+            "unknown",
+            "",
+            "ζ€ε₯‡ηš„η¨‹εΊ",
+        ];
+        for title in &titles {
+            let pane = WeztermPane {
+                pane_id: 0,
+                title: title.to_string(),
+                cwd: "file://host/home/user/".to_string(),
+            };
+            let (cmd, args) = pane_launch_command(&pane);
+            assert_eq!(cmd, "wezterm");
+            assert!(
+                args.contains(&"--cwd".to_string()),
+                "Missing --cwd for title: {}",
+                title
+            );
+            assert!(
+                args.contains(&"/home/user/".to_string()),
+                "Missing dir for title: {}",
+                title
+            );
+        }
+    }
+
+    // ── --json and --dry-run tests ──
+
+    #[test]
+    fn test_restore_file_nonexistent() {
+        let result = handle_session_restore_file("/nonexistent/path.json", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_restore_file_dry_run() {
+        let tmp = std::env::temp_dir().join("vogix-test-dry-run.json");
+        let session = Session {
+            windows: vec![HyprWindow {
                 class: "brave-browser".to_string(),
-                title: "Test Page".to_string(),
-                workspace: "3".to_string(),
-                floating: true,
-                size: [1920, 1080],
-                at: [100, 50],
-                fullscreen: 1,
-            },
-            HyprWindow {
-                class: "org.wezfurlong.wezterm".to_string(),
-                title: "bash".to_string(),
+                title: "Test".to_string(),
                 workspace: "1".to_string(),
                 floating: false,
                 size: [800, 600],
                 at: [0, 0],
                 fullscreen: 0,
-            },
-        ],
-        terminals: vec![
-            WeztermPane {
-                pane_id: 42,
-                title: "btop".to_string(),
-                cwd: "file://yoga/home/logger/".to_string(),
-            },
-            WeztermPane {
-                pane_id: 99,
-                title: "✳ lumen".to_string(),
-                cwd: "file://yoga/home/logger/Code/github/logger/lumen/".to_string(),
-            },
-        ],
-    };
-
-    let json = serde_json::to_string_pretty(&session).unwrap();
-    let restored: Session = serde_json::from_str(&json).unwrap();
-
-    // Property: all fields survive roundtrip
-    assert_eq!(restored.windows.len(), 2);
-    assert_eq!(restored.terminals.len(), 2);
-    assert_eq!(restored.windows[0].class, "brave-browser");
-    assert_eq!(restored.windows[0].workspace, "3");
-    assert!(restored.windows[0].floating);
-    assert_eq!(restored.windows[0].size, [1920, 1080]);
-    assert_eq!(restored.windows[0].fullscreen, 1);
-    assert_eq!(restored.windows[1].floating, false);
-    assert_eq!(restored.terminals[0].pane_id, 42);
-    assert_eq!(restored.terminals[1].title, "✳ lumen");
-}
-
-// Property: MAX_AUTOSAVE_STACK is reasonable
-#[test]
-fn test_max_autosave_stack_bounds() {
-    assert!(MAX_AUTOSAVE_STACK > 0);
-    assert!(MAX_AUTOSAVE_STACK <= 100); // Don't keep too many
-}
-
-// Property: pane_launch_command always returns wezterm with --cwd
-#[test]
-fn test_pane_launch_always_has_cwd() {
-    let titles = [
-        "btop",
-        "lumen",
-        "claude",
-        "hx",
-        "bash",
-        "unknown",
-        "",
-        "ζ€ε₯‡ηš„η¨‹εΊ",
-    ];
-    for title in &titles {
-        let pane = WeztermPane {
-            pane_id: 0,
-            title: title.to_string(),
-            cwd: "file://host/home/user/".to_string(),
+            }],
+            terminals: vec![WeztermPane {
+                pane_id: 1,
+                title: "bash".to_string(),
+                cwd: "file://yoga/home/user/".to_string(),
+            }],
         };
-        let (cmd, args) = pane_launch_command(&pane);
-        assert_eq!(cmd, "wezterm");
-        assert!(
-            args.contains(&"--cwd".to_string()),
-            "Missing --cwd for title: {}",
-            title
-        );
-        assert!(
-            args.contains(&"/home/user/".to_string()),
-            "Missing dir for title: {}",
-            title
-        );
+        fs::write(&tmp, serde_json::to_string(&session).unwrap()).unwrap();
+
+        // Dry run should succeed without launching anything
+        let result = handle_session_restore_file(tmp.to_str().unwrap(), true);
+        assert!(result.is_ok(), "Dry run should succeed: {:?}", result.err());
+
+        let _ = fs::remove_file(&tmp);
     }
-}
 
-// ── --json and --dry-run tests ──
-
-#[test]
-fn test_restore_file_nonexistent() {
-    let result = handle_session_restore_file("/nonexistent/path.json", false);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_restore_file_dry_run() {
-    let tmp = std::env::temp_dir().join("vogix-test-dry-run.json");
-    let session = Session {
-        windows: vec![HyprWindow {
-            class: "brave-browser".to_string(),
-            title: "Test".to_string(),
-            workspace: "1".to_string(),
-            floating: false,
-            size: [800, 600],
-            at: [0, 0],
-            fullscreen: 0,
-        }],
-        terminals: vec![WeztermPane {
-            pane_id: 1,
-            title: "bash".to_string(),
-            cwd: "file://yoga/home/user/".to_string(),
-        }],
-    };
-    fs::write(&tmp, serde_json::to_string(&session).unwrap()).unwrap();
-
-    // Dry run should succeed without launching anything
-    let result = handle_session_restore_file(tmp.to_str().unwrap(), true);
-    assert!(result.is_ok(), "Dry run should succeed: {:?}", result.err());
-
-    let _ = fs::remove_file(&tmp);
-}
-
-#[test]
-fn test_cli_parse_restore_with_json() {
-    use crate::cli::Cli;
-    use clap::Parser;
-    let cli =
-        Cli::try_parse_from(["vogix", "session", "restore", "--json", "/tmp/test.json"]).unwrap();
-    if let crate::cli::Commands::Session {
-        command: crate::cli::SessionCommands::Restore { json, dry_run, .. },
-    } = cli.command
-    {
-        assert_eq!(json.unwrap(), "/tmp/test.json");
-        assert!(!dry_run);
-    } else {
-        panic!("Expected Session Restore");
+    #[test]
+    fn test_cli_parse_restore_with_json() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["vogix", "session", "restore", "--json", "/tmp/test.json"])
+            .unwrap();
+        if let crate::cli::Commands::Session {
+            command: crate::cli::SessionCommands::Restore { json, dry_run, .. },
+        } = cli.command
+        {
+            assert_eq!(json.unwrap(), "/tmp/test.json");
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Session Restore");
+        }
     }
-}
 
-#[test]
-fn test_cli_parse_restore_with_dry_run() {
-    use crate::cli::Cli;
-    use clap::Parser;
-    let cli = Cli::try_parse_from(["vogix", "session", "restore", "--dry-run"]).unwrap();
-    if let crate::cli::Commands::Session {
-        command: crate::cli::SessionCommands::Restore { dry_run, .. },
-    } = cli.command
-    {
-        assert!(dry_run);
-    } else {
-        panic!("Expected Session Restore");
+    #[test]
+    fn test_cli_parse_restore_with_dry_run() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["vogix", "session", "restore", "--dry-run"]).unwrap();
+        if let crate::cli::Commands::Session {
+            command: crate::cli::SessionCommands::Restore { dry_run, .. },
+        } = cli.command
+        {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Session Restore");
+        }
     }
-}
 
-#[test]
-fn test_cli_parse_restore_json_and_dry_run() {
-    use crate::cli::Cli;
-    use clap::Parser;
-    let cli = Cli::try_parse_from([
-        "vogix",
-        "session",
-        "restore",
-        "--json",
-        "/tmp/x.json",
-        "--dry-run",
-    ])
-    .unwrap();
-    if let crate::cli::Commands::Session {
-        command: crate::cli::SessionCommands::Restore { json, dry_run, .. },
-    } = cli.command
-    {
-        assert_eq!(json.unwrap(), "/tmp/x.json");
-        assert!(dry_run);
-    } else {
-        panic!("Expected Session Restore");
+    #[test]
+    fn test_cli_parse_restore_json_and_dry_run() {
+        use crate::cli::Cli;
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "vogix",
+            "session",
+            "restore",
+            "--json",
+            "/tmp/x.json",
+            "--dry-run",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Session {
+            command: crate::cli::SessionCommands::Restore { json, dry_run, .. },
+        } = cli.command
+        {
+            assert_eq!(json.unwrap(), "/tmp/x.json");
+            assert!(dry_run);
+        } else {
+            panic!("Expected Session Restore");
+        }
     }
 }

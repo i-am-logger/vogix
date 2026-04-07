@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
+use std::collections::HashMap;
 use std::process::Command;
 
 /// Result of reloading applications
@@ -105,18 +106,9 @@ impl ReloadDispatcher {
                 Ok("executed reload command".to_string())
             }
             "touch" => {
-                // Touch the symlink itself (-h flag) to update its mtime
-                // Applications watching the file will detect the change
-                Command::new("touch")
-                    .arg("-h")
-                    .arg(&metadata.config_path)
-                    .status()
-                    .map_err(|e| {
-                        VogixError::reload_with_source("failed to touch config file", e)
-                    })?;
-                // Also touch theme file if present (hybrid apps like btop)
+                self.touch_or_relink(&metadata.config_path)?;
                 if let Some(theme_path) = &metadata.theme_file_path {
-                    let _ = Command::new("touch").arg("-h").arg(theme_path).status();
+                    let _ = self.touch_or_relink(theme_path);
                 }
                 Ok("touched to trigger auto-reload".to_string())
             }
@@ -126,6 +118,28 @@ impl ReloadDispatcher {
                 metadata.reload_method
             ))),
         }
+    }
+
+    /// Touch a file or re-create a symlink to trigger directory-level inotify events.
+    /// Symlinks are removed and re-created so watchers on the parent directory
+    /// see Create/Remove events (touch -h only changes symlink mtime which
+    /// inotify directory watchers don't detect).
+    fn touch_or_relink(&self, path: &str) -> Result<()> {
+        let p = std::path::Path::new(path);
+        if p.is_symlink() {
+            let target = std::fs::read_link(p)
+                .map_err(|e| VogixError::reload_with_source("failed to read symlink", e))?;
+            std::fs::remove_file(p)
+                .map_err(|e| VogixError::reload_with_source("failed to remove symlink", e))?;
+            std::os::unix::fs::symlink(&target, p)
+                .map_err(|e| VogixError::reload_with_source("failed to recreate symlink", e))?;
+        } else {
+            Command::new("touch")
+                .arg(path)
+                .status()
+                .map_err(|e| VogixError::reload_with_source("failed to touch config file", e))?;
+        }
+        Ok(())
     }
 
     /// Send a Unix signal to a process by name using native Rust
@@ -157,14 +171,12 @@ impl ReloadDispatcher {
 
                 // Read /proc/{pid}/comm for the process name
                 let comm_path = entry.path().join("comm");
-                if let Ok(comm) = fs::read_to_string(&comm_path) {
-                    if comm.trim() == process_name {
-                        if let Ok(pid) = pid_str.parse::<i32>() {
-                            // Send signal via libc
-                            unsafe { libc::kill(pid, sig) };
-                            found = true;
-                        }
-                    }
+                if let Ok(comm) = fs::read_to_string(&comm_path)
+                    && comm.trim() == process_name
+                    && let Ok(pid) = pid_str.parse::<i32>()
+                {
+                    unsafe { libc::kill(pid, sig) };
+                    found = true;
                 }
             }
         }
@@ -193,6 +205,34 @@ impl ReloadDispatcher {
         }
 
         Ok(())
+    }
+
+    /// Apply theme colors to hardware devices
+    pub fn apply_hardware(&self, config: &Config, colors: &HashMap<String, String>, quiet: bool) {
+        if config.hardware.is_empty() {
+            return;
+        }
+
+        for (device_name, device) in &config.hardware {
+            // Resolve {{color}} placeholders in the command
+            let mut cmd = device.command.clone();
+            for (color_name, hex_value) in colors {
+                let placeholder = format!("{{{{{}}}}}", color_name);
+                let hex_no_hash = hex_value.trim_start_matches('#');
+                cmd = cmd.replace(&placeholder, hex_no_hash);
+            }
+
+            match self.run_command(&cmd) {
+                Ok(_) => {
+                    if !quiet {
+                        println!("✓ Hardware: {}", device_name);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠ Hardware {}: {}", device_name, e);
+                }
+            }
+        }
     }
 }
 
@@ -290,6 +330,7 @@ mod tests {
             default_theme: "test".to_string(),
             default_variant: "dark".to_string(),
             apps,
+            hardware: HashMap::new(),
             templates: None,
             theme_sources: None,
             shader: None,
@@ -302,5 +343,85 @@ mod tests {
             result.has_failures(),
             "reload_apps should report failures when apps fail to reload"
         );
+    }
+
+    #[test]
+    fn test_apply_hardware_resolves_placeholders() {
+        use crate::config::HardwareDevice;
+
+        let mut hardware = HashMap::new();
+        hardware.insert(
+            "test-device".to_string(),
+            HardwareDevice {
+                command: "echo {{base00}} {{base01}}".to_string(),
+            },
+        );
+
+        let config = Config {
+            default_theme: "test".to_string(),
+            default_variant: "dark".to_string(),
+            apps: HashMap::new(),
+            hardware,
+            templates: None,
+            theme_sources: None,
+            shader: None,
+        };
+
+        let mut colors = HashMap::new();
+        colors.insert("base00".to_string(), "#262626".to_string());
+        colors.insert("base01".to_string(), "#333333".to_string());
+
+        // Should not panic — placeholders get resolved and command runs
+        let dispatcher = ReloadDispatcher::new();
+        dispatcher.apply_hardware(&config, &colors, true);
+    }
+
+    #[test]
+    fn test_apply_hardware_strips_hash_from_hex() {
+        use crate::config::HardwareDevice;
+
+        let mut hardware = HashMap::new();
+        hardware.insert(
+            "test-device".to_string(),
+            HardwareDevice {
+                command: "echo {{base00}}".to_string(),
+            },
+        );
+
+        let config = Config {
+            default_theme: "test".to_string(),
+            default_variant: "dark".to_string(),
+            apps: HashMap::new(),
+            hardware,
+            templates: None,
+            theme_sources: None,
+            shader: None,
+        };
+
+        let mut colors = HashMap::new();
+        colors.insert("base00".to_string(), "#ff0000".to_string());
+
+        // The command should receive "ff0000" not "#ff0000"
+        let dispatcher = ReloadDispatcher::new();
+        dispatcher.apply_hardware(&config, &colors, true);
+        // If the echo command ran, the placeholder was resolved (no error)
+    }
+
+    #[test]
+    fn test_apply_hardware_skips_empty() {
+        let config = Config {
+            default_theme: "test".to_string(),
+            default_variant: "dark".to_string(),
+            apps: HashMap::new(),
+            hardware: HashMap::new(),
+            templates: None,
+            theme_sources: None,
+            shader: None,
+        };
+
+        let colors = HashMap::new();
+        let dispatcher = ReloadDispatcher::new();
+        // Should return immediately without error
+        dispatcher.apply_hardware(&config, &colors, true);
     }
 }

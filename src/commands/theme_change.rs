@@ -114,6 +114,22 @@ pub fn handle_theme_change(
     let reload_dispatcher = ReloadDispatcher::new();
     let reload_result = reload_dispatcher.reload_apps(&config, quiet);
 
+    // Apply theme colors to hardware devices
+    if !config.hardware.is_empty()
+        && let Some(theme_sources) = &config.theme_sources
+    {
+        let variant_path = crate::cache::paths::theme_variant_path(
+            theme_sources,
+            &state.current_scheme,
+            &state.current_theme,
+            &state.current_variant,
+        );
+        match theme::load_theme_colors(&variant_path, state.current_scheme) {
+            Ok(colors) => reload_dispatcher.apply_hardware(&config, &colors, quiet),
+            Err(e) => warn!("Hardware theme apply skipped: {}", e),
+        }
+    }
+
     // Auto-apply shader if configured (updates tint color for new theme)
     if let Err(e) = super::shader::maybe_apply_shader(&config, &state) {
         warn!("Shader apply failed: {}", e);

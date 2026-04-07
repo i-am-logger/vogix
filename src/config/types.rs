@@ -28,7 +28,7 @@ pub struct ShaderConfig {
     #[serde(default)]
     pub enabled: bool,
     /// Blend intensity between original and monochrome [0.0..1.0]
-    #[serde(default = "default_one")]
+    #[serde(default = "default_intensity")]
     pub intensity: f32,
     /// Output brightness multiplier [0.1..2.0]
     #[serde(default = "default_one")]
@@ -42,15 +42,26 @@ fn default_one() -> f32 {
     1.0
 }
 
+fn default_intensity() -> f32 {
+    0.5
+}
+
 impl Default for ShaderConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            intensity: 1.0,
+            intensity: 0.5,
             brightness: 1.0,
             saturation: 1.0,
         }
     }
+}
+
+/// Hardware device that receives theme colors on theme change
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HardwareDevice {
+    /// Shell command with {{color}} placeholders (e.g. {{active}}, {{base0C}})
+    pub command: String,
 }
 
 /// Metadata for an application that can be themed

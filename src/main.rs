@@ -73,6 +73,16 @@ fn run() -> Result<()> {
             } => commands::shader::handle_shader_on(intensity, brightness, saturation),
             ShaderCommands::Off => commands::shader::handle_shader_off(),
             ShaderCommands::Toggle => commands::shader::handle_shader_toggle(),
+            ShaderCommands::Status => commands::shader::handle_shader_status(),
+            ShaderCommands::Intensity { value } => {
+                commands::shader::handle_shader_param("intensity", value)
+            }
+            ShaderCommands::Brightness { value } => {
+                commands::shader::handle_shader_param("brightness", value)
+            }
+            ShaderCommands::Saturation { value } => {
+                commands::shader::handle_shader_param("saturation", value)
+            }
         },
 
         Commands::Completions { shell } => handle_completions(shell),

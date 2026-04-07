@@ -51,6 +51,12 @@
       url = "github:i-am-logger/vogix16-themes";
       flake = false;
     };
+
+    # liquidctl fork with Kraken 2024 Elite RGB ring support
+    liquidctl-src = {
+      url = "github:i-am-logger/liquidctl/feat/kraken-2024-elite-rgb";
+      flake = false;
+    };
   };
 
   nixConfig = {
@@ -73,9 +79,10 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
     {
-      # NixOS module (console colors + security wrappers only)
+      # NixOS module (console colors, security wrappers, hardware)
       nixosModules.default = import ./nix/modules/nixos.nix {
         vogix16Themes = inputs.vogix16-themes;
+        liquidctlSrc = inputs.liquidctl-src;
       };
 
       # Home Manager module
@@ -100,16 +107,37 @@
               inherit inputs pkgs;
               modules = [ ./devenv.nix ];
             }).outputs;
+          # Wrap devenv output to add shell completions (devenv builder doesn't support postInstall)
+          vogix = pkgs.runCommand "vogix-${devenvOutputs.vogix.version or "unknown"}"
+            {
+              nativeBuildInputs = [ pkgs.installShellFiles ];
+              meta = devenvOutputs.vogix.meta or { };
+            } ''
+            cp -r ${devenvOutputs.vogix} $out
+            chmod -R u+w $out
+            installShellCompletion --cmd vogix \
+              --bash <($out/bin/vogix completions bash) \
+              --zsh <($out/bin/vogix completions zsh) \
+              --fish <($out/bin/vogix completions fish)
+          '';
         in
         devenvOutputs
         // {
-          default = devenvOutputs.vogix;
+          inherit vogix;
+          default = vogix;
         }
       );
 
       # Overlay to make vogix available in pkgs
       overlays.default = _final: prev: {
         inherit (self.packages.${prev.system}) vogix;
+      };
+
+      # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
+      overlays.liquidctl = _final: prev: {
+        liquidctl = prev.liquidctl.overridePythonAttrs (_old: {
+          src = inputs.liquidctl-src;
+        });
       };
 
       # NixOS VM for testing
