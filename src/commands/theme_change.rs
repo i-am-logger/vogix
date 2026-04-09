@@ -17,7 +17,7 @@ pub fn resolve_polarity_variant(state: &State, new_theme: &str) -> Result<Option
             return Err(VogixError::InvalidTheme(format!(
                 "Theme '{}' not found",
                 new_theme
-            )))
+            )));
         }
     };
 

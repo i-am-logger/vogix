@@ -15,9 +15,9 @@ mod theme;
 
 use cli::{CacheCommands, Cli, Commands, SessionCommands, ShaderCommands, ThemeCommands};
 use commands::{
-    handle_cache_clean, handle_completions, handle_daemon, handle_list,
-    handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
-    handle_session_undo, handle_status,
+    handle_cache_clean, handle_completions, handle_daemon, handle_list, handle_session_list,
+    handle_session_restore, handle_session_restore_file, handle_session_save, handle_session_undo,
+    handle_status,
 };
 use engine::{ShaderParam, VogixAction};
 use errors::Result;
@@ -339,16 +339,16 @@ fn execute_side_effects(
             if !config.hardware.is_empty()
                 && let Some(theme_sources) = &config.theme_sources
             {
-                    let variant_path = cache::paths::theme_variant_path(
-                        theme_sources,
-                        &state.current_scheme,
-                        &state.current_theme,
-                        &state.current_variant,
-                    );
-                    match theme::load_theme_colors(&variant_path, state.current_scheme) {
-                        Ok(colors) => reload_dispatcher.apply_hardware(config, &colors, *quiet),
-                        Err(e) => warn!("Hardware theme apply skipped: {}", e),
-                    }
+                let variant_path = cache::paths::theme_variant_path(
+                    theme_sources,
+                    &state.current_scheme,
+                    &state.current_theme,
+                    &state.current_variant,
+                );
+                match theme::load_theme_colors(&variant_path, state.current_scheme) {
+                    Ok(colors) => reload_dispatcher.apply_hardware(config, &colors, *quiet),
+                    Err(e) => warn!("Hardware theme apply skipped: {}", e),
+                }
             }
 
             // Shader auto-apply

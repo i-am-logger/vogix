@@ -107,7 +107,10 @@ fn functional_color_keys() -> Vec<String> {
     let mut keys = Vec::new();
 
     for slot in ColorSlot::variants() {
-        if !matches!(slot.role(), SemanticRole::Accent | SemanticRole::BrightAccent) {
+        if !matches!(
+            slot.role(),
+            SemanticRole::Accent | SemanticRole::BrightAccent
+        ) {
             continue;
         }
 
@@ -123,7 +126,14 @@ fn functional_color_keys() -> Vec<String> {
     // vogix16 semantic names (these map to accent roles)
     keys.extend(
         [
-            "danger", "success", "warning", "link", "active", "highlight", "special", "notice",
+            "danger",
+            "success",
+            "warning",
+            "link",
+            "active",
+            "highlight",
+            "special",
+            "notice",
         ]
         .iter()
         .map(|s| s.to_string()),

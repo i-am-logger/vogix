@@ -86,7 +86,6 @@ pub fn handle_shader_status() -> Result<()> {
     Ok(())
 }
 
-
 /// Resolve shader params: ShaderState params > config defaults > ShaderParams::default()
 pub fn resolve_shader_params(config: &Config, state: &State) -> ShaderParams {
     let base = match &config.shader {

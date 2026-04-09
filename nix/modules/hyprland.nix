@@ -24,7 +24,7 @@ let
 
   # Apply mkDefault to all leaf values so mynixos/user can override
   mkDefaultAttrs = attrs:
-    lib.mapAttrsRecursive (_path: value: mkDefault value) attrs;
+    lib.mapAttrsRecursive (_path: mkDefault) attrs;
 
 in
 {
