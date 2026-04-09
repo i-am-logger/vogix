@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod engine;
 mod errors;
+mod history;
 mod reload;
 mod scheme;
 mod shader;
@@ -87,13 +88,22 @@ fn run() -> Result<()> {
 
         Commands::Daemon => handle_daemon(),
 
+        // ── Undo/redo — restore from history, not engine ──
+        Commands::Theme {
+            command: ThemeCommands::Undo,
+        } => handle_theme_undo(),
+
+        Commands::Theme {
+            command: ThemeCommands::Redo,
+        } => handle_theme_redo(),
+
         // ── State-mutating commands — go through praxis engine ──
         _ => run_with_engine(&cli.command),
     }
 }
 
 /// Route state-mutating commands through the praxis engine.
-/// Flow: load state → resolve action → engine.next() → save → side effects
+/// Flow: load state → resolve action → engine.next() → save history → save state → side effects
 fn run_with_engine(command: &Commands) -> Result<()> {
     let state = state::State::load()?;
     let config = config::Config::load()?;
@@ -131,6 +141,11 @@ fn run_with_engine(command: &Commands) -> Result<()> {
         return Ok(());
     }
 
+    // Push to history before saving new state
+    let mut hist = history::History::load()?;
+    hist.push(&state);
+    hist.save()?;
+
     // Persist
     new_state.save()?;
     debug!("State saved: {}", new_state.describe());
@@ -139,6 +154,63 @@ fn run_with_engine(command: &Commands) -> Result<()> {
     execute_side_effects(command, &config, new_state)?;
 
     Ok(())
+}
+
+/// Undo last theme change — restore previous state from history
+fn handle_theme_undo() -> Result<()> {
+    let state = state::State::load()?;
+    let config = config::Config::load()?;
+    let mut hist = history::History::load()?;
+
+    match hist.undo(&state) {
+        Some(prev) => {
+            prev.save()?;
+            hist.save()?;
+            info!("Undo → {}", prev.describe());
+
+            // Re-apply everything for the restored state
+            execute_side_effects(
+                &Commands::Theme {
+                    command: ThemeCommands::Refresh { quiet: false },
+                },
+                &config,
+                &prev,
+            )?;
+            Ok(())
+        }
+        None => {
+            info!("Nothing to undo");
+            Ok(())
+        }
+    }
+}
+
+/// Redo last undone theme change
+fn handle_theme_redo() -> Result<()> {
+    let state = state::State::load()?;
+    let config = config::Config::load()?;
+    let mut hist = history::History::load()?;
+
+    match hist.redo(&state) {
+        Some(next) => {
+            next.save()?;
+            hist.save()?;
+            info!("Redo → {}", next.describe());
+
+            execute_side_effects(
+                &Commands::Theme {
+                    command: ThemeCommands::Refresh { quiet: false },
+                },
+                &config,
+                &next,
+            )?;
+            Ok(())
+        }
+        None => {
+            info!("Nothing to redo");
+            Ok(())
+        }
+    }
 }
 
 /// Translate CLI command to VogixAction.
