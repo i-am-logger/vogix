@@ -122,11 +122,11 @@ pub fn generate_glsl(
         }
     }
 
-    // Detect polarity from base00 background luminance
+    // Detect polarity from base00 using praxis sRGB luminance (WCAG 2.1 formula)
     let is_dark = colors
         .get("base00")
-        .and_then(|hex| super::color::hex_to_rgb(hex))
-        .map(|(r, g, b)| r * LUMA_R + g * LUMA_G + b * LUMA_B < 0.5)
+        .and_then(|hex| praxis_domains::science::colors::Rgb::from_hex(hex))
+        .map(|rgb| praxis_domains::science::colors::srgb::is_dark(&rgb))
         .unwrap_or(true);
 
     SHADER_TEMPLATE

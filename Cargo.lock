@@ -153,6 +153,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -902,6 +903,15 @@ name = "praxis"
 version = "0.2.0"
 
 [[package]]
+name = "praxis-domains"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "praxis",
+ "serde",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1428,6 +1438,7 @@ dependencies = [
  "libc",
  "log",
  "praxis",
+ "praxis-domains",
  "serde",
  "serde_json",
  "serde_yaml",

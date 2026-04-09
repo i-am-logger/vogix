@@ -33,6 +33,7 @@ thiserror = "2.0"
 
 # Ontology-driven rule enforcement
 praxis = { path = "../praxis/crates/praxis" }
+praxis-domains = { path = "../praxis/crates/domains" }
 
 # Date/time for state timestamps
 chrono = "0.4"

@@ -143,10 +143,12 @@ in
       nixSrc = pkgs.runCommand "vogix-nix-src" { } ''
         cp -r ${./.} $out
         chmod -R u+w $out
-        mkdir -p $out/.nix-deps/praxis
+        mkdir -p $out/.nix-deps/praxis $out/.nix-deps/domains
         cp -r ${inputs.praxis-src}/crates/praxis/. $out/.nix-deps/praxis/
+        cp -r ${inputs.praxis-src}/crates/domains/. $out/.nix-deps/domains/
         substituteInPlace $out/Cargo.toml \
-          --replace-fail '../praxis/crates/praxis' '.nix-deps/praxis'
+          --replace-fail '../praxis/crates/praxis' '.nix-deps/praxis' \
+          --replace-fail '../praxis/crates/domains' '.nix-deps/domains'
       '';
     in
     {
