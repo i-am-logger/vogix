@@ -122,12 +122,21 @@ pub fn generate_glsl(
         }
     }
 
-    // Detect polarity from base00 using praxis sRGB luminance (WCAG 2.1 formula)
-    let is_dark = colors
-        .get("base00")
-        .and_then(|hex| praxis_domains::science::colors::Rgb::from_hex(hex))
-        .map(|rgb| praxis_domains::science::colors::srgb::is_dark(&rgb))
-        .unwrap_or(true);
+    // Detect polarity using praxis theming ontology
+    // Build a palette from the hex colors, then ask the ontology for polarity
+    let is_dark = {
+        use praxis_domains::science::colors::Rgb;
+        use praxis_domains::technology::theming::base16::{ColorSlot, Polarity};
+        use praxis_domains::technology::theming::ontology;
+
+        let mut palette = ontology::Palette::new();
+        if let Some(hex) = colors.get("base00")
+            && let Some(rgb) = Rgb::from_hex(hex)
+        {
+            palette.insert(ColorSlot::Base00, rgb);
+        }
+        ontology::detect_polarity(&palette) != Some(Polarity::Light)
+    };
 
     SHADER_TEMPLATE
         .replace("{R}", &format!("{:.4}", color.r))
