@@ -37,13 +37,13 @@ in
     })
 
     (mkIf (cfg.enable && (config.wayland.windowManager.hyprland.enable or false)) {
-    wayland.windowManager.hyprland = {
-      settings = lib.mkMerge [
-        (mkDefaultAttrs appearance.settings)
-        (mkDefaultAttrs behavior.settings)
-      ];
-      extraConfig = mkAfter (behavior.extraConfig or "");
-    };
-  })
+      wayland.windowManager.hyprland = {
+        settings = lib.mkMerge [
+          (mkDefaultAttrs appearance.settings)
+          (mkDefaultAttrs behavior.settings)
+        ];
+        extraConfig = mkAfter (behavior.extraConfig or "");
+      };
+    })
   ];
 }
