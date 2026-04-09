@@ -419,11 +419,11 @@
     "praxis-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1775737584,
-        "narHash": "sha256-WD5JS4eFNBtEh66Q47nxTZT6+mujpgPo3VHMrh6VNwY=",
+        "lastModified": 1775738207,
+        "narHash": "sha256-tsUe0skr2D0sBekW/ytZ6587u8JQKbdVeqx1yRnG4LU=",
         "owner": "i-am-logger",
         "repo": "praxis",
-        "rev": "79b88cc9d5f96521065b62a5673eb4be9906bc60",
+        "rev": "9d845446a9b8e07425828ef9786c3f67beb246e3",
         "type": "github"
       },
       "original": {
