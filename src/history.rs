@@ -33,8 +33,8 @@ impl History {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let contents = serde_json::to_string_pretty(self)
-            .map_err(|e| VogixError::Config(e.to_string()))?;
+        let contents =
+            serde_json::to_string_pretty(self).map_err(|e| VogixError::Config(e.to_string()))?;
         fs::write(&path, contents)?;
         Ok(())
     }
@@ -154,8 +154,7 @@ mod tests {
         let contents = serde_json::to_string_pretty(&history).unwrap();
         fs::write(&path, contents).unwrap();
 
-        let loaded: History =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let loaded: History = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded.undo_depth(), 2);
     }
 

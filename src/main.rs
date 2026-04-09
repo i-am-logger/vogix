@@ -19,7 +19,7 @@ use commands::{
     handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
     handle_session_undo, handle_status,
 };
-use engine::{VogixAction, ShaderParam};
+use engine::{ShaderParam, VogixAction};
 use errors::Result;
 use log::{debug, error, info, warn};
 use praxis::engine::{Action, Situation};
@@ -325,8 +325,7 @@ fn execute_side_effects(
 
             // Symlink update
             let symlink_manager = symlink::SymlinkManager::new();
-            symlink_manager
-                .update_current_symlink(&state.current_theme, &state.current_variant)?;
+            symlink_manager.update_current_symlink(&state.current_theme, &state.current_variant)?;
 
             // App reload
             let reload_dispatcher = reload::ReloadDispatcher::new();

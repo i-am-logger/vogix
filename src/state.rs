@@ -177,8 +177,7 @@ impl State {
         let mut state_to_save = self.clone();
         state_to_save.last_applied = Some(chrono::Utc::now().to_rfc3339());
 
-        let contents =
-            toml::to_string_pretty(&state_to_save).map_err(VogixError::TomlSerialize)?;
+        let contents = toml::to_string_pretty(&state_to_save).map_err(VogixError::TomlSerialize)?;
 
         fs::write(state_path, contents)?;
         Ok(())

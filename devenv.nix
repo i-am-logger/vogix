@@ -151,23 +151,23 @@ in
       '';
     in
     {
-    vogix = config.languages.rust.import nixSrc {
-      # Override to skip Windows-specific dependencies
-      crateOverrides = pkgs.defaultCrateOverrides // {
-        # Skip all Windows-specific crates
-        windows-sys = _attrs: null;
-        windows-core = _attrs: null;
-        windows-targets = _attrs: null;
-        windows_x86_64_gnu = _attrs: null;
-        windows_x86_64_msvc = _attrs: null;
-        windows_i686_gnu = _attrs: null;
-        windows_i686_msvc = _attrs: null;
-        windows_aarch64_msvc = _attrs: null;
-        windows_aarch64_gnullvm = _attrs: null;
-        anstyle-wincon = _attrs: null;
+      vogix = config.languages.rust.import nixSrc {
+        # Override to skip Windows-specific dependencies
+        crateOverrides = pkgs.defaultCrateOverrides // {
+          # Skip all Windows-specific crates
+          windows-sys = _attrs: null;
+          windows-core = _attrs: null;
+          windows-targets = _attrs: null;
+          windows_x86_64_gnu = _attrs: null;
+          windows_x86_64_msvc = _attrs: null;
+          windows_i686_gnu = _attrs: null;
+          windows_i686_msvc = _attrs: null;
+          windows_aarch64_msvc = _attrs: null;
+          windows_aarch64_gnullvm = _attrs: null;
+          anstyle-wincon = _attrs: null;
+        };
       };
     };
-  };
 
   # https://devenv.sh/tasks/
   tasks = {

@@ -193,7 +193,11 @@ pub fn navigate_variant(state: &State, direction: &str) -> Result<String> {
 /// Resolve a variant name: could be an exact variant name OR a polarity request (dark/light)
 /// For polarity requests, finds the default variant for that polarity in the theme.
 /// For single-variant themes, always returns the only variant (ignores polarity request).
-pub fn resolve_variant(theme_name: &str, requested: &str, _current_variant: &str) -> Result<String> {
+pub fn resolve_variant(
+    theme_name: &str,
+    requested: &str,
+    _current_variant: &str,
+) -> Result<String> {
     let themes = theme::discover_themes()?;
     let theme_info = theme::get_theme(&themes, theme_name)
         .ok_or_else(|| VogixError::InvalidTheme(format!("Theme '{}' not found", theme_name)))?;
