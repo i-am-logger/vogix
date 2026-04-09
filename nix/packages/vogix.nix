@@ -1,7 +1,6 @@
 { lib
-, pkgs ? null
+, pkgs
 , rustPlatform
-, runCommand ? pkgs.runCommand
 , pkg-config
 , dbus
 , praxis-src ? null

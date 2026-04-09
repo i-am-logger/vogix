@@ -13,7 +13,12 @@ pub fn resolve_polarity_variant(state: &State, new_theme: &str) -> Result<Option
     let themes = theme::discover_themes()?;
     let new_theme_info = match theme::get_theme(&themes, new_theme) {
         Some(t) => t,
-        None => return Ok(None),
+        None => {
+            return Err(VogixError::InvalidTheme(format!(
+                "Theme '{}' not found",
+                new_theme
+            )))
+        }
     };
 
     let current_polarity = theme::get_theme(&themes, &state.current_theme)
