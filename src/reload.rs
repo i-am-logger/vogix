@@ -124,6 +124,8 @@ impl ReloadDispatcher {
     /// Symlinks are removed and re-created so watchers on the parent directory
     /// see Create/Remove events (touch -h only changes symlink mtime which
     /// inotify directory watchers don't detect).
+    /// Touch or re-symlink a config file to trigger inotify events.
+    /// Note: uses unix-specific symlink API (vogix is NixOS/Linux-only).
     fn touch_or_relink(&self, path: &str) -> Result<()> {
         let p = std::path::Path::new(path);
         if p.is_symlink() {
@@ -134,10 +136,16 @@ impl ReloadDispatcher {
             std::os::unix::fs::symlink(&target, p)
                 .map_err(|e| VogixError::reload_with_source("failed to recreate symlink", e))?;
         } else {
-            Command::new("touch")
+            let status = Command::new("touch")
                 .arg(path)
                 .status()
                 .map_err(|e| VogixError::reload_with_source("failed to touch config file", e))?;
+            if !status.success() {
+                return Err(VogixError::reload(format!(
+                    "touch {path} failed with exit code {:?}",
+                    status.code()
+                )));
+            }
         }
         Ok(())
     }

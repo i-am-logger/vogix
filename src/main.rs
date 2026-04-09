@@ -143,17 +143,19 @@ fn run_with_engine(command: &Commands) -> Result<()> {
         return Ok(());
     }
 
-    // Push to history before saving new state
+    // Verify theme-variant exists before committing state
+    // (prevents persisting invalid state if theme was deleted)
+    theme::verify_theme_variant_exists(&new_state.current_theme, &new_state.current_variant)?;
+
+    // Side effects first — if they fail, state is NOT persisted
+    execute_side_effects(command, &config, new_state)?;
+
+    // Commit: push history and persist state only after side effects succeed
     let mut hist = history::History::load()?;
     hist.push(&state);
     hist.save()?;
-
-    // Persist
     new_state.save()?;
     debug!("State saved: {}", new_state.describe());
-
-    // Side effects
-    execute_side_effects(command, &config, new_state)?;
 
     Ok(())
 }
