@@ -469,7 +469,7 @@ mod tests {
     proptest! {
         #[test]
         fn prop_root_always_in_reachable(mode_name in "[a-z]{3,8}") {
-            // Any graph with transitions back to root should have root reachable
+            // Any graph with bidirectional transitions to root validates
             let mut g = ModeGraph::new(ModeId::new("root"));
             g.add_mode(ModeId::new(mode_name.clone()), ModeProperties {
                 catchall: false,
@@ -488,6 +488,64 @@ mod tests {
             let mode = &modes[idx];
             let reachable = g.reachable_from(mode);
             prop_assert!(reachable.contains(&ModeId::new("app")));
+        }
+
+        #[test]
+        fn prop_orphan_node_fails_validation(name in "[a-z]{3,8}") {
+            // A node with no parent (and not root) should fail NoDeadStates
+            let mut g = ModeGraph::new(ModeId::new("root"));
+            g.add_mode(ModeId::new(name.clone()), ModeProperties {
+                catchall: false,
+                parent: None, // orphan
+                depth: 1,
+            });
+            g.add_transition(ModeId::new("root"), ModeId::new(name.clone()));
+            g.add_transition(ModeId::new(name), ModeId::new("root"));
+            let failures = g.validate();
+            prop_assert!(!failures.is_empty(), "orphan should fail validation");
+        }
+
+        #[test]
+        fn prop_island_node_fails_reachability(name in "[a-z]{3,8}") {
+            // A node with parent but no transitions should fail RootReachable
+            let mut g = ModeGraph::new(ModeId::new("root"));
+            g.add_mode(ModeId::new(name.clone()), ModeProperties {
+                catchall: false,
+                parent: Some(ModeId::new("root")),
+                depth: 1,
+            });
+            // No transitions added — island
+            let axiom = RootReachable { graph: g };
+            prop_assert!(!axiom.holds());
+        }
+
+        #[test]
+        fn prop_chain_graph_validates(n in 1usize..5) {
+            // A chain: root → a → b → ... with back-edges validates
+            let mut g = ModeGraph::new(ModeId::new("root"));
+            let mut prev = "root".to_string();
+            for i in 0..n {
+                let name = format!("m{}", i);
+                g.add_mode(ModeId::new(name.clone()), ModeProperties {
+                    catchall: true,
+                    parent: Some(ModeId::new(prev.clone())),
+                    depth: (i + 1) as u8,
+                });
+                g.add_transition(ModeId::new(prev.clone()), ModeId::new(name.clone()));
+                g.add_transition(ModeId::new(name.clone()), ModeId::new(prev.clone()));
+                prev = name;
+            }
+            prop_assert!(g.validate().is_empty());
+        }
+
+        #[test]
+        fn prop_reachable_set_includes_self(idx in 0usize..5) {
+            // reachable_from(x) always includes x
+            let g = default_mode_graph();
+            let modes: Vec<_> = g.modes.keys().cloned().collect();
+            let mode = &modes[idx];
+            let reachable = g.reachable_from(mode);
+            prop_assert!(reachable.contains(mode));
         }
     }
 }

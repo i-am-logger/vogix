@@ -524,5 +524,101 @@ mod tests {
                 prop_assert_eq!(v1, v2);
             }
         }
+
+        #[test]
+        fn prop_naturality_random_palettes(
+            r1 in 0u8..=255, g1 in 0u8..=255, b1 in 0u8..=255,
+            r2 in 0u8..=255, g2 in 0u8..=255, b2 in 0u8..=255,
+        ) {
+            // Natural transformation holds for arbitrary palette colors
+            let mut p1 = Palette::new();
+            p1.insert(ColorSlot::Base00, Rgb::new(r1, g1, b1));
+            p1.insert(ColorSlot::Base01, Rgb::new(r1.wrapping_add(20), g1.wrapping_add(20), b1.wrapping_add(20)));
+            p1.insert(ColorSlot::Base02, Rgb::new(r1.wrapping_add(40), g1.wrapping_add(40), b1.wrapping_add(40)));
+            p1.insert(ColorSlot::Base04, Rgb::new(r1.wrapping_add(80), g1.wrapping_add(80), b1.wrapping_add(80)));
+            p1.insert(ColorSlot::Base05, Rgb::new(r2, g2, b2));
+            p1.insert(ColorSlot::Base08, Rgb::new(r2, g1, b1));
+            p1.insert(ColorSlot::Base0D, Rgb::new(r1, g2, b2));
+
+            let mut p2 = Palette::new();
+            p2.insert(ColorSlot::Base00, Rgb::new(r2, g2, b2));
+            p2.insert(ColorSlot::Base01, Rgb::new(r2.wrapping_add(20), g2.wrapping_add(20), b2.wrapping_add(20)));
+            p2.insert(ColorSlot::Base02, Rgb::new(r2.wrapping_add(40), g2.wrapping_add(40), b2.wrapping_add(40)));
+            p2.insert(ColorSlot::Base04, Rgb::new(r2.wrapping_add(80), g2.wrapping_add(80), b2.wrapping_add(80)));
+            p2.insert(ColorSlot::Base05, Rgb::new(r1, g1, b1));
+            p2.insert(ColorSlot::Base08, Rgb::new(r1, g2, b2));
+            p2.insert(ColorSlot::Base0D, Rgb::new(r2, g1, b1));
+
+            let functors = vec![terminal_functor(), border_functor(), led_functor()];
+
+            // Each functor's output depends ONLY on the palette, not on other functors
+            for f in &functors {
+                let c1 = f.apply(&p1);
+                let c2 = f.apply(&p2);
+
+                for mapping in &f.mappings {
+                    let slot_same = p1.get(&mapping.slot) == p2.get(&mapping.slot);
+                    let val_same = c1.get(&mapping.target_key) == c2.get(&mapping.target_key);
+
+                    if p1.contains_key(&mapping.slot) && p2.contains_key(&mapping.slot) {
+                        // Same slot color → same config value (determinism)
+                        if slot_same {
+                            prop_assert_eq!(
+                                c1.get(&mapping.target_key),
+                                c2.get(&mapping.target_key),
+                                "non-deterministic for slot"
+                            );
+                        }
+                        // Different slot color → different config value (info preservation)
+                        if !slot_same {
+                            prop_assert!(
+                                !val_same,
+                                "lost information for slot"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn prop_empty_palette_empty_config(r in 0u8..=255, g in 0u8..=255, b in 0u8..=255) {
+            // Functor on empty palette produces empty config
+            let _ = (r, g, b); // unused but needed for proptest signature
+            let f = border_functor();
+            let p = Palette::new();
+            let config = f.apply(&p);
+            prop_assert!(config.is_empty());
+        }
+
+        #[test]
+        fn prop_functor_output_keys_are_from_mappings(r in 0u8..=255, g in 0u8..=255, b in 0u8..=255) {
+            // Every key in the output must come from a mapping
+            let f = border_functor();
+            let mut p = Palette::new();
+            p.insert(ColorSlot::Base04, Rgb::new(r, g, b));
+            p.insert(ColorSlot::Base02, Rgb::new(g, b, r));
+            let config = f.apply(&p);
+            let mapping_keys: Vec<_> = f.mappings.iter().map(|m| &m.target_key).collect();
+            for key in config.keys() {
+                prop_assert!(mapping_keys.contains(&key), "unexpected key: {}", key);
+            }
+        }
+
+        #[test]
+        fn prop_hex_no_hash_is_hex_without_hash(r in 0u8..=255, g in 0u8..=255, b in 0u8..=255) {
+            let rgb = Rgb::new(r, g, b);
+            let hex = apply_transform(&rgb, &ColorTransform::Hex);
+            let no_hash = apply_transform(&rgb, &ColorTransform::HexNoHash);
+            prop_assert_eq!(&hex[1..], no_hash.as_str());
+        }
+
+        #[test]
+        fn prop_hyprland_rgb_wraps_hex(r in 0u8..=255, g in 0u8..=255, b in 0u8..=255) {
+            let rgb = Rgb::new(r, g, b);
+            let no_hash = apply_transform(&rgb, &ColorTransform::HexNoHash);
+            let hypr = apply_transform(&rgb, &ColorTransform::HyprlandRgb);
+            prop_assert_eq!(hypr, format!("rgb({})", no_hash));
+        }
     }
 }
