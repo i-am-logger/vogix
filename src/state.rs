@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Shader state — On with params, Off, or Auto (follow config default)
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "lowercase")]
 pub enum ShaderState {
     Off,
@@ -19,6 +19,7 @@ pub enum ShaderState {
         saturation: f32,
     },
     /// Follow config default (user hasn't explicitly toggled)
+    #[default]
     Auto,
 }
 
@@ -29,17 +30,12 @@ fn default_one() -> f32 {
     1.0
 }
 
-impl Default for ShaderState {
-    fn default() -> Self {
-        ShaderState::Auto
-    }
-}
-
 impl ShaderState {
     pub fn is_on(&self) -> bool {
         matches!(self, ShaderState::On { .. })
     }
 
+    #[cfg(test)]
     pub fn params(&self) -> Option<(f32, f32, f32)> {
         match self {
             ShaderState::On {

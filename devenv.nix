@@ -175,15 +175,15 @@ in
     };
 
     "test:clippy" = {
-      exec = "cargo clippy --quiet -- -D warnings";
+      exec = "cargo clippy -p vogix --quiet -- -D warnings";
     };
 
     "test:check" = {
-      exec = "cargo check --quiet";
+      exec = "cargo check -p vogix --quiet";
     };
 
     "test:unit" = {
-      exec = "cargo test --quiet";
+      exec = "cargo test -p vogix --quiet";
     };
   };
 

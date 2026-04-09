@@ -154,20 +154,20 @@ impl Precondition<VogixAction> for ValidShaderParams {
                 saturation,
             } => {
                 let mut issues = vec![];
-                if let Some(i) = intensity {
-                    if !(0.0..=1.0).contains(i) {
-                        issues.push(format!("intensity {:.2} not in [0.0, 1.0]", i));
-                    }
+                if let Some(i) = intensity
+                    && !(0.0..=1.0).contains(i)
+                {
+                    issues.push(format!("intensity {:.2} not in [0.0, 1.0]", i));
                 }
-                if let Some(b) = brightness {
-                    if !(0.1..=2.0).contains(b) {
-                        issues.push(format!("brightness {:.2} not in [0.1, 2.0]", b));
-                    }
+                if let Some(b) = brightness
+                    && !(0.1..=2.0).contains(b)
+                {
+                    issues.push(format!("brightness {:.2} not in [0.1, 2.0]", b));
                 }
-                if let Some(s) = saturation {
-                    if !(0.0..=2.0).contains(s) {
-                        issues.push(format!("saturation {:.2} not in [0.0, 2.0]", s));
-                    }
+                if let Some(s) = saturation
+                    && !(0.0..=2.0).contains(s)
+                {
+                    issues.push(format!("saturation {:.2} not in [0.0, 2.0]", s));
                 }
                 if issues.is_empty() {
                     PreconditionResult::satisfied("valid_shader_params", "all parameters in range")

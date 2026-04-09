@@ -72,10 +72,10 @@ pub fn resolve_variant(
 
     // Polarity request (dark/light)
     if requested_lower == "dark" || requested_lower == "light" {
-        if let Some(variant) = theme_info.default_variant_for_polarity(&requested_lower) {
-            if variant.polarity == requested_lower {
-                return Ok(variant.name.clone());
-            }
+        if let Some(variant) = theme_info.default_variant_for_polarity(&requested_lower)
+            && variant.polarity == requested_lower
+        {
+            return Ok(variant.name.clone());
         }
         let available_polarities: Vec<_> = theme_info
             .variants

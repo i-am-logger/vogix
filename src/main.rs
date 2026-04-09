@@ -334,8 +334,9 @@ fn execute_side_effects(
             let reload_result = reload_dispatcher.reload_apps(config, *quiet);
 
             // Hardware color push
-            if !config.hardware.is_empty() {
-                if let Some(theme_sources) = &config.theme_sources {
+            if !config.hardware.is_empty()
+                && let Some(theme_sources) = &config.theme_sources
+            {
                     let variant_path = cache::paths::theme_variant_path(
                         theme_sources,
                         &state.current_scheme,
@@ -346,7 +347,6 @@ fn execute_side_effects(
                         Ok(colors) => reload_dispatcher.apply_hardware(config, &colors, *quiet),
                         Err(e) => warn!("Hardware theme apply skipped: {}", e),
                     }
-                }
             }
 
             // Shader auto-apply

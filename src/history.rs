@@ -62,10 +62,12 @@ impl History {
         Some(next)
     }
 
+    #[cfg(test)]
     pub fn undo_depth(&self) -> usize {
         self.past.len()
     }
 
+    #[cfg(test)]
     pub fn redo_depth(&self) -> usize {
         self.future.len()
     }
