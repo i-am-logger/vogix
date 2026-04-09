@@ -151,8 +151,35 @@ pub fn handle_theme_change(
     Ok(())
 }
 
+/// Resolve the best variant for a new theme, matching the current polarity.
+/// Returns None if the theme doesn't exist or has no matching variant.
+pub fn resolve_polarity_variant(state: &State, new_theme: &str) -> Result<Option<String>> {
+    let themes = theme::discover_themes()?;
+    let new_theme_info = match theme::get_theme(&themes, new_theme) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+
+    // Get polarity of current variant
+    let current_polarity = theme::get_theme(&themes, &state.current_theme)
+        .and_then(|t| {
+            t.variants
+                .iter()
+                .find(|v| v.name == state.current_variant)
+                .map(|v| v.polarity.clone())
+        })
+        .unwrap_or_else(|| "dark".to_string());
+
+    // Find matching variant in new theme
+    if let Some(default_var) = new_theme_info.default_variant_for_polarity(&current_polarity) {
+        Ok(Some(default_var.name.clone()))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Navigate to a darker or lighter variant based on luminance ordering
-fn navigate_variant(state: &State, direction: &str) -> Result<String> {
+pub fn navigate_variant(state: &State, direction: &str) -> Result<String> {
     // Load themes and find the current one
     let themes = theme::discover_themes()?;
     let current_theme = theme::get_theme(&themes, &state.current_theme).ok_or_else(|| {
@@ -166,7 +193,7 @@ fn navigate_variant(state: &State, direction: &str) -> Result<String> {
 /// Resolve a variant name: could be an exact variant name OR a polarity request (dark/light)
 /// For polarity requests, finds the default variant for that polarity in the theme.
 /// For single-variant themes, always returns the only variant (ignores polarity request).
-fn resolve_variant(theme_name: &str, requested: &str, _current_variant: &str) -> Result<String> {
+pub fn resolve_variant(theme_name: &str, requested: &str, _current_variant: &str) -> Result<String> {
     let themes = theme::discover_themes()?;
     let theme_info = theme::get_theme(&themes, theme_name)
         .ok_or_else(|| VogixError::InvalidTheme(format!("Theme '{}' not found", theme_name)))?;

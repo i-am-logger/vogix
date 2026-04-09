@@ -12,11 +12,11 @@ mod cache;
 mod completions;
 mod daemon;
 mod list;
-mod refresh;
+pub mod refresh;
 pub mod session;
 pub mod shader;
 mod status;
-mod theme_change;
+pub mod theme_change;
 
 pub use cache::handle_cache_clean;
 pub use completions::handle_completions;
