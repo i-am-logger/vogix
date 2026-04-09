@@ -1,7 +1,8 @@
-/// Vogix domain ontology — desktop modes, transitions, qualities.
+/// Vogix domain ontology — will move to praxis once stable.
 ///
-/// Built on praxis category theory + engine primitives.
-/// This crate will move to praxis as technology::desktop::modes
-/// once the API stabilizes.
+/// Modules:
+/// - modes: desktop modal interaction (statechart)
+/// - surfaces: abstract rendering targets (functors from Theme → Surface)
 
 pub mod modes;
+pub mod surfaces;
