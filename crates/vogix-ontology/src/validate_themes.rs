@@ -53,13 +53,17 @@ pub fn parse_yaml_theme(content: &str) -> Option<Palette> {
                 break;
             }
 
-            // Parse baseXX: "#rrggbb"
+            // Parse baseXX: "#rrggbb" (YAML) or baseXX = "#rrggbb" (TOML)
             for slot in ColorSlot::variants() {
                 let key = slot.key();
-                if trimmed.starts_with(&format!("{key}:")) || trimmed.starts_with(&format!("{key} :"))
-                {
-                    // Extract hex value — handle "base00: #1e1e2e" and 'base00: "#1e1e2e"'
-                    if let Some(hex_part) = trimmed.split(':').nth(1) {
+                let is_yaml = trimmed.starts_with(&format!("{key}:"))
+                    || trimmed.starts_with(&format!("{key} :"));
+                let is_toml = trimmed.starts_with(&format!("{key} ="))
+                    || trimmed.starts_with(&format!("{key}="));
+
+                if is_yaml || is_toml {
+                    let delimiter = if is_toml { '=' } else { ':' };
+                    if let Some(hex_part) = trimmed.split(delimiter).nth(1) {
                         let hex = hex_part
                             .trim()
                             .trim_matches('"')
@@ -126,7 +130,7 @@ pub fn scan_themes(base_dir: &Path) -> Vec<ThemeResult> {
 
         for variant_entry in variants.flatten() {
             let vpath = variant_entry.path();
-            if vpath.extension().is_some_and(|e| e == "yaml" || e == "yml") {
+            if vpath.extension().is_some_and(|e| e == "yaml" || e == "yml" || e == "toml") {
                 let variant_name = vpath
                     .file_stem()
                     .unwrap_or_default()
@@ -316,5 +320,61 @@ palette:
             }
         }
         println!();
+    }
+
+    #[test]
+    fn test_scan_all_datasets() {
+        let home = std::path::Path::new(env!("HOME"));
+        let datasets = [
+            ("base16", home.join("Code/github/logger/tinted-schemes/base16")),
+            ("base24", home.join("Code/github/logger/tinted-schemes/base24")),
+            ("vogix16", home.join("Code/github/logger/vogix16-themes")),
+        ];
+
+        println!("\n╔═══════════════════════════════════════════════════════════╗");
+        println!("║         FULL THEME VALIDATION REPORT                      ║");
+        println!("╠═══════════════════════════════════════════════════════════╣");
+
+        let mut grand_total = 0;
+        let mut grand_mono = 0;
+        let mut grand_wcag = 0;
+
+        for (name, dir) in &datasets {
+            if !dir.exists() {
+                println!("║  {}: (not available, skipping)              ║", name);
+                continue;
+            }
+
+            let results = scan_themes(dir);
+            if results.is_empty() {
+                continue;
+            }
+
+            let total = results.len();
+            let mono = results.iter().filter(|r| r.luminance_monotone).count();
+            let wcag = results.iter().filter(|r| r.wcag_aa).count();
+            let dark = results.iter().filter(|r| r.polarity == "dark").count();
+            let light = results.iter().filter(|r| r.polarity == "light").count();
+
+            println!("║                                                           ║");
+            println!("║  {} ({} themes: {} dark, {} light)", name, total, dark, light);
+            println!("║    Luminance monotone: {} ({:.0}%)", mono, mono as f64 / total as f64 * 100.0);
+            println!("║    WCAG AA compliant:  {} ({:.0}%)", wcag, wcag as f64 / total as f64 * 100.0);
+
+            grand_total += total;
+            grand_mono += mono;
+            grand_wcag += wcag;
+        }
+
+        println!("║                                                           ║");
+        println!("╠═══════════════════════════════════════════════════════════╣");
+        println!("║  GRAND TOTAL: {} themes", grand_total);
+        if grand_total > 0 {
+            println!("║    Luminance monotone: {} ({:.0}%)", grand_mono, grand_mono as f64 / grand_total as f64 * 100.0);
+            println!("║    WCAG AA compliant:  {} ({:.0}%)", grand_wcag, grand_wcag as f64 / grand_total as f64 * 100.0);
+        }
+        println!("╚═══════════════════════════════════════════════════════════╝\n");
+
+        assert!(grand_total > 0, "should find at least some themes");
     }
 }
