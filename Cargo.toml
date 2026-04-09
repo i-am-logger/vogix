@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/vogix-ontology"]
+resolver = "3"
+
 [package]
 name = "vogix"
 version = "0.6.4"
