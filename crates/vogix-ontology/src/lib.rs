@@ -6,3 +6,4 @@
 
 pub mod modes;
 pub mod surfaces;
+pub mod validate_themes;
