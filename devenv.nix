@@ -1,6 +1,7 @@
 { pkgs
 , config
 , lib
+, inputs
 , ...
 }:
 let
@@ -136,11 +137,21 @@ in
   };
 
   # https://devenv.sh/outputs/
-  # TODO: crate2nix doesn't handle cross-repo path deps well (praxis).
-  # Praxis needs a flake.nix or registry publish. Nix build is temporarily disabled.
-  # Use `cargo build` locally for now.
-  outputs = {
-    vogix = config.languages.rust.import ./. {
+  outputs =
+    let
+      # Vendor praxis into the source tree for Nix builds
+      # Patches Cargo.toml path from ../praxis/crates/praxis to .nix-deps/praxis
+      nixSrc = pkgs.runCommand "vogix-nix-src" { } ''
+        cp -r ${./.} $out
+        chmod -R u+w $out
+        mkdir -p $out/.nix-deps/praxis
+        cp -r ${inputs.praxis-src}/crates/praxis/. $out/.nix-deps/praxis/
+        substituteInPlace $out/Cargo.toml \
+          --replace-fail '../praxis/crates/praxis' '.nix-deps/praxis'
+      '';
+    in
+    {
+    vogix = config.languages.rust.import nixSrc {
       # Override to skip Windows-specific dependencies
       crateOverrides = pkgs.defaultCrateOverrides // {
         # Skip all Windows-specific crates

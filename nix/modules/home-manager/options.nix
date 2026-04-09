@@ -11,8 +11,8 @@ let
     literalExpression
     ;
 
-  # Import the vogix package
-  vogix = pkgs.callPackage ../../packages/vogix.nix { };
+  # Default vogix package — use pkgs.vogix from overlay if available, else build from source
+  vogix = pkgs.vogix or (pkgs.callPackage ../../packages/vogix.nix { });
 
   # Import shared application discovery
   appDiscovery = import ../lib/applications.nix { inherit lib; };
