@@ -25,6 +25,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout praxis (path dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: i-am-logger/praxis
+          path: ../praxis
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
         with:
