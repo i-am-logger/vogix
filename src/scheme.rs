@@ -1,15 +1,14 @@
 use clap::ValueEnum;
+use praxis_domains::technology::theming::schemes::SchemeType;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-/// Color scheme types supported by Vogix
+/// Color scheme types supported by Vogix.
 ///
-/// Each scheme defines a different color palette structure:
-/// - Ansi16: 16 standard ANSI terminal colors + foreground/background/cursor
-/// - Base16: 16 colors (base00-base0F) following the base16 specification
-/// - Base24: 24 colors (base00-base17) extending base16 with additional UI colors
-/// - Vogix16: 16 semantic colors with functional naming (danger, success, etc.)
+/// Application wrapper around praxis SchemeType — adds CLI (clap),
+/// serialization (serde), display, and parsing traits.
+/// Use `.to_praxis()` for ontological reasoning.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Scheme {
@@ -22,6 +21,36 @@ pub enum Scheme {
     /// Vogix16 native scheme with semantic color names
     #[default]
     Vogix16,
+}
+
+impl Scheme {
+    /// Convert to praxis SchemeType for ontological reasoning.
+    #[allow(dead_code)]
+    pub fn to_praxis(self) -> SchemeType {
+        match self {
+            Scheme::Ansi16 => SchemeType::Ansi16,
+            Scheme::Base16 => SchemeType::Base16,
+            Scheme::Base24 => SchemeType::Base24,
+            Scheme::Vogix16 => SchemeType::Vogix16,
+        }
+    }
+
+    /// Create from praxis SchemeType.
+    #[allow(dead_code)]
+    pub fn from_praxis(st: SchemeType) -> Self {
+        match st {
+            SchemeType::Ansi16 => Scheme::Ansi16,
+            SchemeType::Base16 => Scheme::Base16,
+            SchemeType::Base24 => Scheme::Base24,
+            SchemeType::Vogix16 => Scheme::Vogix16,
+        }
+    }
+
+    /// Number of color slots for this scheme (from ontology).
+    #[allow(dead_code)]
+    pub fn slot_count(self) -> usize {
+        self.to_praxis().slot_count()
+    }
 }
 
 impl fmt::Display for Scheme {
@@ -56,16 +85,6 @@ impl FromStr for Scheme {
 mod tests {
     use super::*;
 
-    // Helper to get all schemes (test-only, alphabetical order)
-    fn all_schemes() -> &'static [Scheme] {
-        &[
-            Scheme::Ansi16,
-            Scheme::Base16,
-            Scheme::Base24,
-            Scheme::Vogix16,
-        ]
-    }
-
     #[test]
     fn test_scheme_display() {
         assert_eq!(Scheme::Vogix16.to_string(), "vogix16");
@@ -84,17 +103,22 @@ mod tests {
     }
 
     #[test]
-    fn test_scheme_all() {
-        let schemes = all_schemes();
-        assert_eq!(schemes.len(), 4);
-        assert!(schemes.contains(&Scheme::Vogix16));
-        assert!(schemes.contains(&Scheme::Base16));
-        assert!(schemes.contains(&Scheme::Base24));
-        assert!(schemes.contains(&Scheme::Ansi16));
+    fn test_scheme_default() {
+        assert_eq!(Scheme::default(), Scheme::Vogix16);
     }
 
     #[test]
-    fn test_scheme_default() {
-        assert_eq!(Scheme::default(), Scheme::Vogix16);
+    fn test_praxis_roundtrip() {
+        for scheme in [Scheme::Ansi16, Scheme::Base16, Scheme::Base24, Scheme::Vogix16] {
+            assert_eq!(Scheme::from_praxis(scheme.to_praxis()), scheme);
+        }
+    }
+
+    #[test]
+    fn test_slot_count_from_ontology() {
+        assert_eq!(Scheme::Base16.slot_count(), 16);
+        assert_eq!(Scheme::Base24.slot_count(), 24);
+        assert_eq!(Scheme::Vogix16.slot_count(), 16);
+        assert_eq!(Scheme::Ansi16.slot_count(), 16);
     }
 }
