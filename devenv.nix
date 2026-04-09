@@ -139,8 +139,7 @@ in
   # https://devenv.sh/outputs/
   outputs =
     let
-      # Vendor praxis into the source tree for Nix builds
-      # Patches Cargo.toml path from ../praxis/crates/praxis to .nix-deps/praxis
+      # Vendor praxis into the source tree and patch Cargo.toml path
       nixSrc = pkgs.runCommand "vogix-nix-src" { } ''
         cp -r ${./.} $out
         chmod -R u+w $out

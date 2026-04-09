@@ -15,7 +15,7 @@ mod theme;
 
 use cli::{CacheCommands, Cli, Commands, SessionCommands, ShaderCommands, ThemeCommands};
 use commands::{
-    handle_cache_clean, handle_completions, handle_daemon, handle_list, handle_refresh,
+    handle_cache_clean, handle_completions, handle_daemon, handle_list,
     handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
     handle_session_undo, handle_status,
 };
@@ -120,8 +120,10 @@ fn run_with_engine(command: &Commands) -> Result<()> {
             let violations = match err {
                 praxis::engine::EngineError::Violated { violations, .. } => violations,
                 praxis::engine::EngineError::LogicalError { reason, .. } => {
-                    error!("{}", reason);
-                    return Ok(());
+                    return Err(errors::VogixError::Config(format!(
+                        "Engine error: {}",
+                        reason
+                    )));
                 }
             };
             for v in &violations {

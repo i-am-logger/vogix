@@ -60,63 +60,6 @@ pub fn load_current_theme_colors(
     crate::theme::load_theme_colors(&variant_path, state.current_scheme)
 }
 
-/// Turn shader on — apply current theme's monochromatic tint.
-pub fn handle_shader_on(
-    intensity: Option<f32>,
-    brightness: Option<f32>,
-    saturation: Option<f32>,
-) -> Result<()> {
-    let config = Config::load()?;
-    let mut state = State::load()?;
-
-    let (base_i, base_b, base_s) = state.shader.params().unwrap_or((0.5, 1.0, 1.0));
-
-    state.shader = ShaderState::On {
-        intensity: intensity.unwrap_or(base_i),
-        brightness: brightness.unwrap_or(base_b),
-        saturation: saturation.unwrap_or(base_s),
-    };
-
-    let params = resolve_shader_params(&config, &state);
-    let colors = load_current_theme_colors(&config, &state)?;
-    shader::apply_from_colors(&colors, &params)?;
-
-    state.save()?;
-    log::info!("Shader on");
-    Ok(())
-}
-
-/// Turn shader off.
-pub fn handle_shader_off() -> Result<()> {
-    shader::disable()?;
-
-    let mut state = State::load()?;
-    state.shader = ShaderState::Off;
-    state.save()?;
-
-    log::info!("Shader off");
-    Ok(())
-}
-
-/// Toggle shader — check ShaderState, flip it.
-pub fn handle_shader_toggle() -> Result<()> {
-    let state = State::load()?;
-
-    match &state.shader {
-        ShaderState::On { .. } => handle_shader_off(),
-        ShaderState::Off => handle_shader_on(None, None, None),
-        ShaderState::Auto => {
-            let config = Config::load()?;
-            let config_enabled = config.shader.as_ref().is_some_and(|sc| sc.enabled);
-            if config_enabled {
-                handle_shader_off()
-            } else {
-                handle_shader_on(None, None, None)
-            }
-        }
-    }
-}
-
 /// Show shader status and current parameters.
 pub fn handle_shader_status() -> Result<()> {
     let config = Config::load()?;
@@ -143,40 +86,6 @@ pub fn handle_shader_status() -> Result<()> {
     Ok(())
 }
 
-/// Set a single shader parameter, persist it, and re-apply if shader is on.
-pub fn handle_shader_param(param: &str, value: f32) -> Result<()> {
-    let mut state = State::load()?;
-
-    if let ShaderState::On {
-        intensity,
-        brightness,
-        saturation,
-    } = &state.shader
-    {
-        let (mut i, mut b, mut s) = (*intensity, *brightness, *saturation);
-        match param {
-            "intensity" => i = value.clamp(0.0, 1.0),
-            "brightness" => b = value.clamp(0.1, 2.0),
-            "saturation" => s = value.clamp(0.0, 2.0),
-            _ => unreachable!(),
-        }
-        state.shader = ShaderState::On {
-            intensity: i,
-            brightness: b,
-            saturation: s,
-        };
-        state.save()?;
-
-        let config = Config::load()?;
-        let params = resolve_shader_params(&config, &state);
-        let colors = load_current_theme_colors(&config, &state)?;
-        shader::apply_from_colors(&colors, &params)?;
-    } else {
-        log::warn!("Shader is off — turn it on first");
-    }
-
-    Ok(())
-}
 
 /// Resolve shader params: ShaderState params > config defaults > ShaderParams::default()
 pub fn resolve_shader_params(config: &Config, state: &State) -> ShaderParams {
