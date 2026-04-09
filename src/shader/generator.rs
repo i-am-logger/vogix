@@ -123,21 +123,20 @@ fn functional_color_keys() -> Vec<String> {
         }
     }
 
-    // vogix16 semantic names (these map to accent roles)
-    keys.extend(
-        [
-            "danger",
-            "success",
-            "warning",
-            "link",
-            "active",
-            "highlight",
-            "special",
-            "notice",
-        ]
-        .iter()
-        .map(|s| s.to_string()),
-    );
+    // vogix16 semantic names from praxis ontology
+    for semantic in praxis_domains::technology::theming::schemes::Vogix16Semantic::variants() {
+        if semantic.is_functional() {
+            keys.push(semantic.key().to_string());
+        }
+    }
+
+    // ansi16 key names from praxis ontology
+    for ansi in praxis_domains::technology::theming::schemes::Ansi16Color::variants() {
+        let slot = ansi.to_base16_slot();
+        if matches!(slot.role(), SemanticRole::Accent | SemanticRole::BrightAccent) {
+            keys.push(ansi.key());
+        }
+    }
 
     keys
 }
