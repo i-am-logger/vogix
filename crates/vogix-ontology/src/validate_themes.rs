@@ -13,6 +13,10 @@ use praxis_domains::technology::theming::ontology::{
 use std::path::Path;
 /// Result of validating a single theme variant.
 #[derive(Debug)]
+/// Result of validating a single theme variant.
+///
+/// Inspired by W3C EARL (Evaluation and Report Language):
+/// theme = TestSubject, axiom = TestCriterion, pass/fail = OutcomeValue
 pub struct ThemeResult {
     pub theme: String,
     pub variant: String,
@@ -21,6 +25,10 @@ pub struct ThemeResult {
     pub wcag_aa: bool,
     pub contrast_ratio: Option<f64>,
     pub polarity: String,
+    /// Luminance trace: (slot_key, luminance) for base00-base07
+    pub luminance_ramp: Vec<(String, f64)>,
+    /// Where monotonicity breaks: index of first violation (None if monotone)
+    pub mono_break_at: Option<usize>,
 }
 /// Parse a base16 YAML theme file into a Palette.
 pub fn parse_yaml_theme(content: &str) -> Option<Palette> {
@@ -87,12 +95,21 @@ pub fn parse_yaml_theme(content: &str) -> Option<Palette> {
         Some(palette)
     }
 }
-/// Validate a palette against all axioms.
-pub fn validate_palette(palette: &Palette) -> (bool, bool, Option<f64>) {
-    let mono = LuminanceMonotonicity {
+/// Detailed validation result with trace data.
+pub struct ValidationDetail {
+    pub monotone: bool,
+    pub wcag_aa: bool,
+    pub contrast_ratio: Option<f64>,
+    pub luminance_ramp: Vec<(String, f64)>,
+    pub mono_break_at: Option<usize>,
+}
+
+/// Validate a palette against all axioms, returning trace data.
+pub fn validate_palette(palette: &Palette) -> ValidationDetail {
+    let mono_axiom = LuminanceMonotonicity {
         palette: palette.clone(),
     };
-    let contrast = WcagForegroundContrast {
+    let contrast_axiom = WcagForegroundContrast {
         palette: palette.clone(),
     };
 
@@ -101,7 +118,39 @@ pub fn validate_palette(palette: &Palette) -> (bool, bool, Option<f64>) {
         _ => None,
     };
 
-    (mono.holds(), contrast.holds(), cr)
+    // Compute luminance ramp trace
+    let ramp_slots = [
+        ColorSlot::Base00, ColorSlot::Base01, ColorSlot::Base02, ColorSlot::Base03,
+        ColorSlot::Base04, ColorSlot::Base05, ColorSlot::Base06, ColorSlot::Base07,
+    ];
+    let luminance_ramp: Vec<(String, f64)> = ramp_slots
+        .iter()
+        .filter_map(|s| {
+            palette.get(s).map(|rgb| (s.key().to_string(), srgb::relative_luminance(rgb)))
+        })
+        .collect();
+
+    // Find where monotonicity breaks
+    let mono_break_at = if luminance_ramp.len() >= 2 {
+        // If first pair is increasing, check for any decrease (and vice versa)
+        if luminance_ramp[0].1 < luminance_ramp[1].1 {
+            // Expect increasing — find first decrease
+            luminance_ramp.windows(2).position(|w| w[0].1 >= w[1].1).map(|p| p + 1)
+        } else {
+            // Expect decreasing — find first increase
+            luminance_ramp.windows(2).position(|w| w[0].1 <= w[1].1).map(|p| p + 1)
+        }
+    } else {
+        None
+    };
+
+    ValidationDetail {
+        monotone: mono_axiom.holds(),
+        wcag_aa: contrast_axiom.holds(),
+        contrast_ratio: cr,
+        luminance_ramp,
+        mono_break_at,
+    }
 }
 /// Scan a directory of base16 themes and validate each.
 pub fn scan_themes(base_dir: &Path) -> Vec<ThemeResult> {
@@ -145,7 +194,7 @@ pub fn scan_themes(base_dir: &Path) -> Vec<ThemeResult> {
                     continue;
                 };
 
-                let (mono, wcag, cr) = validate_palette(&palette);
+                let detail = validate_palette(&palette);
 
                 let polarity = match palette.get(&ColorSlot::Base00) {
                     Some(bg) => {
@@ -162,10 +211,12 @@ pub fn scan_themes(base_dir: &Path) -> Vec<ThemeResult> {
                     theme: theme_name.clone(),
                     variant: variant_name,
                     slots_found: palette.len(),
-                    luminance_monotone: mono,
-                    wcag_aa: wcag,
-                    contrast_ratio: cr,
+                    luminance_monotone: detail.monotone,
+                    wcag_aa: detail.wcag_aa,
+                    contrast_ratio: detail.contrast_ratio,
                     polarity: polarity.to_string(),
+                    luminance_ramp: detail.luminance_ramp,
+                    mono_break_at: detail.mono_break_at,
                 });
             }
         }
@@ -232,9 +283,11 @@ palette:
   base0F: "#f2cdcd"
 "##;
         let palette = parse_yaml_theme(yaml).unwrap();
-        let (mono, _wcag, _cr) = validate_palette(&palette);
+        let detail = validate_palette(&palette);
         // Catppuccin Mocha fails monotonicity: base06 (rosewater) < base05 (text)
-        assert!(!mono);
+        assert!(!detail.monotone);
+        // Should have a break point
+        assert!(detail.mono_break_at.is_some());
     }
 
     #[test]
@@ -259,9 +312,9 @@ palette:
   base0F: "#884400"
 "##;
         let palette = parse_yaml_theme(yaml).unwrap();
-        let (_mono, wcag, cr) = validate_palette(&palette);
-        assert!(!wcag, "should fail WCAG AA with similar fg/bg");
-        assert!(cr.unwrap() < 4.5);
+        let detail = validate_palette(&palette);
+        assert!(!detail.wcag_aa, "should fail WCAG AA with similar fg/bg");
+        assert!(detail.contrast_ratio.unwrap() < 4.5);
     }
 
     #[test]
