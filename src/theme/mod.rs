@@ -9,6 +9,7 @@
 
 mod discovery;
 pub mod loader;
+pub mod palette;
 mod query;
 pub mod types;
 
