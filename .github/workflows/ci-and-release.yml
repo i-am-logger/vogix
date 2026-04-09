@@ -29,7 +29,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: i-am-logger/praxis
-          path: ../praxis
+          path: .praxis-src
+
+      - name: Link praxis at expected path
+        run: ln -s "$GITHUB_WORKSPACE/.praxis-src" ../praxis
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
