@@ -63,6 +63,13 @@ pub struct State {
     /// Shader state (On/Off/Auto)
     #[serde(default)]
     pub shader: ShaderState,
+    /// Current interaction mode
+    #[serde(default = "default_mode")]
+    pub current_mode: String,
+}
+
+fn default_mode() -> String {
+    "app".to_string()
 }
 
 impl Situation for State {
@@ -73,8 +80,9 @@ impl Situation for State {
             ShaderState::Auto => "auto".to_string(),
         };
         format!(
-            "{}/{}/{} shader={}",
-            self.current_scheme, self.current_theme, self.current_variant, shader_desc
+            "{}/{}/{} shader={} mode={}",
+            self.current_scheme, self.current_theme, self.current_variant, shader_desc,
+            self.current_mode
         )
     }
 
@@ -91,6 +99,7 @@ impl Default for State {
             current_variant: "night".to_string(),
             last_applied: None,
             shader: ShaderState::Auto,
+            current_mode: "app".to_string(),
         }
     }
 }
@@ -156,6 +165,7 @@ impl State {
             current_variant: old.current_variant,
             last_applied: old.last_applied,
             shader,
+            current_mode: "app".to_string(),
         })
     }
 

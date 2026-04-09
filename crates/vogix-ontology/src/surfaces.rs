@@ -14,14 +14,12 @@
 /// - Mac Lane, "Categories for the Working Mathematician" (1971): functors, natural transformations
 /// - Harel, "Statecharts" (1987): parallel regions (surfaces update simultaneously)
 /// - Czaplicki & Chong, "Async FRP for GUIs" (2013): sync vs async propagation
-
 use praxis::category::Entity;
 use praxis::ontology::{Axiom, Quality};
 use praxis_domains::science::colors::Rgb;
-use praxis_domains::technology::theming::base16::{ColorSlot, SemanticRole};
+use praxis_domains::technology::theming::base16::ColorSlot;
 use praxis_domains::technology::theming::ontology::Palette;
 use std::collections::HashMap;
-
 /// A surface capability — what a rendering target can express.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SurfaceCapability {
@@ -48,7 +46,6 @@ impl Entity for SurfaceCapability {
         ]
     }
 }
-
 /// A surface type — a class of rendering targets.
 ///
 /// Not a specific instance (not "my wezterm") but a category
@@ -71,7 +68,6 @@ impl SurfaceType {
         self.capabilities.contains(&cap)
     }
 }
-
 /// A surface mapping — how a palette slot maps to a surface-specific config value.
 ///
 /// This is the morphism in the functor: Theme → Surface.
@@ -85,7 +81,6 @@ pub struct SlotMapping {
     /// Optional transformation (e.g., strip '#' prefix, add 'rgb()' wrapper)
     pub transform: ColorTransform,
 }
-
 /// How to transform a color value for a specific surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ColorTransform {
@@ -100,7 +95,6 @@ pub enum ColorTransform {
     /// ANSI SGR escape sequence
     AnsiSgr,
 }
-
 /// A surface functor — maps Theme objects (palette slots) to Surface objects (config values).
 ///
 /// F: ThemeCategory → SurfaceCategory
@@ -151,7 +145,6 @@ impl SurfaceFunctor {
             .collect()
     }
 }
-
 /// Apply a color transform to produce a surface-specific string.
 fn apply_transform(rgb: &Rgb, transform: &ColorTransform) -> String {
     match transform {
@@ -167,7 +160,6 @@ fn apply_transform(rgb: &Rgb, transform: &ColorTransform) -> String {
         ColorTransform::AnsiSgr => format!("{};{};{}", rgb.r, rgb.g, rgb.b),
     }
 }
-
 /// A natural transformation between two surface functors.
 ///
 /// η: F ⟹ G where F, G: ThemeCategory → SurfaceCategory
@@ -237,7 +229,6 @@ impl Axiom for ThemeChangeNaturality {
         true
     }
 }
-
 /// Quality: how many palette slots a surface consumes.
 #[derive(Debug, Clone)]
 pub struct SlotCoverage;
@@ -277,7 +268,6 @@ fn test_palette_light() -> Palette {
     p.insert(ColorSlot::Base0D, Rgb::new(30, 102, 245));
     p
 }
-
 /// Build an example terminal surface functor.
 pub fn terminal_functor() -> SurfaceFunctor {
     use praxis::category::Entity;
@@ -300,7 +290,6 @@ pub fn terminal_functor() -> SurfaceFunctor {
         mappings,
     )
 }
-
 /// Build an example window border surface functor.
 pub fn border_functor() -> SurfaceFunctor {
     SurfaceFunctor::new(
@@ -319,7 +308,6 @@ pub fn border_functor() -> SurfaceFunctor {
         ],
     )
 }
-
 /// Build an example LED hardware surface functor.
 pub fn led_functor() -> SurfaceFunctor {
     SurfaceFunctor::new(

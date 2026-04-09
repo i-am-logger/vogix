@@ -26,6 +26,10 @@ pub enum VogixAction {
         param: ShaderParam,
         value: f32,
     },
+    #[allow(dead_code)]
+    ModeChange {
+        target: String,
+    },
     Refresh,
 }
 
@@ -55,6 +59,7 @@ impl Action for VogixAction {
             VogixAction::ShaderParam { param, value } => {
                 format!("shader {:?} = {:.2}", param, value)
             }
+            VogixAction::ModeChange { target } => format!("mode → {}", target),
             VogixAction::Refresh => "refresh".into(),
         }
     }
@@ -132,6 +137,9 @@ pub fn apply_action(state: &State, action: &VogixAction) -> Result<State, String
             }
             _ => return Err("Cannot set shader param when shader is off".into()),
         },
+        VogixAction::ModeChange { target } => {
+            next.current_mode = target.clone();
+        }
         VogixAction::Refresh => {
             // No state change — side effects happen post-commit
         }
@@ -232,12 +240,53 @@ impl Precondition<VogixAction> for ShaderMustBeOn {
     }
 }
 
+/// Verify mode transition is valid against the ontology ModeGraph.
+pub struct ValidModeTransition {
+    pub graph: vogix_ontology::modes::ModeGraph,
+}
+
+impl Precondition<VogixAction> for ValidModeTransition {
+    fn check(&self, state: &State, action: &VogixAction) -> PreconditionResult {
+        if let VogixAction::ModeChange { target } = action {
+            let from = vogix_ontology::modes::ModeId::new(&state.current_mode);
+            let to = vogix_ontology::modes::ModeId::new(target);
+            if self.graph.is_valid_transition(&from, &to) {
+                PreconditionResult::satisfied(
+                    "valid_mode_transition",
+                    &format!("{} → {}", state.current_mode, target),
+                )
+            } else {
+                PreconditionResult::violated(
+                    "valid_mode_transition",
+                    &format!(
+                        "cannot transition from '{}' to '{}'",
+                        state.current_mode, target
+                    ),
+                    &state.describe(),
+                    &action.describe(),
+                )
+            }
+        } else {
+            PreconditionResult::satisfied("valid_mode_transition", "not a mode change")
+        }
+    }
+
+    fn describe(&self) -> &str {
+        "mode transitions must follow the validated mode graph"
+    }
+}
+
 pub type VogixEngine = Engine<VogixAction>;
 
 pub fn create_engine(state: State) -> VogixEngine {
+    let mode_graph = vogix_ontology::modes::default_mode_graph();
     Engine::new(
         state,
-        vec![Box::new(ValidShaderParams), Box::new(ShaderMustBeOn)],
+        vec![
+            Box::new(ValidShaderParams),
+            Box::new(ShaderMustBeOn),
+            Box::new(ValidModeTransition { graph: mode_graph }),
+        ],
         apply_action,
     )
 }

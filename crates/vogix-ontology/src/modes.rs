@@ -13,10 +13,8 @@
 /// - vim modal editing (Normal/Insert/Visual/Command)
 /// - Hyprland submaps (https://wiki.hypr.land/Configuring/Binds/#submaps)
 /// - macOS Mission Control (Desktop mode inspiration)
-
 use praxis::ontology::Axiom;
 use std::collections::{HashMap, HashSet};
-
 /// A mode definition — part of a user-configured mode graph.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModeId(pub String);
@@ -26,7 +24,6 @@ impl ModeId {
         Self(name.into())
     }
 }
-
 /// Properties of a mode.
 #[derive(Debug, Clone)]
 pub struct ModeProperties {
@@ -37,14 +34,12 @@ pub struct ModeProperties {
     /// Depth in the hierarchy (root = 0).
     pub depth: u8,
 }
-
 /// A directed transition between two modes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Transition {
     pub from: ModeId,
     pub to: ModeId,
 }
-
 /// A validated mode graph — the set of all modes and valid transitions.
 ///
 /// Built from user configuration, validated against axioms.
@@ -137,7 +132,6 @@ impl ModeGraph {
 }
 
 // ── Default vogix mode graph ──
-
 /// Build the default vogix mode graph.
 ///
 /// App (root) ↔ Desktop ↔ Arrange
@@ -199,7 +193,6 @@ pub fn default_mode_graph() -> ModeGraph {
 }
 
 // ── Axioms ──
-
 /// Every mode can reach the root (no dead states).
 pub struct NoDeadStates {
     pub graph: ModeGraph,
@@ -239,7 +232,6 @@ impl Axiom for NoDeadStates {
         true
     }
 }
-
 /// Root mode is reachable from every mode via transitions.
 pub struct RootReachable {
     pub graph: ModeGraph,
@@ -259,7 +251,6 @@ impl Axiom for RootReachable {
         true
     }
 }
-
 /// Root mode has no parent.
 pub struct RootNoParent {
     pub graph: ModeGraph,
