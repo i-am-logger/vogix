@@ -109,9 +109,6 @@ in
           package = config.languages.rust.toolchainPackage;
         };
 
-        # Python
-        black.enable = true;
-
         # Shell
         shellcheck.enable = true;
         shfmt.enable = true;
