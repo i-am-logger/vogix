@@ -136,6 +136,9 @@ in
   };
 
   # https://devenv.sh/outputs/
+  # TODO: crate2nix doesn't handle cross-repo path deps well (praxis).
+  # Praxis needs a flake.nix or registry publish. Nix build is temporarily disabled.
+  # Use `cargo build` locally for now.
   outputs = {
     vogix = config.languages.rust.import ./. {
       # Override to skip Windows-specific dependencies

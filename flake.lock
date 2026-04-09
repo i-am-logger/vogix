@@ -416,6 +416,22 @@
         "type": "github"
       }
     },
+    "praxis-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1775684344,
+        "narHash": "sha256-94T0UW44Ld8GNr4THJEkQMzzvq/YKBCb9SCkOdr2BZo=",
+        "owner": "i-am-logger",
+        "repo": "praxis",
+        "rev": "c0678c063757f103c2658cb0dfa8d561f1a67831",
+        "type": "github"
+      },
+      "original": {
+        "owner": "i-am-logger",
+        "repo": "praxis",
+        "type": "github"
+      }
+    },
     "pre-commit-hooks": {
       "inputs": {
         "flake-compat": [
@@ -450,6 +466,7 @@
         "iterm2-schemes": "iterm2-schemes",
         "liquidctl-src": "liquidctl-src",
         "nixpkgs": "nixpkgs",
+        "praxis-src": "praxis-src",
         "rust-overlay": "rust-overlay",
         "tinted-schemes": "tinted-schemes",
         "vogix16-themes": "vogix16-themes"

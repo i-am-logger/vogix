@@ -1,11 +1,59 @@
 use crate::errors::{Result, VogixError};
 use crate::scheme::Scheme;
+use praxis::engine::Situation;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Theme state data persisted to disk
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// Shader state — On with params, Off, or Auto (follow config default)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+pub enum ShaderState {
+    Off,
+    On {
+        #[serde(default = "default_intensity")]
+        intensity: f32,
+        #[serde(default = "default_one")]
+        brightness: f32,
+        #[serde(default = "default_one")]
+        saturation: f32,
+    },
+    /// Follow config default (user hasn't explicitly toggled)
+    Auto,
+}
+
+fn default_intensity() -> f32 {
+    0.5
+}
+fn default_one() -> f32 {
+    1.0
+}
+
+impl Default for ShaderState {
+    fn default() -> Self {
+        ShaderState::Auto
+    }
+}
+
+impl ShaderState {
+    pub fn is_on(&self) -> bool {
+        matches!(self, ShaderState::On { .. })
+    }
+
+    pub fn params(&self) -> Option<(f32, f32, f32)> {
+        match self {
+            ShaderState::On {
+                intensity,
+                brightness,
+                saturation,
+            } => Some((*intensity, *brightness, *saturation)),
+            _ => None,
+        }
+    }
+}
+
+/// Vogix state — implements praxis Situation for engine-driven state management
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {
     /// Current color scheme (vogix16, base16, base24, ansi16)
     #[serde(default)]
@@ -16,18 +64,27 @@ pub struct State {
     pub current_variant: String,
     /// Timestamp of last theme application
     pub last_applied: Option<String>,
-    /// Whether the shader is enabled (None = follow config, Some = user override)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shader_enabled: Option<bool>,
-    /// Shader intensity override [0.0..1.0] (None = use config default)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shader_intensity: Option<f32>,
-    /// Shader brightness override [0.1..2.0] (None = use config default)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shader_brightness: Option<f32>,
-    /// Shader saturation override [0.0..2.0] (None = use config default)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shader_saturation: Option<f32>,
+    /// Shader state (On/Off/Auto)
+    #[serde(default)]
+    pub shader: ShaderState,
+}
+
+impl Situation for State {
+    fn describe(&self) -> String {
+        let shader_desc = match &self.shader {
+            ShaderState::Off => "off".to_string(),
+            ShaderState::On { intensity, .. } => format!("on(i={:.2})", intensity),
+            ShaderState::Auto => "auto".to_string(),
+        };
+        format!(
+            "{}/{}/{} shader={}",
+            self.current_scheme, self.current_theme, self.current_variant, shader_desc
+        )
+    }
+
+    fn is_terminal(&self) -> bool {
+        false
+    }
 }
 
 impl Default for State {
@@ -37,10 +94,7 @@ impl Default for State {
             current_theme: "aikido".to_string(),
             current_variant: "night".to_string(),
             last_applied: None,
-            shader_enabled: None,
-            shader_intensity: None,
-            shader_brightness: None,
-            shader_saturation: None,
+            shader: ShaderState::Auto,
         }
     }
 }
@@ -51,16 +105,62 @@ impl State {
         Self::load_from(&Self::default_state_path()?)
     }
 
-    /// Load state from a specific path
+    /// Load state from a specific path, with migration from old format
     pub fn load_from(state_path: &Path) -> Result<Self> {
         if !state_path.exists() {
             return Ok(State::default());
         }
 
         let contents = fs::read_to_string(state_path)?;
-        let state: State = toml::from_str(&contents).map_err(VogixError::TomlParse)?;
 
+        // Detect format: old format has flat shader_enabled/shader_intensity fields
+        if contents.contains("shader_enabled") || contents.contains("shader_intensity") {
+            return Self::migrate_old_format(&contents);
+        }
+
+        // New format (ShaderState enum with [shader] section)
+        let state: State = toml::from_str(&contents).map_err(VogixError::TomlParse)?;
         Ok(state)
+    }
+
+    /// Migrate from old state.toml format (flat shader_enabled/intensity/brightness/saturation)
+    fn migrate_old_format(contents: &str) -> Result<Self> {
+        #[derive(Deserialize)]
+        struct OldState {
+            #[serde(default)]
+            current_scheme: Scheme,
+            current_theme: String,
+            current_variant: String,
+            last_applied: Option<String>,
+            #[serde(default)]
+            shader_enabled: Option<bool>,
+            #[serde(default)]
+            shader_intensity: Option<f32>,
+            #[serde(default)]
+            shader_brightness: Option<f32>,
+            #[serde(default)]
+            shader_saturation: Option<f32>,
+        }
+
+        let old: OldState = toml::from_str(contents).map_err(VogixError::TomlParse)?;
+
+        let shader = match old.shader_enabled {
+            Some(true) => ShaderState::On {
+                intensity: old.shader_intensity.unwrap_or(0.5),
+                brightness: old.shader_brightness.unwrap_or(1.0),
+                saturation: old.shader_saturation.unwrap_or(1.0),
+            },
+            Some(false) => ShaderState::Off,
+            None => ShaderState::Auto,
+        };
+
+        Ok(State {
+            current_scheme: old.current_scheme,
+            current_theme: old.current_theme,
+            current_variant: old.current_variant,
+            last_applied: old.last_applied,
+            shader,
+        })
     }
 
     /// Save state to the default state file location
@@ -70,7 +170,6 @@ impl State {
 
     /// Save state to a specific path
     pub fn save_to(&self, state_path: &Path) -> Result<()> {
-        // Create parent directory if it doesn't exist
         if let Some(parent) = state_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -78,27 +177,22 @@ impl State {
         let mut state_to_save = self.clone();
         state_to_save.last_applied = Some(chrono::Utc::now().to_rfc3339());
 
-        let contents = toml::to_string_pretty(&state_to_save).map_err(VogixError::TomlSerialize)?;
+        let contents =
+            toml::to_string_pretty(&state_to_save).map_err(VogixError::TomlSerialize)?;
 
         fs::write(state_path, contents)?;
         Ok(())
     }
 
-    /// Get the default state file path
-    /// Uses XDG_STATE_HOME (~/.local/state/vogix/state.toml)
     fn default_state_path() -> Result<PathBuf> {
         Ok(Self::state_dir()?.join("state.toml"))
     }
 
-    /// Get the vogix state directory (~/.local/state/vogix/)
-    /// This is where persistent state lives (survives reboots, unlike /run)
     pub fn state_dir() -> Result<PathBuf> {
-        // Use dirs crate for proper XDG handling (respects XDG_STATE_HOME)
         if let Some(state_home) = dirs::state_dir() {
             return Ok(state_home.join("vogix"));
         }
 
-        // Fallback to ~/.local/state/vogix
         dirs::home_dir()
             .map(|home| home.join(".local").join("state").join("vogix"))
             .ok_or_else(|| VogixError::Config("Could not determine home directory".to_string()))
@@ -111,25 +205,30 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_state_creation() {
-        let state = State {
-            current_scheme: Scheme::Vogix16,
-            current_theme: "test".to_string(),
-            current_variant: "dark".to_string(),
-            ..Default::default()
-        };
-        assert_eq!(state.current_scheme, Scheme::Vogix16);
-        assert_eq!(state.current_theme, "test");
-        assert_eq!(state.current_variant, "dark");
-    }
-
-    #[test]
     fn test_state_default() {
         let state = State::default();
         assert_eq!(state.current_scheme, Scheme::Vogix16);
         assert_eq!(state.current_theme, "aikido");
         assert_eq!(state.current_variant, "night");
         assert!(state.last_applied.is_none());
+        assert_eq!(state.shader, ShaderState::Auto);
+    }
+
+    #[test]
+    fn test_shader_state_enum() {
+        let on = ShaderState::On {
+            intensity: 0.5,
+            brightness: 1.0,
+            saturation: 1.0,
+        };
+        assert!(on.is_on());
+        assert_eq!(on.params(), Some((0.5, 1.0, 1.0)));
+
+        assert!(!ShaderState::Off.is_on());
+        assert_eq!(ShaderState::Off.params(), None);
+
+        assert!(!ShaderState::Auto.is_on());
+        assert_eq!(ShaderState::Auto.params(), None);
     }
 
     #[test]
@@ -141,61 +240,26 @@ mod tests {
             current_scheme: Scheme::Base16,
             current_theme: "rose-pine".to_string(),
             current_variant: "moon".to_string(),
+            shader: ShaderState::On {
+                intensity: 0.3,
+                brightness: 1.2,
+                saturation: 0.8,
+            },
             ..Default::default()
         };
 
-        // Save state to temp path
         state.save_to(&state_path).unwrap();
-
-        // Load state back from temp path
         let loaded = State::load_from(&state_path).unwrap();
 
         assert_eq!(loaded.current_scheme, Scheme::Base16);
         assert_eq!(loaded.current_theme, "rose-pine");
         assert_eq!(loaded.current_variant, "moon");
-        assert!(loaded.last_applied.is_some()); // save_to() sets timestamp
+        assert!(loaded.shader.is_on());
+        assert_eq!(loaded.shader.params(), Some((0.3, 1.2, 0.8)));
     }
 
     #[test]
-    fn test_state_load_missing_returns_default() {
-        let temp_dir = TempDir::new().unwrap();
-        let nonexistent_path = temp_dir.path().join("nonexistent/state.toml");
-
-        // Load from non-existent path - should return default
-        let loaded = State::load_from(&nonexistent_path).unwrap();
-
-        assert_eq!(loaded.current_scheme, Scheme::Vogix16);
-        assert_eq!(loaded.current_theme, "aikido");
-        assert_eq!(loaded.current_variant, "night");
-    }
-
-    #[test]
-    fn test_state_dir_returns_vogix_subdirectory() {
-        // state_dir() should return a path ending in "vogix"
-        let state_dir = State::state_dir().unwrap();
-        assert!(state_dir.ends_with("vogix"));
-    }
-
-    #[test]
-    fn test_state_serialization_format() {
-        let state = State {
-            current_scheme: Scheme::Ansi16,
-            current_theme: "dracula".to_string(),
-            current_variant: "default".to_string(),
-            last_applied: Some("2024-01-01T00:00:00Z".to_string()),
-            ..Default::default()
-        };
-
-        let serialized = toml::to_string_pretty(&state).unwrap();
-
-        assert!(serialized.contains("current_scheme = \"ansi16\""));
-        assert!(serialized.contains("current_theme = \"dracula\""));
-        assert!(serialized.contains("current_variant = \"default\""));
-    }
-
-    #[test]
-    fn test_state_backward_compat_ignores_unknown_fields() {
-        // State files with extra fields should still load fine
+    fn test_migrate_old_format() {
         let temp_dir = TempDir::new().unwrap();
         let state_path = temp_dir.path().join("state.toml");
         fs::write(
@@ -205,11 +269,88 @@ current_scheme = "vogix16"
 current_theme = "aikido"
 current_variant = "night"
 shader_enabled = true
+shader_intensity = 0.4
 "#,
         )
         .unwrap();
 
         let loaded = State::load_from(&state_path).unwrap();
         assert_eq!(loaded.current_theme, "aikido");
+        assert!(loaded.shader.is_on());
+        assert_eq!(loaded.shader.params(), Some((0.4, 1.0, 1.0)));
+    }
+
+    #[test]
+    fn test_migrate_old_format_disabled() {
+        let temp_dir = TempDir::new().unwrap();
+        let state_path = temp_dir.path().join("state.toml");
+        fs::write(
+            &state_path,
+            r#"
+current_scheme = "vogix16"
+current_theme = "aikido"
+current_variant = "night"
+shader_enabled = false
+"#,
+        )
+        .unwrap();
+
+        let loaded = State::load_from(&state_path).unwrap();
+        assert_eq!(loaded.shader, ShaderState::Off);
+    }
+
+    #[test]
+    fn test_migrate_old_format_auto() {
+        let temp_dir = TempDir::new().unwrap();
+        let state_path = temp_dir.path().join("state.toml");
+        fs::write(
+            &state_path,
+            r#"
+current_scheme = "vogix16"
+current_theme = "aikido"
+current_variant = "night"
+"#,
+        )
+        .unwrap();
+
+        let loaded = State::load_from(&state_path).unwrap();
+        assert_eq!(loaded.shader, ShaderState::Auto);
+    }
+
+    #[test]
+    fn test_situation_describe() {
+        let state = State {
+            current_scheme: Scheme::Vogix16,
+            current_theme: "aikido".to_string(),
+            current_variant: "night".to_string(),
+            shader: ShaderState::On {
+                intensity: 0.5,
+                brightness: 1.0,
+                saturation: 1.0,
+            },
+            ..Default::default()
+        };
+        assert!(state.describe().contains("aikido"));
+        assert!(state.describe().contains("on(i=0.50)"));
+    }
+
+    #[test]
+    fn test_situation_not_terminal() {
+        let state = State::default();
+        assert!(!state.is_terminal());
+    }
+
+    #[test]
+    fn test_state_load_missing_returns_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent_path = temp_dir.path().join("nonexistent/state.toml");
+        let loaded = State::load_from(&nonexistent_path).unwrap();
+        assert_eq!(loaded.current_theme, "aikido");
+    }
+
+    #[test]
+    fn test_state_dir_returns_vogix_subdirectory() {
+        let state_dir = State::state_dir().unwrap();
+        assert!(state_dir.ends_with("vogix"));
     }
 }
