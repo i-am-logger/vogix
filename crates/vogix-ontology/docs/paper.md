@@ -163,22 +163,28 @@ The default mode graph (App↔Desktop↔Arrange/Theme, Console overlay) passes a
 
 ### 6.1 Dataset
 
-243 theme variants from the tinted-theming Base16 repository [1]: 170 dark, 67 light.
+464 theme variants across three scheme types from the tinted-theming ecosystem and the Vogix16 design system.
 
 ### 6.2 Results
 
-| Axiom | Pass | Fail | Rate |
-|-------|------|------|------|
-| Luminance Monotonicity (Axiom 10) | 168 | 75 | 69% |
-| WCAG AA Contrast (Axiom 11) | 221 | 22 | 91% |
+| Dataset | Themes | Dark | Light | Luminance Monotonicity | WCAG AA Contrast |
+|---------|--------|------|-------|----------------------|-----------------|
+| Base16 [1] | 243 | 170 | 67 | 168 (69%) | 221 (91%) |
+| Base24 [2] | 171 | 151 | 20 | 89 (52%) | 147 (86%) |
+| Vogix16 | 50 | 25 | 25 | 45 (90%) | 46 (92%) |
+| **Total** | **464** | **346** | **112** | **302 (65%)** | **414 (89%)** |
 
 ### 6.3 Findings
 
-**31% of themes violate luminance monotonicity.** The base00→base07 ramp is not strictly ordered. Many use base06/base07 for accent-like colors (Catppuccin assigns rosewater and lavender) rather than the lightest foreground shades the spec intends.
+**35% of all themes violate luminance monotonicity.** The base00→base07 ramp is not strictly ordered. Many themes use base06/base07 for accent-like colors (Catppuccin assigns rosewater and lavender) rather than the lightest foreground shades the spec intends.
 
-**9% violate WCAG AA.** Default foreground (base05) has insufficient contrast against background (base00). Some themes (Eva) show 0:1 contrast — likely misconfigured. Others (Material Lighter at 1.79:1, Brushtrees Light at 3.41:1) are designed with aesthetics over accessibility.
+**Base24 has lower monotonicity compliance than Base16 (52% vs 69%).** This may indicate that Base24 theme authors use base06/base07 for different purposes than Base16 intends — the additional base10-base17 slots shift the design priorities. Whether this reflects a limitation of the axiom or a quality difference between datasets is an open question.
 
-These findings are invisible to the informal Base16 specification — our axioms make them explicit and enforceable.
+**Vogix16 has the highest compliance (90% monotonicity, 92% WCAG AA).** As a curated design system with explicit guidelines, Vogix16 themes are more likely to satisfy formal invariants than community-contributed themes.
+
+**11% fail WCAG AA.** Default foreground (base05) has insufficient contrast against background (base00). Some themes (Eva) show 0:1 contrast — likely misconfigured. Others (Material Lighter at 1.79:1, Brushtrees Light at 3.41:1) are designed with aesthetics over accessibility.
+
+These findings are invisible to the informal specifications — our axioms make them explicit and enforceable.
 
 ## 7. Implementation
 
