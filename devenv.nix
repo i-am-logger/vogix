@@ -1,6 +1,7 @@
 { pkgs
 , config
 , lib
+, inputs
 , ...
 }:
 let
@@ -108,9 +109,6 @@ in
           package = config.languages.rust.toolchainPackage;
         };
 
-        # Python
-        black.enable = true;
-
         # Shell
         shellcheck.enable = true;
         shfmt.enable = true;
@@ -136,24 +134,38 @@ in
   };
 
   # https://devenv.sh/outputs/
-  outputs = {
-    vogix = config.languages.rust.import ./. {
-      # Override to skip Windows-specific dependencies
-      crateOverrides = pkgs.defaultCrateOverrides // {
-        # Skip all Windows-specific crates
-        windows-sys = _attrs: null;
-        windows-core = _attrs: null;
-        windows-targets = _attrs: null;
-        windows_x86_64_gnu = _attrs: null;
-        windows_x86_64_msvc = _attrs: null;
-        windows_i686_gnu = _attrs: null;
-        windows_i686_msvc = _attrs: null;
-        windows_aarch64_msvc = _attrs: null;
-        windows_aarch64_gnullvm = _attrs: null;
-        anstyle-wincon = _attrs: null;
+  outputs =
+    let
+      # Vendor praxis into the source tree and patch Cargo.toml path
+      nixSrc = pkgs.runCommand "vogix-nix-src" { } ''
+        cp -r ${./.} $out
+        chmod -R u+w $out
+        mkdir -p $out/.nix-deps/praxis $out/.nix-deps/domains
+        cp -r ${inputs.praxis-src}/crates/praxis/. $out/.nix-deps/praxis/
+        cp -r ${inputs.praxis-src}/crates/domains/. $out/.nix-deps/domains/
+        substituteInPlace $out/Cargo.toml \
+          --replace-fail '../praxis/crates/praxis' '.nix-deps/praxis' \
+          --replace-fail '../praxis/crates/domains' '.nix-deps/domains'
+      '';
+    in
+    {
+      vogix = config.languages.rust.import nixSrc {
+        # Override to skip Windows-specific dependencies
+        crateOverrides = pkgs.defaultCrateOverrides // {
+          # Skip all Windows-specific crates
+          windows-sys = _attrs: null;
+          windows-core = _attrs: null;
+          windows-targets = _attrs: null;
+          windows_x86_64_gnu = _attrs: null;
+          windows_x86_64_msvc = _attrs: null;
+          windows_i686_gnu = _attrs: null;
+          windows_i686_msvc = _attrs: null;
+          windows_aarch64_msvc = _attrs: null;
+          windows_aarch64_gnullvm = _attrs: null;
+          anstyle-wincon = _attrs: null;
+        };
       };
     };
-  };
 
   # https://devenv.sh/tasks/
   tasks = {
@@ -162,15 +174,15 @@ in
     };
 
     "test:clippy" = {
-      exec = "cargo clippy --quiet -- -D warnings";
+      exec = "cargo clippy -p vogix --quiet -- -D warnings";
     };
 
     "test:check" = {
-      exec = "cargo check --quiet";
+      exec = "cargo check -p vogix --quiet";
     };
 
     "test:unit" = {
-      exec = "cargo test --quiet";
+      exec = "cargo test -p vogix --quiet";
     };
   };
 

@@ -52,6 +52,12 @@
       flake = false;
     };
 
+    # Praxis — ontology-driven rule enforcement
+    praxis-src = {
+      url = "github:i-am-logger/praxis";
+      flake = false;
+    };
+
     # liquidctl fork with Kraken 2024 Elite RGB ring support
     liquidctl-src = {
       url = "github:i-am-logger/liquidctl/feat/kraken-2024-elite-rgb";

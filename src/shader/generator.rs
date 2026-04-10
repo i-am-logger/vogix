@@ -91,10 +91,55 @@ fn with_saturation(color: &ShaderColor, saturation: f32) -> ShaderColor {
     )
 }
 
-/// Functional color keys (base08-0F) that should be preserved through tinting.
-const FUNCTIONAL_KEYS: &[&str] = &[
-    "base08", "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
-];
+/// Get functional color keys from the praxis theming ontology.
+///
+/// Functional colors = Accent + BrightAccent roles across ALL scheme naming conventions.
+/// The ontology defines which slots are functional — we map them to all known key formats:
+/// - base16/base24: base08, base09, ..., base0F, base12, ..., base17
+/// - vogix16: danger, success, warning, link, active, highlight, special, notice
+/// - ansi16: color01, color02, ..., color15 (via ANSI index mapping)
+///
+/// These are preserved through the monochromatic tint so UI elements stay readable.
+fn functional_color_keys() -> Vec<String> {
+    use praxis::category::Entity;
+    use praxis_domains::technology::theming::base16::{ColorSlot, SemanticRole};
+
+    let mut keys = Vec::new();
+
+    for slot in ColorSlot::variants() {
+        if !matches!(
+            slot.role(),
+            SemanticRole::Accent | SemanticRole::BrightAccent
+        ) {
+            continue;
+        }
+
+        // base16/base24 key name from ontology
+        keys.push(slot.key().to_string());
+
+        // ansi16 key name (via ANSI index)
+        if let Some(idx) = slot.ansi_index() {
+            keys.push(format!("color{:02}", idx));
+        }
+    }
+
+    // vogix16 semantic names from praxis ontology
+    for semantic in praxis_domains::technology::theming::schemes::Vogix16Semantic::variants() {
+        if semantic.is_functional() {
+            keys.push(semantic.key().to_string());
+        }
+    }
+
+    // ansi16 key names from praxis ontology
+    for ansi in praxis_domains::technology::theming::schemes::Ansi16Color::variants() {
+        let slot = ansi.to_base16_slot();
+        if matches!(slot.role(), SemanticRole::Accent | SemanticRole::BrightAccent) {
+            keys.push(ansi.key());
+        }
+    }
+
+    keys
+}
 
 /// Generate GLSL shader source with embedded theme colors.
 #[must_use]
@@ -105,29 +150,42 @@ pub fn generate_glsl(
 ) -> String {
     let color = with_saturation(color, params.saturation);
 
+    // Discover functional colors from praxis ontology (accent + bright accent)
+    let functional_keys = functional_color_keys();
     let mut func_consts = String::new();
     let mut func_dists = String::new();
-    for (i, key) in FUNCTIONAL_KEYS.iter().enumerate() {
-        if let Some(hex) = colors.get(*key)
+    let mut func_idx = 0;
+    for key in &functional_keys {
+        if let Some(hex) = colors.get(key.as_str())
             && let Some((r, g, b)) = super::color::hex_to_rgb(hex)
         {
             func_consts.push_str(&format!(
                 "const vec3 func{} = vec3({:.4}, {:.4}, {:.4});\n",
-                i, r, g, b
+                func_idx, r, g, b
             ));
             func_dists.push_str(&format!(
                 "    closest = min(closest, distance(c, func{}));\n",
-                i
+                func_idx
             ));
+            func_idx += 1;
         }
     }
 
-    // Detect polarity from base00 background luminance
-    let is_dark = colors
-        .get("base00")
-        .and_then(|hex| super::color::hex_to_rgb(hex))
-        .map(|(r, g, b)| r * LUMA_R + g * LUMA_G + b * LUMA_B < 0.5)
-        .unwrap_or(true);
+    // Detect polarity using praxis theming ontology
+    // Build a palette from the hex colors, then ask the ontology for polarity
+    let is_dark = {
+        use praxis_domains::science::colors::Rgb;
+        use praxis_domains::technology::theming::base16::{ColorSlot, Polarity};
+        use praxis_domains::technology::theming::ontology;
+
+        let mut palette = ontology::Palette::new();
+        if let Some(hex) = colors.get("base00")
+            && let Some(rgb) = Rgb::from_hex(hex)
+        {
+            palette.insert(ColorSlot::Base00, rgb);
+        }
+        ontology::detect_polarity(&palette) != Some(Polarity::Light)
+    };
 
     SHADER_TEMPLATE
         .replace("{R}", &format!("{:.4}", color.r))

@@ -128,6 +128,12 @@ pub enum ThemeCommands {
         #[arg(short = 'q', long)]
         quiet: bool,
     },
+
+    /// Undo last theme change
+    Undo,
+
+    /// Redo last undone theme change
+    Redo,
 }
 
 #[derive(Subcommand)]

@@ -25,6 +25,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout praxis (path dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: i-am-logger/praxis
+          path: .praxis-src
+
+      - name: Link praxis at expected path
+        run: ln -s "$GITHUB_WORKSPACE/.praxis-src" ../praxis
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
         with:

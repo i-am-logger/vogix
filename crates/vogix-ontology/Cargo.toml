@@ -1,0 +1,14 @@
+[package]
+name = "vogix-ontology"
+version = "0.1.0"
+edition = "2024"
+authors = ["i-am-logger"]
+description = "Vogix domain ontology — modes, transitions, keybinding qualities. Will move to praxis."
+license = "CC-BY-NC-SA-4.0"
+
+[dependencies]
+praxis = { path = "../../../praxis/crates/praxis" }
+praxis-domains = { path = "../../../praxis/crates/domains" }
+
+[dev-dependencies]
+proptest = "1.6"

@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/vogix-ontology"]
+resolver = "3"
+
 [package]
 name = "vogix"
 version = "0.6.4"
@@ -30,6 +34,11 @@ glob = "0.3"
 
 # Error handling
 thiserror = "2.0"
+
+# Ontology-driven rule enforcement
+praxis = { path = "../praxis/crates/praxis" }
+praxis-domains = { path = "../praxis/crates/domains" }
+vogix-ontology = { path = "crates/vogix-ontology" }
 
 # Date/time for state timestamps
 chrono = "0.4"
