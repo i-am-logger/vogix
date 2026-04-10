@@ -389,4 +389,73 @@ mod tests {
         assert!(html.len() > 1000);
         assert!(json.len() > 1000);
     }
+
+    // ── Property-based tests ──
+    use proptest::prelude::*;
+
+    fn arb_theme_result() -> impl Strategy<Value = ThemeResult> {
+        (
+            "[a-z]{3,10}",  // theme
+            "[a-z]{3,10}",  // variant
+            prop::bool::ANY, // monotone
+            prop::bool::ANY, // wcag
+            0.5f64..21.0,    // contrast
+        )
+            .prop_map(|(theme, variant, mono, wcag, cr)| ThemeResult {
+                theme,
+                variant,
+                slots_found: 16,
+                luminance_monotone: mono,
+                wcag_aa: wcag,
+                contrast_ratio: Some(cr),
+                polarity: if mono { "dark" } else { "light" }.into(),
+                luminance_ramp: vec![
+                    ("base00".into(), 0.03),
+                    ("base05".into(), 0.72),
+                ],
+                mono_break_at: if mono { None } else { Some(1) },
+            })
+    }
+
+    proptest! {
+        #[test]
+        fn prop_json_contains_all_themes(results in proptest::collection::vec(arb_theme_result(), 1..10)) {
+            let json = to_json(&results, "test");
+            for r in &results {
+                prop_assert!(json.contains(&r.theme), "missing theme in JSON");
+            }
+        }
+
+        #[test]
+        fn prop_json_total_matches(results in proptest::collection::vec(arb_theme_result(), 1..10)) {
+            let json = to_json(&results, "test");
+            let expected = format!("\"total\": {}", results.len());
+            prop_assert!(json.contains(&expected), "total mismatch");
+        }
+
+        #[test]
+        fn prop_html_contains_all_themes(results in proptest::collection::vec(arb_theme_result(), 1..10)) {
+            let html = to_html(&results, "test");
+            for r in &results {
+                prop_assert!(html.contains(&r.theme), "missing theme in HTML");
+            }
+        }
+
+        #[test]
+        fn prop_html_is_valid_structure(results in proptest::collection::vec(arb_theme_result(), 1..5)) {
+            let html = to_html(&results, "test");
+            prop_assert!(html.starts_with("<!DOCTYPE html>"));
+            prop_assert!(html.contains("</html>"));
+            prop_assert!(html.contains("<style>"));
+            prop_assert!(html.contains("<script>"));
+        }
+
+        #[test]
+        fn prop_json_monotone_count_correct(results in proptest::collection::vec(arb_theme_result(), 1..10)) {
+            let json = to_json(&results, "test");
+            let expected_mono = results.iter().filter(|r| r.luminance_monotone).count();
+            let expected = format!("\"luminance_monotone\": {}", expected_mono);
+            prop_assert!(json.contains(&expected), "monotone count mismatch");
+        }
+    }
 }

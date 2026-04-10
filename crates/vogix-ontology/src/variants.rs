@@ -265,5 +265,59 @@ mod tests {
                 prop_assert!(vs.variants.iter().any(|x| x.name == lighter));
             }
         }
+
+        #[test]
+        fn prop_roundtrip_navigation(idx in 0usize..4) {
+            let vs = catppuccin_variants();
+            let v = &vs.variants[idx];
+            // darker then lighter = same
+            if let Some(d) = vs.darker(&v.name) {
+                if let Some(back) = vs.lighter(d) {
+                    prop_assert_eq!(back, v.name.as_str());
+                }
+            }
+            // lighter then darker = same
+            if let Some(l) = vs.lighter(&v.name) {
+                if let Some(back) = vs.darker(l) {
+                    prop_assert_eq!(back, v.name.as_str());
+                }
+            }
+        }
+
+        #[test]
+        fn prop_random_variant_set_with_unique_orders_validates(n in 1usize..6) {
+            let mut vs = VariantSet::new("random");
+            for i in 0..n {
+                vs.add(
+                    format!("v{}", i),
+                    if i % 2 == 0 { Polarity::Dark } else { Polarity::Light },
+                    i as u32,
+                );
+            }
+            let uo = UniqueOrders { variants: vs.clone() };
+            prop_assert!(uo.holds());
+            let nr = NavigationRoundtrip { variants: vs };
+            prop_assert!(nr.holds());
+        }
+
+        #[test]
+        fn prop_darkest_has_no_darker(n in 2usize..6) {
+            let mut vs = VariantSet::new("chain");
+            for i in 0..n {
+                vs.add(format!("v{}", i), Polarity::Dark, i as u32);
+            }
+            let darkest = &vs.variants[n - 1].name;
+            prop_assert!(vs.darker(darkest).is_none());
+        }
+
+        #[test]
+        fn prop_lightest_has_no_lighter(n in 2usize..6) {
+            let mut vs = VariantSet::new("chain");
+            for i in 0..n {
+                vs.add(format!("v{}", i), Polarity::Dark, i as u32);
+            }
+            let lightest = &vs.variants[0].name;
+            prop_assert!(vs.lighter(lightest).is_none());
+        }
     }
 }

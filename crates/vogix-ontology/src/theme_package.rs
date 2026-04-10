@@ -242,7 +242,43 @@ mod tests {
                 make_palette(Rgb::new(bg_r, bg_g, bg_b), Rgb::new(fg_r, fg_g, fg_b)),
             );
             let failures = t.validate();
-            prop_assert!(failures.is_empty(), "unexpected: {:?}", failures);
+            prop_assert!(failures.is_empty(), "unexpected failures");
+        }
+
+        #[test]
+        fn prop_empty_theme_always_fails(name in "[a-z]{3,8}") {
+            let t = ThemePackage::new(name, SchemeType::Base16);
+            let failures = t.validate();
+            prop_assert!(!failures.is_empty(), "empty theme should fail");
+        }
+
+        #[test]
+        fn prop_missing_base05_fails(r in 0u8..=255, g in 0u8..=255, b in 0u8..=255) {
+            let mut t = ThemePackage::new("incomplete", SchemeType::Base16);
+            let mut p = Palette::new();
+            p.insert(ColorSlot::Base00, Rgb::new(r, g, b));
+            // Missing base05
+            t.add_variant("v", Polarity::Dark, 0, p);
+            let failures = t.validate();
+            prop_assert!(!failures.is_empty(), "missing base05 should fail");
+        }
+
+        #[test]
+        fn prop_variant_count_matches(n in 1usize..5) {
+            let mut t = ThemePackage::new("multi", SchemeType::Base16);
+            for i in 0..n {
+                t.add_variant(
+                    format!("v{}", i),
+                    if i % 2 == 0 { Polarity::Dark } else { Polarity::Light },
+                    i as u32,
+                    make_palette(
+                        Rgb::new((i * 30) as u8, (i * 30) as u8, (i * 30) as u8),
+                        Rgb::new(200, 200, 200),
+                    ),
+                );
+            }
+            prop_assert_eq!(t.variants.len(), n);
+            prop_assert!(t.validate().is_empty());
         }
     }
 }
