@@ -307,6 +307,221 @@ pub fn vim_preset() -> BindingSet {
     bs
 }
 
+/// CUA/Windows-style keybindings — standard PC shortcuts.
+///
+/// Source: IBM CUA specification (1987), Microsoft Windows UX Guidelines
+pub fn cua_preset() -> BindingSet {
+    let mut bs = BindingSet::new("cua");
+    let app = ModeId::new("app");
+
+    let binds = [
+        ('c', "copy", "Copy", "exec, wl-copy"),
+        ('v', "paste", "Paste", "exec, wl-paste"),
+        ('x', "cut", "Cut", "exec, wl-copy"),
+        ('z', "undo", "Undo", "exec, undo"),
+        ('s', "save", "Save", "exec, save"),
+        ('a', "select_all", "Select all", "exec, select-all"),
+        ('f', "find", "Find", "exec, find"),
+        ('n', "new_window", "New window", "exec, new-window"),
+        ('o', "open", "Open file", "exec, open"),
+        ('p', "print", "Print", "exec, print"),
+        ('w', "close_tab", "Close tab", "killactive,"),
+        ('t', "new_tab", "New tab", "exec, new-tab"),
+    ];
+    for (c, name, desc, cmd) in binds {
+        bs.add(
+            KeyCombo::new(Key::Letter(c)).with_mod(Modifier::Ctrl),
+            app.clone(),
+            Action::new(name, desc, cmd),
+            false,
+        );
+    }
+
+    // Alt+F4 = quit
+    bs.add(
+        KeyCombo::new(Key::Function(4)).with_mod(Modifier::Alt),
+        app.clone(),
+        Action::new("quit", "Quit application", "killactive,"),
+        false,
+    );
+    // Alt+Tab = switch window
+    bs.add(
+        KeyCombo::new(Key::Named(NamedKey::Tab)).with_mod(Modifier::Alt),
+        app,
+        Action::new("switch_window", "Switch window", "cyclenext,"),
+        false,
+    );
+
+    bs
+}
+
+/// emacs-style keybindings — Ctrl/Meta prefix navigation.
+///
+/// Source: GNU Emacs Manual, readline conventions
+pub fn emacs_preset() -> BindingSet {
+    let mut bs = BindingSet::new("emacs");
+    let app = ModeId::new("app");
+
+    // C-a/e/k/y — line editing (readline)
+    bs.add(KeyCombo::new(Key::Letter('a')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("line_start", "Beginning of line", "exec, line-start"), false);
+    bs.add(KeyCombo::new(Key::Letter('e')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("line_end", "End of line", "exec, line-end"), false);
+    bs.add(KeyCombo::new(Key::Letter('k')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("kill_line", "Kill to end of line", "exec, kill-line"), false);
+    bs.add(KeyCombo::new(Key::Letter('y')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("yank", "Yank (paste)", "exec, yank"), false);
+
+    // C-f/b/n/p — character/line movement
+    bs.add(KeyCombo::new(Key::Letter('f')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("forward_char", "Forward one character", "movefocus, r"), false);
+    bs.add(KeyCombo::new(Key::Letter('b')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("backward_char", "Backward one character", "movefocus, l"), false);
+    bs.add(KeyCombo::new(Key::Letter('n')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("next_line", "Next line", "movefocus, d"), false);
+    bs.add(KeyCombo::new(Key::Letter('p')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("prev_line", "Previous line", "movefocus, u"), false);
+
+    // M-f/b — word movement
+    bs.add(KeyCombo::new(Key::Letter('f')).with_mod(Modifier::Alt), app.clone(),
+        Action::new("forward_word", "Forward one word", "exec, forward-word"), false);
+    bs.add(KeyCombo::new(Key::Letter('b')).with_mod(Modifier::Alt), app.clone(),
+        Action::new("backward_word", "Backward one word", "exec, backward-word"), false);
+
+    // C-g — cancel
+    bs.add(KeyCombo::new(Key::Letter('g')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("cancel", "Cancel / keyboard quit", "submap, reset"), false);
+
+    // C-s/r — search
+    bs.add(KeyCombo::new(Key::Letter('s')).with_mod(Modifier::Ctrl), app.clone(),
+        Action::new("search_forward", "Incremental search forward", "exec, search-forward"), false);
+    bs.add(KeyCombo::new(Key::Letter('r')).with_mod(Modifier::Ctrl), app,
+        Action::new("search_backward", "Incremental search backward", "exec, search-backward"), false);
+
+    bs
+}
+
+/// i3/sway tiling WM keybindings — Super + key for WM actions.
+///
+/// Source: i3 User's Guide, sway(5) man page
+pub fn i3_preset() -> BindingSet {
+    let mut bs = BindingSet::new("i3");
+    let app = ModeId::new("app");
+    let resize = ModeId::new("resize");
+
+    // Window management
+    bs.add(KeyCombo::new(Key::Named(NamedKey::Enter)).with_mod(Modifier::Super), app.clone(),
+        Action::new("terminal", "Launch terminal", "exec, $TERMINAL"), false);
+    bs.add(KeyCombo::new(Key::Letter('d')).with_mod(Modifier::Super), app.clone(),
+        Action::new("launcher", "Application launcher", "exec, walker"), false);
+    bs.add(KeyCombo::new(Key::Letter('q')).with_mod(Modifier::Super).with_mod(Modifier::Shift), app.clone(),
+        Action::new("kill", "Kill focused window", "killactive,"), false);
+    bs.add(KeyCombo::new(Key::Letter('f')).with_mod(Modifier::Super), app.clone(),
+        Action::new("fullscreen", "Toggle fullscreen", "fullscreen"), false);
+
+    // Focus: Super+hjkl
+    for (c, dir, desc) in [('h', "l", "left"), ('j', "d", "down"), ('k', "u", "up"), ('l', "r", "right")] {
+        bs.add(KeyCombo::new(Key::Letter(c)).with_mod(Modifier::Super), app.clone(),
+            Action::new(format!("focus_{desc}"), format!("Focus {desc}"), format!("movefocus, {dir}")), false);
+    }
+
+    // Move: Super+Shift+hjkl
+    for (c, dir, desc) in [('h', "l", "left"), ('j', "d", "down"), ('k', "u", "up"), ('l', "r", "right")] {
+        bs.add(KeyCombo::new(Key::Letter(c)).with_mod(Modifier::Super).with_mod(Modifier::Shift), app.clone(),
+            Action::new(format!("move_{desc}"), format!("Move window {desc}"), format!("movewindow, {dir}")), false);
+    }
+
+    // Workspaces: Super+1-9
+    for i in 1u8..=9 {
+        bs.add(KeyCombo::new(Key::Number(i)).with_mod(Modifier::Super), app.clone(),
+            Action::new(format!("workspace_{i}"), format!("Workspace {i}"), format!("workspace, {i}")), false);
+    }
+
+    // Move to workspace: Super+Shift+1-9
+    for i in 1u8..=9 {
+        bs.add(KeyCombo::new(Key::Number(i)).with_mod(Modifier::Super).with_mod(Modifier::Shift), app.clone(),
+            Action::new(format!("move_to_{i}"), format!("Move to workspace {i}"), format!("movetoworkspace, {i}")), false);
+    }
+
+    // Layout
+    bs.add(KeyCombo::new(Key::Letter('v')).with_mod(Modifier::Super), app.clone(),
+        Action::new("split_v", "Split vertical", "layoutmsg, togglesplit"), false);
+    bs.add(KeyCombo::new(Key::Named(NamedKey::Space)).with_mod(Modifier::Super).with_mod(Modifier::Shift), app.clone(),
+        Action::new("float", "Toggle floating", "togglefloating,"), false);
+
+    // Resize mode
+    bs.add(KeyCombo::new(Key::Letter('r')).with_mod(Modifier::Super), app,
+        Action::new("enter_resize", "Enter resize mode", "submap, resize"), false);
+
+    // Resize mode bindings
+    for (c, action, desc) in [
+        ('h', "resizeactive, -30 0", "Shrink width"),
+        ('j', "resizeactive, 0 30", "Grow height"),
+        ('k', "resizeactive, 0 -30", "Shrink height"),
+        ('l', "resizeactive, 30 0", "Grow width"),
+    ] {
+        bs.add(KeyCombo::new(Key::Letter(c)), resize.clone(),
+            Action::new(format!("resize_{c}"), desc, action), true);
+    }
+    bs.add(KeyCombo::new(Key::Named(NamedKey::Escape)), resize,
+        Action::new("exit_resize", "Exit resize mode", "submap, reset"), false);
+
+    bs
+}
+
+/// tmux-style keybindings — prefix key (Ctrl+B) then action key.
+///
+/// Source: tmux(1) man page, vi copy mode conventions
+pub fn tmux_preset() -> BindingSet {
+    let mut bs = BindingSet::new("tmux");
+    let prefix = ModeId::new("tmux-prefix");
+
+    // Window management
+    bs.add(KeyCombo::new(Key::Letter('c')), prefix.clone(),
+        Action::new("new_window", "Create new window", "exec, tmux new-window"), false);
+    bs.add(KeyCombo::new(Key::Letter('n')), prefix.clone(),
+        Action::new("next_window", "Next window", "exec, tmux next-window"), false);
+    bs.add(KeyCombo::new(Key::Letter('p')), prefix.clone(),
+        Action::new("prev_window", "Previous window", "exec, tmux previous-window"), false);
+    bs.add(KeyCombo::new(Key::Letter('l')), prefix.clone(),
+        Action::new("last_window", "Last window", "exec, tmux last-window"), false);
+
+    // Window numbers
+    for i in 0u8..=9 {
+        bs.add(KeyCombo::new(Key::Number(i)), prefix.clone(),
+            Action::new(format!("window_{i}"), format!("Switch to window {i}"), format!("exec, tmux select-window -t {i}")), false);
+    }
+
+    // Pane splitting
+    bs.add(KeyCombo::new(Key::Letter('%')), prefix.clone(),
+        Action::new("split_v", "Split pane vertical", "exec, tmux split-window -h"), false);
+    bs.add(KeyCombo::new(Key::Letter('"')), prefix.clone(),
+        Action::new("split_h", "Split pane horizontal", "exec, tmux split-window -v"), false);
+
+    // Pane navigation (arrows — hjkl conflicts with window commands in default tmux)
+    for (key, dir, name) in [
+        (NamedKey::Left, "L", "left"),
+        (NamedKey::Down, "D", "down"),
+        (NamedKey::Up, "U", "up"),
+        (NamedKey::Right, "R", "right"),
+    ] {
+        bs.add(KeyCombo::new(Key::Named(key)), prefix.clone(),
+            Action::new(format!("pane_{name}"), format!("Focus pane {name}"), format!("exec, tmux select-pane -{dir}")), false);
+    }
+
+    // Session/pane management
+    bs.add(KeyCombo::new(Key::Letter('d')), prefix.clone(),
+        Action::new("detach", "Detach session", "exec, tmux detach"), false);
+    bs.add(KeyCombo::new(Key::Letter('z')), prefix.clone(),
+        Action::new("zoom", "Toggle pane zoom", "exec, tmux resize-pane -Z"), false);
+    bs.add(KeyCombo::new(Key::Letter('x')), prefix.clone(),
+        Action::new("kill_pane", "Kill pane", "exec, tmux kill-pane"), false);
+    bs.add(KeyCombo::new(Key::Letter('?')), prefix,
+        Action::new("help", "List keybindings", "exec, tmux list-keys"), false);
+
+    bs
+}
+
 // ── Axioms ──
 
 /// No binding conflicts: same key combo in the same mode must not have two actions.
@@ -500,6 +715,128 @@ mod tests {
             false,
         );
         assert!(NoConflicts { bindings: bs }.holds());
+    }
+
+    // ── CUA preset ──
+
+    #[test]
+    fn test_cua_preset_no_conflicts() {
+        assert!(NoConflicts { bindings: cua_preset() }.holds());
+    }
+
+    #[test]
+    fn test_cua_has_copy_paste() {
+        let bs = cua_preset();
+        let app = ModeId::new("app");
+        let bindings = bs.for_mode(&app);
+        let names: Vec<_> = bindings.iter().map(|b| b.action.name.as_str()).collect();
+        assert!(names.contains(&"copy"));
+        assert!(names.contains(&"paste"));
+        assert!(names.contains(&"cut"));
+    }
+
+    // ── emacs preset ──
+
+    #[test]
+    fn test_emacs_preset_no_conflicts() {
+        assert!(NoConflicts { bindings: emacs_preset() }.holds());
+    }
+
+    #[test]
+    fn test_emacs_has_readline() {
+        let bs = emacs_preset();
+        let app = ModeId::new("app");
+        let bindings = bs.for_mode(&app);
+        let names: Vec<_> = bindings.iter().map(|b| b.action.name.as_str()).collect();
+        assert!(names.contains(&"line_start"));  // C-a
+        assert!(names.contains(&"line_end"));    // C-e
+        assert!(names.contains(&"kill_line"));   // C-k
+        assert!(names.contains(&"yank"));        // C-y
+    }
+
+    // ── i3 preset ──
+
+    #[test]
+    fn test_i3_preset_no_conflicts() {
+        assert!(NoConflicts { bindings: i3_preset() }.holds());
+    }
+
+    #[test]
+    fn test_i3_has_workspaces() {
+        let bs = i3_preset();
+        let app = ModeId::new("app");
+        let bindings = bs.for_mode(&app);
+        let names: Vec<_> = bindings.iter().map(|b| b.action.name.as_str()).collect();
+        for i in 1..=9 {
+            assert!(names.contains(&format!("workspace_{i}").as_str()), "missing workspace {i}");
+        }
+    }
+
+    #[test]
+    fn test_i3_has_hjkl_focus() {
+        let bs = i3_preset();
+        let app = ModeId::new("app");
+        let bindings = bs.for_mode(&app);
+        let names: Vec<_> = bindings.iter().map(|b| b.action.name.as_str()).collect();
+        assert!(names.contains(&"focus_left"));
+        assert!(names.contains(&"focus_right"));
+        assert!(names.contains(&"focus_up"));
+        assert!(names.contains(&"focus_down"));
+    }
+
+    #[test]
+    fn test_i3_resize_mode() {
+        let bs = i3_preset();
+        let resize = ModeId::new("resize");
+        let bindings = bs.for_mode(&resize);
+        assert!(bindings.len() >= 5, "resize mode should have hjkl + escape");
+    }
+
+    // ── tmux preset ──
+
+    #[test]
+    fn test_tmux_preset_no_conflicts() {
+        assert!(NoConflicts { bindings: tmux_preset() }.holds());
+    }
+
+    #[test]
+    fn test_tmux_has_window_management() {
+        let bs = tmux_preset();
+        let prefix = ModeId::new("tmux-prefix");
+        let bindings = bs.for_mode(&prefix);
+        let names: Vec<_> = bindings.iter().map(|b| b.action.name.as_str()).collect();
+        assert!(names.contains(&"new_window"));
+        assert!(names.contains(&"next_window"));
+        assert!(names.contains(&"prev_window"));
+        assert!(names.contains(&"detach"));
+    }
+
+    #[test]
+    fn test_tmux_has_pane_navigation() {
+        let bs = tmux_preset();
+        let prefix = ModeId::new("tmux-prefix");
+        let bindings = bs.for_mode(&prefix);
+        let names: Vec<_> = bindings.iter().map(|b| b.action.name.as_str()).collect();
+        assert!(names.contains(&"pane_left"));
+        assert!(names.contains(&"pane_down"));
+        assert!(names.contains(&"pane_up"));
+        assert!(names.contains(&"pane_right"));
+    }
+
+    // ── Cross-preset tests ──
+
+    #[test]
+    fn test_all_presets_no_conflicts() {
+        for (name, bs) in [
+            ("vim", vim_preset()),
+            ("cua", cua_preset()),
+            ("emacs", emacs_preset()),
+            ("i3", i3_preset()),
+            ("tmux", tmux_preset()),
+        ] {
+            let axiom = NoConflicts { bindings: bs };
+            assert!(axiom.holds(), "{name} preset has conflicts");
+        }
     }
 
     // ── Property-based tests ──
