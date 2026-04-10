@@ -7,3 +7,4 @@ pub mod surfaces;
 pub mod theme_package;
 pub mod validate_themes;
 pub mod variants;
+pub mod visualization;
