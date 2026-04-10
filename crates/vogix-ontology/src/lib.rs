@@ -1,4 +1,5 @@
 /// Vogix domain ontology — will move to praxis once stable.
+pub mod keybindings;
 pub mod modes;
 pub mod report;
 pub mod shader_params;
