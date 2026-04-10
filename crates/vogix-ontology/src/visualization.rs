@@ -189,6 +189,65 @@ pub fn suitable_encodings(level: DataLevel) -> Vec<VisualVariable> {
 }
 
 // ══════════════════════════════════════════════
+// Geometry Types (Geom layer from Grammar of Graphics)
+// ══════════════════════════════════════════════
+
+/// Geometric mark types for data visualization.
+///
+/// Source: Wickham (2010) — the Geom layer of the Grammar of Graphics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GeomType {
+    Point,
+    Line,
+    Bar,
+    Area,
+    Tile,
+    Pie,
+    Text,
+    Boxplot,
+}
+
+impl Entity for GeomType {
+    fn variants() -> Vec<Self> {
+        vec![
+            Self::Point, Self::Line, Self::Bar, Self::Area,
+            Self::Tile, Self::Pie, Self::Text, Self::Boxplot,
+        ]
+    }
+}
+
+/// Which geom types suit which data levels?
+pub fn suitable_geoms(level: DataLevel) -> Vec<GeomType> {
+    match level {
+        DataLevel::Nominal => vec![GeomType::Bar, GeomType::Tile, GeomType::Pie, GeomType::Text],
+        DataLevel::Ordinal => vec![GeomType::Bar, GeomType::Line, GeomType::Tile, GeomType::Boxplot],
+        DataLevel::Interval => vec![GeomType::Line, GeomType::Bar, GeomType::Area, GeomType::Point],
+        DataLevel::Ratio => vec![GeomType::Bar, GeomType::Line, GeomType::Point, GeomType::Area, GeomType::Boxplot],
+    }
+}
+
+/// Quality: primary use case per geom.
+#[derive(Debug, Clone)]
+pub struct GeomUseCase;
+
+impl Quality for GeomUseCase {
+    type Individual = GeomType;
+    type Value = &'static str;
+    fn get(&self, geom: &GeomType) -> Option<&'static str> {
+        Some(match geom {
+            GeomType::Point => "individual values, correlations",
+            GeomType::Line => "trends, connected sequences",
+            GeomType::Bar => "magnitude comparison, ranking",
+            GeomType::Area => "cumulative totals, stacked",
+            GeomType::Tile => "matrix, heatmap, grid",
+            GeomType::Pie => "proportions of whole (area encoding = rank 4, use sparingly)",
+            GeomType::Text => "exact values, annotations",
+            GeomType::Boxplot => "distribution summary",
+        })
+    }
+}
+
+// ══════════════════════════════════════════════
 // Shneiderman's Information Seeking Mantra
 // ══════════════════════════════════════════════
 
@@ -455,6 +514,39 @@ mod tests {
     #[test]
     fn test_4_data_levels() {
         assert_eq!(DataLevel::variants().len(), 4);
+    }
+
+    #[test]
+    fn test_8_geom_types() {
+        assert_eq!(GeomType::variants().len(), 8);
+    }
+
+    #[test]
+    fn test_ratio_supports_bar_and_line() {
+        let geoms = suitable_geoms(DataLevel::Ratio);
+        assert!(geoms.contains(&GeomType::Bar));
+        assert!(geoms.contains(&GeomType::Line));
+    }
+
+    #[test]
+    fn test_nominal_supports_pie() {
+        let geoms = suitable_geoms(DataLevel::Nominal);
+        assert!(geoms.contains(&GeomType::Pie));
+    }
+
+    #[test]
+    fn test_ratio_no_pie() {
+        // Pie charts are for proportions (nominal), not magnitudes (ratio)
+        let geoms = suitable_geoms(DataLevel::Ratio);
+        assert!(!geoms.contains(&GeomType::Pie));
+    }
+
+    #[test]
+    fn test_every_geom_has_use_case() {
+        let uc = GeomUseCase;
+        for geom in GeomType::variants() {
+            assert!(uc.get(&geom).is_some());
+        }
     }
 
     #[test]
