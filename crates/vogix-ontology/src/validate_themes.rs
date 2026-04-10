@@ -20,6 +20,7 @@ use std::path::Path;
 pub struct ThemeResult {
     pub theme: String,
     pub variant: String,
+    pub scheme: String,
     pub slots_found: usize,
     pub luminance_monotone: bool,
     pub wcag_aa: bool,
@@ -154,6 +155,11 @@ pub fn validate_palette(palette: &Palette) -> ValidationDetail {
 }
 /// Scan a directory of base16 themes and validate each.
 pub fn scan_themes(base_dir: &Path) -> Vec<ThemeResult> {
+    scan_themes_with_scheme(base_dir, "unknown")
+}
+
+/// Scan a directory of themes and validate each, tagging with scheme type.
+pub fn scan_themes_with_scheme(base_dir: &Path, scheme: &str) -> Vec<ThemeResult> {
     let mut results = Vec::new();
 
     let Ok(entries) = std::fs::read_dir(base_dir) else {
@@ -210,6 +216,7 @@ pub fn scan_themes(base_dir: &Path) -> Vec<ThemeResult> {
                 results.push(ThemeResult {
                     theme: theme_name.clone(),
                     variant: variant_name,
+                    scheme: scheme.to_string(),
                     slots_found: palette.len(),
                     luminance_monotone: detail.monotone,
                     wcag_aa: detail.wcag_aa,
@@ -398,7 +405,7 @@ palette:
                 continue;
             }
 
-            let results = scan_themes(dir);
+            let results = scan_themes_with_scheme(dir, name);
             if results.is_empty() {
                 continue;
             }

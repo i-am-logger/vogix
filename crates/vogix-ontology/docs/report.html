@@ -5,74 +5,132 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vogix Theme Validation Report</title>
 <style>
-  :root {
-    --bg: #0d1117; --fg: #c9d1d9; --border: #30363d;
-    --green: #3fb950; --red: #f85149; --yellow: #d29922;
-    --blue: #58a6ff; --card-bg: #161b22;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; background: var(--bg); color: var(--fg); padding: 2rem; }
-  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-  .subtitle { color: #8b949e; margin-bottom: 2rem; }
-  .cards { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
-  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.5rem; min-width: 150px; }
-  .card .value { font-size: 2rem; font-weight: bold; }
-  .card .label { font-size: 0.8rem; color: #8b949e; }
-  .card.pass .value { color: var(--green); }
-  .card.fail .value { color: var(--red); }
-  .card.info .value { color: var(--blue); }
-  .controls { margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-  .controls input { background: var(--card-bg); border: 1px solid var(--border); color: var(--fg); padding: 0.4rem 0.8rem; border-radius: 4px; }
-  .controls button { background: var(--card-bg); border: 1px solid var(--border); color: var(--fg); padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }
-  .controls button.active { background: var(--blue); color: var(--bg); }
-  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  th { text-align: left; padding: 0.5rem; border-bottom: 2px solid var(--border); cursor: pointer; user-select: none; }
-  th:hover { color: var(--blue); }
-  td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
-  tr:hover { background: var(--card-bg); }
-  .pass-badge { color: var(--green); }
-  .fail-badge { color: var(--red); }
-  .ramp { display: flex; gap: 2px; align-items: flex-end; height: 40px; }
-  .ramp-bar { width: 30px; background: var(--blue); border-radius: 2px 2px 0 0; transition: background 0.2s; }
-  .ramp-bar.break { background: var(--red); }
-  .trace { display: none; background: var(--card-bg); padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; font-size: 0.75rem; font-family: monospace; }
-  .trace.open { display: block; }
-  .expandable { cursor: pointer; }
-  .expandable:hover { color: var(--blue); }
+:root {
+  --bg: #0d1117; --fg: #c9d1d9; --fg2: #8b949e; --border: #30363d;
+  --pass: #3fb950; --fail: #f85149; --warn: #d29922;
+  --accent: #58a6ff; --card: #161b22; --hover: #1c2128;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); line-height:1.5; }
+
+/* Tufte: maximize data-ink ratio — minimal chrome */
+.container { max-width:1400px; margin:0 auto; padding:2rem; }
+header { margin-bottom:2rem; border-bottom:1px solid var(--border); padding-bottom:1rem; }
+header h1 { font-size:1.3rem; font-weight:600; letter-spacing:-0.02em; }
+header p { color:var(--fg2); font-size:0.85rem; }
+
+/* Level 1: Overview — Shneiderman "overview first" */
+.overview { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:0.75rem; margin-bottom:2rem; }
+.stat { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:0.75rem 1rem; }
+.stat .n { font-size:1.8rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.stat .label { font-size:0.7rem; color:var(--fg2); text-transform:uppercase; letter-spacing:0.05em; }
+.stat.ok .n { color:var(--pass); }
+.stat.bad .n { color:var(--fail); }
+
+/* Heatmap — overview of all themes × axioms */
+.heatmap { margin-bottom:2rem; }
+.heatmap-grid { display:flex; flex-wrap:wrap; gap:1px; background:var(--border); padding:1px; }
+.heatmap-cell { width:3px; height:12px; }
+.heatmap-cell.pass { background:var(--pass); }
+.heatmap-cell.fail { background:var(--fail); }
+.heatmap-cell.partial { background:var(--warn); }
+.heatmap-label { font-size:0.7rem; color:var(--fg2); margin-bottom:0.25rem; }
+
+/* Level 2: Explore — Shneiderman "zoom and filter" */
+.controls { display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap; align-items:center; }
+.controls input { background:var(--card); border:1px solid var(--border); color:var(--fg); padding:0.35rem 0.7rem; border-radius:3px; font-size:0.8rem; }
+.controls button { background:var(--card); border:1px solid var(--border); color:var(--fg); padding:0.35rem 0.7rem; border-radius:3px; cursor:pointer; font-size:0.75rem; }
+.controls button.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+.controls .geom-switch { margin-left:auto; display:flex; gap:0.25rem; }
+.controls .geom-switch button { font-size:0.7rem; padding:0.25rem 0.5rem; }
+
+/* Sparkline grid — Tufte "small multiples" */
+.sparkline-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:0.5rem; margin-bottom:2rem; }
+.theme-card { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:0.6rem 0.8rem; cursor:pointer; transition:border-color 0.15s; }
+.theme-card:hover { border-color:var(--accent); }
+.theme-card.fail { border-left:3px solid var(--fail); }
+.theme-card.pass { border-left:3px solid var(--pass); }
+.theme-card .name { font-size:0.8rem; font-weight:600; margin-bottom:0.25rem; display:flex; justify-content:space-between; }
+.theme-card .badges { display:flex; gap:0.3rem; }
+.theme-card .badge { font-size:0.65rem; padding:0.1rem 0.3rem; border-radius:2px; }
+.badge.ok { background:rgba(63,185,80,0.15); color:var(--pass); }
+.badge.err { background:rgba(248,81,73,0.15); color:var(--fail); }
+.badge.info { background:rgba(88,166,255,0.1); color:var(--accent); }
+
+/* Sparkline — Cleveland rank 1 (position on common scale) */
+.sparkline { height:32px; display:flex; align-items:flex-end; gap:1px; margin:0.3rem 0; }
+.spark-bar { flex:1; border-radius:1px 1px 0 0; min-width:2px; transition:background 0.15s; }
+.spark-bar.ok { background:var(--accent); }
+.spark-bar.brk { background:var(--fail); }
+
+/* Bullet graph — Few: contrast ratio vs thresholds */
+.bullet { height:8px; background:var(--border); border-radius:1px; position:relative; margin:0.25rem 0; }
+.bullet-fill { height:100%; border-radius:1px; position:absolute; left:0; top:0; }
+.bullet-mark { position:absolute; top:-2px; width:1px; height:12px; }
+.bullet-mark.aa { background:var(--warn); }
+.bullet-mark.aaa { background:var(--pass); }
+
+/* Level 3: Detail — Shneiderman "details on demand" */
+.detail { display:none; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:1rem; margin-top:0.5rem; }
+.detail.open { display:block; }
+.detail-trace { font-family:'JetBrains Mono', monospace; font-size:0.75rem; line-height:1.8; }
+.detail-trace .slot { display:inline-block; width:50px; color:var(--fg2); }
+.detail-trace .val { font-weight:600; }
+.detail-trace .brk { color:var(--fail); }
+
+/* Table view (alternative geom) */
+.table-view { display:none; }
+.table-view.active { display:block; }
+.sparkline-grid.hidden { display:none; }
+table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+th { text-align:left; padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); cursor:pointer; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--fg2); }
+th:hover { color:var(--accent); }
+td { padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); }
+tr:hover { background:var(--hover); }
 </style>
 </head>
 <body>
-<h1>Vogix Theme Validation Report</h1>
-<p class="subtitle">Formal ontology axiom evaluation — <span id="dataset"></span> (<span id="count"></span> themes)</p>
+<div class="container">
+<header>
+  <h1>Theme Validation Report</h1>
+  <p>Ontology-driven axiom evaluation — <span id="ds"></span> · <span id="n"></span> themes · Encoding: position (Cleveland rank 1) + sparkline (Tufte)</p>
+</header>
 
-<div class="cards" id="cards"></div>
+<!-- Level 1: Overview (Shneiderman) -->
+<div class="overview" id="stats"></div>
 
-<div class="controls">
-  <input type="text" id="search" placeholder="Search themes..." oninput="filterTable()">
-  <button class="active" onclick="setFilter('all')">All</button>
-  <button onclick="setFilter('pass')">Pass</button>
-  <button onclick="setFilter('fail')">Fail</button>
-  <button onclick="setFilter('dark')">Dark</button>
-  <button onclick="setFilter('light')">Light</button>
+<div class="heatmap">
+  <div class="heatmap-label">All themes — each cell = one theme (green=pass both, red=fail any, yellow=partial)</div>
+  <div class="heatmap-grid" id="heatmap"></div>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th onclick="sortBy('theme')">Theme</th>
-      <th onclick="sortBy('variant')">Variant</th>
-      <th onclick="sortBy('polarity')">Polarity</th>
-      <th onclick="sortBy('luminance_monotone')">Monotonicity</th>
-      <th onclick="sortBy('wcag_aa')">WCAG AA</th>
-      <th onclick="sortBy('contrast_ratio')">Contrast</th>
-      <th>Luminance Ramp</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
+<!-- Level 2: Explore (Shneiderman) -->
+<div class="controls">
+  <input type="text" id="q" placeholder="Search..." oninput="render()">
+  <button class="active" onclick="filt('all',this)">All</button>
+  <button onclick="filt('pass',this)">Pass</button>
+  <button onclick="filt('fail',this)">Fail</button>
+  <button onclick="filt('dark',this)">Dark</button>
+  <button onclick="filt('light',this)">Light</button>
+  <div class="geom-switch">
+    <button class="active" onclick="setGeom('card',this)">Cards</button>
+    <button onclick="setGeom('table',this)">Table</button>
+  </div>
+</div>
+
+<div class="sparkline-grid" id="grid"></div>
+<div class="table-view" id="tbl"><table><thead><tr>
+  <th onclick="sort('theme')">Theme</th>
+  <th onclick="sort('variant')">Variant</th>
+  <th onclick="sort('polarity')">Polarity</th>
+  <th onclick="sort('luminance_monotone')">Mono</th>
+  <th onclick="sort('wcag_aa')">WCAG</th>
+  <th onclick="sort('contrast_ratio')">CR</th>
+  <th>Ramp</th>
+</tr></thead><tbody id="tbody"></tbody></table></div>
 
 <script>
-const DATA = {
+const D = {
   "meta": {
     "generator": "vogix-ontology",
     "dataset": "all (base16 + base24 + vogix16)",
@@ -89,6 +147,7 @@ const DATA = {
     {
       "theme": "atelier-cave",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -100,6 +159,7 @@ const DATA = {
     {
       "theme": "atelier-cave",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -111,6 +171,7 @@ const DATA = {
     {
       "theme": "atelier-dune",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -122,6 +183,7 @@ const DATA = {
     {
       "theme": "atelier-dune",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -133,6 +195,7 @@ const DATA = {
     {
       "theme": "atelier-estuary",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -144,6 +207,7 @@ const DATA = {
     {
       "theme": "atelier-estuary",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -155,6 +219,7 @@ const DATA = {
     {
       "theme": "atelier-forest",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -166,6 +231,7 @@ const DATA = {
     {
       "theme": "atelier-forest",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -177,6 +243,7 @@ const DATA = {
     {
       "theme": "atelier-heath",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -188,6 +255,7 @@ const DATA = {
     {
       "theme": "atelier-heath",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -199,6 +267,7 @@ const DATA = {
     {
       "theme": "atelier-lakeside",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -210,6 +279,7 @@ const DATA = {
     {
       "theme": "atelier-lakeside",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -221,6 +291,7 @@ const DATA = {
     {
       "theme": "atelier-plateau",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -232,6 +303,7 @@ const DATA = {
     {
       "theme": "atelier-plateau",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -243,6 +315,7 @@ const DATA = {
     {
       "theme": "atelier-savanna",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -254,6 +327,7 @@ const DATA = {
     {
       "theme": "atelier-savanna",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -265,6 +339,7 @@ const DATA = {
     {
       "theme": "atelier-seaside",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -276,6 +351,7 @@ const DATA = {
     {
       "theme": "atelier-seaside",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -287,6 +363,7 @@ const DATA = {
     {
       "theme": "atelier-sulphurpool",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -298,6 +375,7 @@ const DATA = {
     {
       "theme": "atelier-sulphurpool",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -309,6 +387,7 @@ const DATA = {
     {
       "theme": "ayu",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -320,6 +399,7 @@ const DATA = {
     {
       "theme": "ayu",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -331,6 +411,7 @@ const DATA = {
     {
       "theme": "ayu",
       "variant": "mirage",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -342,6 +423,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -353,6 +435,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "bathory",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -364,6 +447,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "burzum",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -375,6 +459,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "dark-funeral",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -386,6 +471,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "gorgoroth",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -397,6 +483,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "immortal",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -408,6 +495,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "khold",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -419,6 +507,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "marduk",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -430,6 +519,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "mayhem",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -441,6 +531,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "nile",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -452,6 +543,7 @@ const DATA = {
     {
       "theme": "black-metal",
       "variant": "venom",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -463,6 +555,7 @@ const DATA = {
     {
       "theme": "brushtrees",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -474,6 +567,7 @@ const DATA = {
     {
       "theme": "brushtrees",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -485,6 +579,7 @@ const DATA = {
     {
       "theme": "charcoal",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -496,6 +591,7 @@ const DATA = {
     {
       "theme": "charcoal",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -507,6 +603,7 @@ const DATA = {
     {
       "theme": "chicago",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -518,6 +615,7 @@ const DATA = {
     {
       "theme": "chicago",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -529,6 +627,7 @@ const DATA = {
     {
       "theme": "chinoiserie",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -540,6 +639,7 @@ const DATA = {
     {
       "theme": "chinoiserie",
       "variant": "midnight",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 8,
       "luminance_monotone": true,
@@ -551,6 +651,7 @@ const DATA = {
     {
       "theme": "chinoiserie",
       "variant": "morandi",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 8,
       "luminance_monotone": true,
@@ -562,6 +663,7 @@ const DATA = {
     {
       "theme": "chinoiserie",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -573,6 +675,7 @@ const DATA = {
     {
       "theme": "classic",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -584,6 +687,7 @@ const DATA = {
     {
       "theme": "classic",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -595,6 +699,7 @@ const DATA = {
     {
       "theme": "da-one",
       "variant": "black",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -606,6 +711,7 @@ const DATA = {
     {
       "theme": "da-one",
       "variant": "gray",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -617,6 +723,7 @@ const DATA = {
     {
       "theme": "da-one",
       "variant": "ocean",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -628,6 +735,7 @@ const DATA = {
     {
       "theme": "da-one",
       "variant": "paper",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -639,6 +747,7 @@ const DATA = {
     {
       "theme": "da-one",
       "variant": "sea",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -650,6 +759,7 @@ const DATA = {
     {
       "theme": "da-one",
       "variant": "white",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -661,6 +771,7 @@ const DATA = {
     {
       "theme": "default",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -672,6 +783,7 @@ const DATA = {
     {
       "theme": "default",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -683,6 +795,7 @@ const DATA = {
     {
       "theme": "edge",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -694,6 +807,7 @@ const DATA = {
     {
       "theme": "edge",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -705,6 +819,7 @@ const DATA = {
     {
       "theme": "embers",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -716,6 +831,7 @@ const DATA = {
     {
       "theme": "equilibrium",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -727,6 +843,7 @@ const DATA = {
     {
       "theme": "equilibrium",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -738,6 +855,7 @@ const DATA = {
     {
       "theme": "equilibrium",
       "variant": "gray-dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -749,6 +867,7 @@ const DATA = {
     {
       "theme": "equilibrium",
       "variant": "gray-light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -760,6 +879,7 @@ const DATA = {
     {
       "theme": "eva",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "unknown",
       "slots": 5,
       "luminance_monotone": false,
@@ -771,6 +891,7 @@ const DATA = {
     {
       "theme": "eva",
       "variant": "dim",
+      "scheme": "unknown",
       "polarity": "unknown",
       "slots": 5,
       "luminance_monotone": false,
@@ -782,6 +903,7 @@ const DATA = {
     {
       "theme": "github",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -793,6 +915,7 @@ const DATA = {
     {
       "theme": "github",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -804,6 +927,7 @@ const DATA = {
     {
       "theme": "google",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -815,6 +939,7 @@ const DATA = {
     {
       "theme": "google",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -826,6 +951,7 @@ const DATA = {
     {
       "theme": "grayscale",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -837,6 +963,7 @@ const DATA = {
     {
       "theme": "grayscale",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -848,6 +975,7 @@ const DATA = {
     {
       "theme": "gruvbox",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -859,6 +987,7 @@ const DATA = {
     {
       "theme": "gruvbox",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -870,6 +999,7 @@ const DATA = {
     {
       "theme": "gruvbox-material",
       "variant": "dark-hard",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -881,6 +1011,7 @@ const DATA = {
     {
       "theme": "gruvbox-material",
       "variant": "dark-medium",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -892,6 +1023,7 @@ const DATA = {
     {
       "theme": "gruvbox-material",
       "variant": "dark-soft",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -903,6 +1035,7 @@ const DATA = {
     {
       "theme": "gruvbox-material",
       "variant": "light-hard",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -914,6 +1047,7 @@ const DATA = {
     {
       "theme": "gruvbox-material",
       "variant": "light-medium",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -925,6 +1059,7 @@ const DATA = {
     {
       "theme": "gruvbox-material",
       "variant": "light-soft",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -936,6 +1071,7 @@ const DATA = {
     {
       "theme": "harmonic16",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -947,6 +1083,7 @@ const DATA = {
     {
       "theme": "harmonic16",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -958,6 +1095,7 @@ const DATA = {
     {
       "theme": "heetch",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -969,6 +1107,7 @@ const DATA = {
     {
       "theme": "heetch",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -980,6 +1119,7 @@ const DATA = {
     {
       "theme": "horizon",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -991,6 +1131,7 @@ const DATA = {
     {
       "theme": "horizon",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1002,6 +1143,7 @@ const DATA = {
     {
       "theme": "horizon",
       "variant": "terminal-dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1013,6 +1155,7 @@ const DATA = {
     {
       "theme": "horizon",
       "variant": "terminal-light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1024,6 +1167,7 @@ const DATA = {
     {
       "theme": "ia",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1035,6 +1179,7 @@ const DATA = {
     {
       "theme": "ia",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1046,6 +1191,7 @@ const DATA = {
     {
       "theme": "kanagawa",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1057,6 +1203,7 @@ const DATA = {
     {
       "theme": "kanagawa",
       "variant": "dragon",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1068,6 +1215,7 @@ const DATA = {
     {
       "theme": "material",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1079,6 +1227,7 @@ const DATA = {
     {
       "theme": "material",
       "variant": "darker",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1090,6 +1239,7 @@ const DATA = {
     {
       "theme": "material",
       "variant": "lighter",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1101,6 +1251,7 @@ const DATA = {
     {
       "theme": "material",
       "variant": "palenight",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1112,6 +1263,7 @@ const DATA = {
     {
       "theme": "material",
       "variant": "vivid",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1123,6 +1275,7 @@ const DATA = {
     {
       "theme": "measured",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1134,6 +1287,7 @@ const DATA = {
     {
       "theme": "measured",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1145,6 +1299,7 @@ const DATA = {
     {
       "theme": "nord",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1156,6 +1311,7 @@ const DATA = {
     {
       "theme": "nord",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1167,6 +1323,7 @@ const DATA = {
     {
       "theme": "onedark",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1178,6 +1335,7 @@ const DATA = {
     {
       "theme": "onedark",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1189,6 +1347,7 @@ const DATA = {
     {
       "theme": "one",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1200,6 +1359,7 @@ const DATA = {
     {
       "theme": "oxocarbon",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1211,6 +1371,7 @@ const DATA = {
     {
       "theme": "oxocarbon",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1222,6 +1383,7 @@ const DATA = {
     {
       "theme": "precious",
       "variant": "dark-eleven",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1233,6 +1395,7 @@ const DATA = {
     {
       "theme": "precious",
       "variant": "dark-fifteen",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1244,6 +1407,7 @@ const DATA = {
     {
       "theme": "precious",
       "variant": "light-warm",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1255,6 +1419,7 @@ const DATA = {
     {
       "theme": "precious",
       "variant": "light-white",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1266,6 +1431,7 @@ const DATA = {
     {
       "theme": "primer",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1277,6 +1443,7 @@ const DATA = {
     {
       "theme": "primer",
       "variant": "dark-dimmed",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1288,6 +1455,7 @@ const DATA = {
     {
       "theme": "primer",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1299,6 +1467,7 @@ const DATA = {
     {
       "theme": "rose-pine",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1310,6 +1479,7 @@ const DATA = {
     {
       "theme": "rose-pine",
       "variant": "dawn",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1321,6 +1491,7 @@ const DATA = {
     {
       "theme": "rose-pine",
       "variant": "moon",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1332,6 +1503,7 @@ const DATA = {
     {
       "theme": "selenized",
       "variant": "black",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1343,6 +1515,7 @@ const DATA = {
     {
       "theme": "selenized",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1354,6 +1527,7 @@ const DATA = {
     {
       "theme": "selenized",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1365,6 +1539,7 @@ const DATA = {
     {
       "theme": "selenized",
       "variant": "white",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1376,6 +1551,7 @@ const DATA = {
     {
       "theme": "shadesmear",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1387,6 +1563,7 @@ const DATA = {
     {
       "theme": "shadesmear",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1398,6 +1575,7 @@ const DATA = {
     {
       "theme": "silk",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1409,6 +1587,7 @@ const DATA = {
     {
       "theme": "silk",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1420,6 +1599,7 @@ const DATA = {
     {
       "theme": "solarflare",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1431,6 +1611,7 @@ const DATA = {
     {
       "theme": "solarflare",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1442,6 +1623,7 @@ const DATA = {
     {
       "theme": "solarized",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1453,6 +1635,7 @@ const DATA = {
     {
       "theme": "solarized",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1464,6 +1647,7 @@ const DATA = {
     {
       "theme": "standardized",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1475,6 +1659,7 @@ const DATA = {
     {
       "theme": "standardized",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1486,6 +1671,7 @@ const DATA = {
     {
       "theme": "summerfruit",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1497,6 +1683,7 @@ const DATA = {
     {
       "theme": "summerfruit",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1508,6 +1695,7 @@ const DATA = {
     {
       "theme": "synth-midnight",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1519,6 +1707,7 @@ const DATA = {
     {
       "theme": "synth-midnight",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1530,6 +1719,7 @@ const DATA = {
     {
       "theme": "terracotta",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1541,6 +1731,7 @@ const DATA = {
     {
       "theme": "terracotta",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1552,6 +1743,7 @@ const DATA = {
     {
       "theme": "tokyo-city",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1563,6 +1755,7 @@ const DATA = {
     {
       "theme": "tokyo-city",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1574,6 +1767,7 @@ const DATA = {
     {
       "theme": "tokyo-city",
       "variant": "terminal-dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1585,6 +1779,7 @@ const DATA = {
     {
       "theme": "tokyo-city",
       "variant": "terminal-light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1596,6 +1791,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1607,6 +1803,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1618,6 +1815,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "moon",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1629,6 +1827,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "storm",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1640,6 +1839,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "terminal-dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1651,6 +1851,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "terminal-light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -1662,6 +1863,7 @@ const DATA = {
     {
       "theme": "tokyo-night",
       "variant": "terminal-storm",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1673,6 +1875,7 @@ const DATA = {
     {
       "theme": "tokyodark",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1684,6 +1887,7 @@ const DATA = {
     {
       "theme": "tokyodark",
       "variant": "terminal",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1695,6 +1899,7 @@ const DATA = {
     {
       "theme": "tomorrow",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1706,6 +1911,7 @@ const DATA = {
     {
       "theme": "tomorrow",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1717,6 +1923,7 @@ const DATA = {
     {
       "theme": "tomorrow",
       "variant": "night-eighties",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1728,6 +1935,7 @@ const DATA = {
     {
       "theme": "unikitty",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1739,6 +1947,7 @@ const DATA = {
     {
       "theme": "unikitty",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1750,6 +1959,7 @@ const DATA = {
     {
       "theme": "unikitty",
       "variant": "reversible",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1761,6 +1971,7 @@ const DATA = {
     {
       "theme": "yesterday",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1772,6 +1983,7 @@ const DATA = {
     {
       "theme": "yesterday",
       "variant": "bright",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1783,6 +1995,7 @@ const DATA = {
     {
       "theme": "yesterday",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1794,6 +2007,7 @@ const DATA = {
     {
       "theme": "0x96f",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1805,6 +2019,7 @@ const DATA = {
     {
       "theme": "apathy",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1816,6 +2031,7 @@ const DATA = {
     {
       "theme": "apprentice",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1827,6 +2043,7 @@ const DATA = {
     {
       "theme": "ascendancy",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1838,6 +2055,7 @@ const DATA = {
     {
       "theme": "atlas",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1849,6 +2067,7 @@ const DATA = {
     {
       "theme": "bespin",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1860,6 +2079,7 @@ const DATA = {
     {
       "theme": "blueforest",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1871,6 +2091,7 @@ const DATA = {
     {
       "theme": "blueish",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1882,6 +2103,7 @@ const DATA = {
     {
       "theme": "bright",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1893,6 +2115,7 @@ const DATA = {
     {
       "theme": "brogrammer",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1904,6 +2127,7 @@ const DATA = {
     {
       "theme": "caroline",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1915,6 +2139,7 @@ const DATA = {
     {
       "theme": "chalk",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -1926,6 +2151,7 @@ const DATA = {
     {
       "theme": "circus",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1937,6 +2163,7 @@ const DATA = {
     {
       "theme": "codeschool",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -1948,6 +2175,7 @@ const DATA = {
     {
       "theme": "colors",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "unknown",
       "slots": 6,
       "luminance_monotone": false,
@@ -1959,6 +2187,7 @@ const DATA = {
     {
       "theme": "cupcake",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -1970,6 +2199,7 @@ const DATA = {
     {
       "theme": "cupertino",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "unknown",
       "slots": 6,
       "luminance_monotone": false,
@@ -1981,6 +2211,7 @@ const DATA = {
     {
       "theme": "darcula",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "unknown",
       "slots": 1,
       "luminance_monotone": false,
@@ -1992,6 +2223,7 @@ const DATA = {
     {
       "theme": "darkmoss",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2003,6 +2235,7 @@ const DATA = {
     {
       "theme": "darktooth",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2014,6 +2247,7 @@ const DATA = {
     {
       "theme": "decaf",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2025,6 +2259,7 @@ const DATA = {
     {
       "theme": "deep-oceanic-next",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2036,6 +2271,7 @@ const DATA = {
     {
       "theme": "digital-rain",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2047,6 +2283,7 @@ const DATA = {
     {
       "theme": "dracula",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2058,6 +2295,7 @@ const DATA = {
     {
       "theme": "eighties",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2069,6 +2307,7 @@ const DATA = {
     {
       "theme": "eldritch",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2080,6 +2319,7 @@ const DATA = {
     {
       "theme": "emil",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -2091,6 +2331,7 @@ const DATA = {
     {
       "theme": "eris",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2102,6 +2343,7 @@ const DATA = {
     {
       "theme": "espresso",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2113,6 +2355,7 @@ const DATA = {
     {
       "theme": "evenok-dark",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2124,6 +2367,7 @@ const DATA = {
     {
       "theme": "flat",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2135,6 +2379,7 @@ const DATA = {
     {
       "theme": "fruit-soda",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -2146,6 +2391,7 @@ const DATA = {
     {
       "theme": "gigavolt",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2157,6 +2403,7 @@ const DATA = {
     {
       "theme": "gotham",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2168,6 +2415,7 @@ const DATA = {
     {
       "theme": "greenscreen",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2179,6 +2427,7 @@ const DATA = {
     {
       "theme": "gruber",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2190,6 +2439,7 @@ const DATA = {
     {
       "theme": "hardhacker",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2201,6 +2451,7 @@ const DATA = {
     {
       "theme": "icy",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2212,6 +2463,7 @@ const DATA = {
     {
       "theme": "irblack",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2223,6 +2475,7 @@ const DATA = {
     {
       "theme": "isotope",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2234,6 +2487,7 @@ const DATA = {
     {
       "theme": "jabuti",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2245,6 +2499,7 @@ const DATA = {
     {
       "theme": "katy",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2256,6 +2511,7 @@ const DATA = {
     {
       "theme": "kimber",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2267,6 +2523,7 @@ const DATA = {
     {
       "theme": "lime",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2278,6 +2535,7 @@ const DATA = {
     {
       "theme": "macintosh",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "unknown",
       "slots": 6,
       "luminance_monotone": false,
@@ -2289,6 +2547,7 @@ const DATA = {
     {
       "theme": "marrakesh",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2300,6 +2559,7 @@ const DATA = {
     {
       "theme": "materia",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2311,6 +2571,7 @@ const DATA = {
     {
       "theme": "mellow-purple",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2322,6 +2583,7 @@ const DATA = {
     {
       "theme": "mexico-light",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -2333,6 +2595,7 @@ const DATA = {
     {
       "theme": "mocha",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2344,6 +2607,7 @@ const DATA = {
     {
       "theme": "monokai",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2355,6 +2619,7 @@ const DATA = {
     {
       "theme": "moonlight",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2366,6 +2631,7 @@ const DATA = {
     {
       "theme": "mountain",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2377,6 +2643,7 @@ const DATA = {
     {
       "theme": "nebula",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2388,6 +2655,7 @@ const DATA = {
     {
       "theme": "nova",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2399,6 +2667,7 @@ const DATA = {
     {
       "theme": "oceanicnext",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2410,6 +2679,7 @@ const DATA = {
     {
       "theme": "ocean",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2421,6 +2691,7 @@ const DATA = {
     {
       "theme": "outrun-dark",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2432,6 +2703,7 @@ const DATA = {
     {
       "theme": "pandora",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2443,6 +2715,7 @@ const DATA = {
     {
       "theme": "pasque",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 8,
       "luminance_monotone": false,
@@ -2454,6 +2727,7 @@ const DATA = {
     {
       "theme": "phd",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2465,6 +2739,7 @@ const DATA = {
     {
       "theme": "pico",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2476,6 +2751,7 @@ const DATA = {
     {
       "theme": "pop",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2487,6 +2763,7 @@ const DATA = {
     {
       "theme": "purpledream",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2498,6 +2775,7 @@ const DATA = {
     {
       "theme": "qualia",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2509,6 +2787,7 @@ const DATA = {
     {
       "theme": "railscasts",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2520,6 +2799,7 @@ const DATA = {
     {
       "theme": "sagelight",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -2531,6 +2811,7 @@ const DATA = {
     {
       "theme": "sakura",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -2542,6 +2823,7 @@ const DATA = {
     {
       "theme": "sandcastle",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2553,6 +2835,7 @@ const DATA = {
     {
       "theme": "seti",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2564,6 +2847,7 @@ const DATA = {
     {
       "theme": "snazzy",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2575,6 +2859,7 @@ const DATA = {
     {
       "theme": "soft-server",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2586,6 +2871,7 @@ const DATA = {
     {
       "theme": "spaceduck",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2597,6 +2883,7 @@ const DATA = {
     {
       "theme": "stella",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2608,6 +2895,7 @@ const DATA = {
     {
       "theme": "still-alive",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -2619,6 +2907,7 @@ const DATA = {
     {
       "theme": "summercamp",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2630,6 +2919,7 @@ const DATA = {
     {
       "theme": "tango",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2641,6 +2931,7 @@ const DATA = {
     {
       "theme": "tarot",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2652,6 +2943,7 @@ const DATA = {
     {
       "theme": "twilight",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2663,6 +2955,7 @@ const DATA = {
     {
       "theme": "uwunicorn",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2674,6 +2967,7 @@ const DATA = {
     {
       "theme": "valua",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2685,6 +2979,7 @@ const DATA = {
     {
       "theme": "vesper",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2696,6 +2991,7 @@ const DATA = {
     {
       "theme": "vice",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2707,6 +3003,7 @@ const DATA = {
     {
       "theme": "vulcan",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2718,6 +3015,7 @@ const DATA = {
     {
       "theme": "woodland",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2729,6 +3027,7 @@ const DATA = {
     {
       "theme": "xcode-dusk",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -2740,6 +3039,7 @@ const DATA = {
     {
       "theme": "zenbones",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2751,6 +3051,7 @@ const DATA = {
     {
       "theme": "zenburn",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -2762,6 +3063,7 @@ const DATA = {
     {
       "theme": "3024",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -2773,6 +3075,7 @@ const DATA = {
     {
       "theme": "3024",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2784,6 +3087,7 @@ const DATA = {
     {
       "theme": "ayu",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2795,6 +3099,7 @@ const DATA = {
     {
       "theme": "ayu",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -2806,6 +3111,7 @@ const DATA = {
     {
       "theme": "ayu",
       "variant": "mirage",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2817,6 +3123,7 @@ const DATA = {
     {
       "theme": "bluloco",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2828,6 +3135,7 @@ const DATA = {
     {
       "theme": "bluloco",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -2839,6 +3147,7 @@ const DATA = {
     {
       "theme": "builtin",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2850,6 +3159,7 @@ const DATA = {
     {
       "theme": "builtin",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -2861,6 +3171,7 @@ const DATA = {
     {
       "theme": "builtin",
       "variant": "pastel-dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2872,6 +3183,7 @@ const DATA = {
     {
       "theme": "builtin-solarized",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -2883,6 +3195,7 @@ const DATA = {
     {
       "theme": "builtin-solarized",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -2894,6 +3207,7 @@ const DATA = {
     {
       "theme": "builtin-tango",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2905,6 +3219,7 @@ const DATA = {
     {
       "theme": "builtin-tango",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -2916,6 +3231,7 @@ const DATA = {
     {
       "theme": "github",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -2927,6 +3243,7 @@ const DATA = {
     {
       "theme": "github",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2938,6 +3255,7 @@ const DATA = {
     {
       "theme": "gruvbox",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2949,6 +3267,7 @@ const DATA = {
     {
       "theme": "gruvbox",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -2960,6 +3279,7 @@ const DATA = {
     {
       "theme": "one",
       "variant": "black",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2971,6 +3291,7 @@ const DATA = {
     {
       "theme": "one",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2982,6 +3303,7 @@ const DATA = {
     {
       "theme": "one",
       "variant": "half-light",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -2993,6 +3315,7 @@ const DATA = {
     {
       "theme": "one",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -3004,6 +3327,7 @@ const DATA = {
     {
       "theme": "pencil",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3015,6 +3339,7 @@ const DATA = {
     {
       "theme": "pencil",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -3026,6 +3351,7 @@ const DATA = {
     {
       "theme": "solarized",
       "variant": "dark-higher-contrast",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3037,6 +3363,7 @@ const DATA = {
     {
       "theme": "solarized",
       "variant": "dark-patched",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3048,6 +3375,7 @@ const DATA = {
     {
       "theme": "space-gray",
       "variant": "eighties",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3059,6 +3387,7 @@ const DATA = {
     {
       "theme": "space-gray",
       "variant": "eighties-dull",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3070,6 +3399,7 @@ const DATA = {
     {
       "theme": "violet",
       "variant": "dark",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3081,6 +3411,7 @@ const DATA = {
     {
       "theme": "violet",
       "variant": "light",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -3092,6 +3423,7 @@ const DATA = {
     {
       "theme": "0x96f",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3103,6 +3435,7 @@ const DATA = {
     {
       "theme": "adventure-time",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3114,6 +3447,7 @@ const DATA = {
     {
       "theme": "alien-blood",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3125,6 +3459,7 @@ const DATA = {
     {
       "theme": "argonaut",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3136,6 +3471,7 @@ const DATA = {
     {
       "theme": "arthur",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3147,6 +3483,7 @@ const DATA = {
     {
       "theme": "atelier-sulphurpool",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3158,6 +3495,7 @@ const DATA = {
     {
       "theme": "banana-blueberry",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3169,6 +3507,7 @@ const DATA = {
     {
       "theme": "batman",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3180,6 +3519,7 @@ const DATA = {
     {
       "theme": "birds-of-paradise",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3191,6 +3531,7 @@ const DATA = {
     {
       "theme": "blazer",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3202,6 +3543,7 @@ const DATA = {
     {
       "theme": "blue-berry-pie",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3213,6 +3555,7 @@ const DATA = {
     {
       "theme": "blue-matrix",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3224,6 +3567,7 @@ const DATA = {
     {
       "theme": "borland",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3235,6 +3579,7 @@ const DATA = {
     {
       "theme": "breeze",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3246,6 +3591,7 @@ const DATA = {
     {
       "theme": "broadcast",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3257,6 +3603,7 @@ const DATA = {
     {
       "theme": "brogrammer",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3268,6 +3615,7 @@ const DATA = {
     {
       "theme": "chalkboard",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3279,6 +3627,7 @@ const DATA = {
     {
       "theme": "chalk",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3290,6 +3639,7 @@ const DATA = {
     {
       "theme": "challenger-deep",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3301,6 +3651,7 @@ const DATA = {
     {
       "theme": "ciapre",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3312,6 +3663,7 @@ const DATA = {
     {
       "theme": "clrs",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -3323,6 +3675,7 @@ const DATA = {
     {
       "theme": "cobalt2",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3334,6 +3687,7 @@ const DATA = {
     {
       "theme": "cobalt-neon",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3345,6 +3699,7 @@ const DATA = {
     {
       "theme": "crayon-pony-fish",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3356,6 +3711,7 @@ const DATA = {
     {
       "theme": "cyberdyne",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3367,6 +3723,7 @@ const DATA = {
     {
       "theme": "dark-plus",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3378,6 +3735,7 @@ const DATA = {
     {
       "theme": "deep-oceanic-next",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3389,6 +3747,7 @@ const DATA = {
     {
       "theme": "deep",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3400,6 +3759,7 @@ const DATA = {
     {
       "theme": "desert",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3411,6 +3771,7 @@ const DATA = {
     {
       "theme": "dimmed-monokai",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3422,6 +3783,7 @@ const DATA = {
     {
       "theme": "dracula",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3433,6 +3795,7 @@ const DATA = {
     {
       "theme": "earthsong",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3444,6 +3807,7 @@ const DATA = {
     {
       "theme": "eldritch",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3455,6 +3819,7 @@ const DATA = {
     {
       "theme": "elemental",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3466,6 +3831,7 @@ const DATA = {
     {
       "theme": "elementary",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3477,6 +3843,7 @@ const DATA = {
     {
       "theme": "embarcadero",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3488,6 +3855,7 @@ const DATA = {
     {
       "theme": "encom",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3499,6 +3867,7 @@ const DATA = {
     {
       "theme": "espresso-libre",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3510,6 +3879,7 @@ const DATA = {
     {
       "theme": "espresso",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3521,6 +3891,7 @@ const DATA = {
     {
       "theme": "fideloper",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3532,6 +3903,7 @@ const DATA = {
     {
       "theme": "firefox-dev",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3543,6 +3915,7 @@ const DATA = {
     {
       "theme": "fish-tank",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3554,6 +3927,7 @@ const DATA = {
     {
       "theme": "flatland",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3565,6 +3939,7 @@ const DATA = {
     {
       "theme": "flat",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3576,6 +3951,7 @@ const DATA = {
     {
       "theme": "floraverse",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3587,6 +3963,7 @@ const DATA = {
     {
       "theme": "forest-blue",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3598,6 +3975,7 @@ const DATA = {
     {
       "theme": "framer",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3609,6 +3987,7 @@ const DATA = {
     {
       "theme": "front-end-delight",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3620,6 +3999,7 @@ const DATA = {
     {
       "theme": "fun-forrest",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3631,6 +4011,7 @@ const DATA = {
     {
       "theme": "galaxy",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3642,6 +4023,7 @@ const DATA = {
     {
       "theme": "grape",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3653,6 +4035,7 @@ const DATA = {
     {
       "theme": "hacktober",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3664,6 +4047,7 @@ const DATA = {
     {
       "theme": "hardcore",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3675,6 +4059,7 @@ const DATA = {
     {
       "theme": "highway",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3686,6 +4071,7 @@ const DATA = {
     {
       "theme": "hipster-green",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3697,6 +4083,7 @@ const DATA = {
     {
       "theme": "hivacruz",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3708,6 +4095,7 @@ const DATA = {
     {
       "theme": "homebrew",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3719,6 +4107,7 @@ const DATA = {
     {
       "theme": "hopscotch",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3730,6 +4119,7 @@ const DATA = {
     {
       "theme": "hurtado",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3741,6 +4131,7 @@ const DATA = {
     {
       "theme": "hybrid",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3752,6 +4143,7 @@ const DATA = {
     {
       "theme": "ic-green-ppl",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3763,6 +4155,7 @@ const DATA = {
     {
       "theme": "ic-orange-ppl",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3774,6 +4167,7 @@ const DATA = {
     {
       "theme": "idea",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3785,6 +4179,7 @@ const DATA = {
     {
       "theme": "idle-toes",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3796,6 +4191,7 @@ const DATA = {
     {
       "theme": "jackie-brown",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3807,6 +4203,7 @@ const DATA = {
     {
       "theme": "japanesque",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3818,6 +4215,7 @@ const DATA = {
     {
       "theme": "jellybeans",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3829,6 +4227,7 @@ const DATA = {
     {
       "theme": "jet-brains-darcula",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3840,6 +4239,7 @@ const DATA = {
     {
       "theme": "kanagawa-dragon",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3851,6 +4251,7 @@ const DATA = {
     {
       "theme": "kibble",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3862,6 +4263,7 @@ const DATA = {
     {
       "theme": "lab-fox",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3873,6 +4275,7 @@ const DATA = {
     {
       "theme": "laser",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3884,6 +4287,7 @@ const DATA = {
     {
       "theme": "later-this-evening",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3895,6 +4299,7 @@ const DATA = {
     {
       "theme": "lavandula",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3906,6 +4311,7 @@ const DATA = {
     {
       "theme": "lovelace",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3917,6 +4323,7 @@ const DATA = {
     {
       "theme": "man-page",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -3928,6 +4335,7 @@ const DATA = {
     {
       "theme": "material-dark",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3939,6 +4347,7 @@ const DATA = {
     {
       "theme": "material",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -3950,6 +4359,7 @@ const DATA = {
     {
       "theme": "mathias",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3961,6 +4371,7 @@ const DATA = {
     {
       "theme": "medallion",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3972,6 +4383,7 @@ const DATA = {
     {
       "theme": "mission-brogue",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -3983,6 +4395,7 @@ const DATA = {
     {
       "theme": "misterioso",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -3994,6 +4407,7 @@ const DATA = {
     {
       "theme": "molokai",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4005,6 +4419,7 @@ const DATA = {
     {
       "theme": "mona-lisa",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4016,6 +4431,7 @@ const DATA = {
     {
       "theme": "monokai-vivid",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4027,6 +4443,7 @@ const DATA = {
     {
       "theme": "mountain",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4038,6 +4455,7 @@ const DATA = {
     {
       "theme": "night-lion-v1",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4049,6 +4467,7 @@ const DATA = {
     {
       "theme": "night-lion-v2",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4060,6 +4479,7 @@ const DATA = {
     {
       "theme": "night-owlish-light",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -4071,6 +4491,7 @@ const DATA = {
     {
       "theme": "nocturnal-winter",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4082,6 +4503,7 @@ const DATA = {
     {
       "theme": "obsidian",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4093,6 +4515,7 @@ const DATA = {
     {
       "theme": "oceanic-material",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4104,6 +4527,7 @@ const DATA = {
     {
       "theme": "ocean",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4115,6 +4539,7 @@ const DATA = {
     {
       "theme": "ollie",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4126,6 +4551,7 @@ const DATA = {
     {
       "theme": "operator-mono-dark",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4137,6 +4563,7 @@ const DATA = {
     {
       "theme": "pandora",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4148,6 +4575,7 @@ const DATA = {
     {
       "theme": "paul-millr",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4159,6 +4587,7 @@ const DATA = {
     {
       "theme": "piatto-light",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -4170,6 +4599,7 @@ const DATA = {
     {
       "theme": "pnevma",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4181,6 +4611,7 @@ const DATA = {
     {
       "theme": "pro-light",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -4192,6 +4623,7 @@ const DATA = {
     {
       "theme": "pro",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4203,6 +4635,7 @@ const DATA = {
     {
       "theme": "purplepeter",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4214,6 +4647,7 @@ const DATA = {
     {
       "theme": "purple-rain",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4225,6 +4659,7 @@ const DATA = {
     {
       "theme": "rebecca",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4236,6 +4671,7 @@ const DATA = {
     {
       "theme": "red-alert",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4247,6 +4683,7 @@ const DATA = {
     {
       "theme": "red-planet",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4258,6 +4695,7 @@ const DATA = {
     {
       "theme": "red-sands",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4269,6 +4707,7 @@ const DATA = {
     {
       "theme": "rippedcasts",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4280,6 +4719,7 @@ const DATA = {
     {
       "theme": "royal",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4291,6 +4731,7 @@ const DATA = {
     {
       "theme": "scarlet-protocol",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4302,6 +4743,7 @@ const DATA = {
     {
       "theme": "seafoam-pastel",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4313,6 +4755,7 @@ const DATA = {
     {
       "theme": "sea-shells",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4324,6 +4767,7 @@ const DATA = {
     {
       "theme": "shades-of-purple",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4335,6 +4779,7 @@ const DATA = {
     {
       "theme": "shaman",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4346,6 +4791,7 @@ const DATA = {
     {
       "theme": "slate",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4357,6 +4803,7 @@ const DATA = {
     {
       "theme": "sleepy-hollow",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4368,6 +4815,7 @@ const DATA = {
     {
       "theme": "smyck",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4379,6 +4827,7 @@ const DATA = {
     {
       "theme": "spacedust",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4390,6 +4839,7 @@ const DATA = {
     {
       "theme": "spiderman",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4401,6 +4851,7 @@ const DATA = {
     {
       "theme": "square",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4412,6 +4863,7 @@ const DATA = {
     {
       "theme": "sundried",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4423,6 +4875,7 @@ const DATA = {
     {
       "theme": "tango-adapted",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -4434,6 +4887,7 @@ const DATA = {
     {
       "theme": "tango-half-adapted",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": true,
@@ -4445,6 +4899,7 @@ const DATA = {
     {
       "theme": "terminal-basic",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 24,
       "luminance_monotone": false,
@@ -4456,6 +4911,7 @@ const DATA = {
     {
       "theme": "thayer-bright",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4467,6 +4923,7 @@ const DATA = {
     {
       "theme": "the-hulk",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4478,6 +4935,7 @@ const DATA = {
     {
       "theme": "tomorrow-night",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4489,6 +4947,7 @@ const DATA = {
     {
       "theme": "toy-chest",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4500,6 +4959,7 @@ const DATA = {
     {
       "theme": "treehouse",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4511,6 +4971,7 @@ const DATA = {
     {
       "theme": "twilight",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4522,6 +4983,7 @@ const DATA = {
     {
       "theme": "ubuntu",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4533,6 +4995,7 @@ const DATA = {
     {
       "theme": "ultra-violet",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4544,6 +5007,7 @@ const DATA = {
     {
       "theme": "under-the-sea",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4555,6 +5019,7 @@ const DATA = {
     {
       "theme": "unikitty",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4566,6 +5031,7 @@ const DATA = {
     {
       "theme": "vibrant-ink",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4577,6 +5043,7 @@ const DATA = {
     {
       "theme": "warm-neon",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4588,6 +5055,7 @@ const DATA = {
     {
       "theme": "wez",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4599,6 +5067,7 @@ const DATA = {
     {
       "theme": "wild-cherry",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4610,6 +5079,7 @@ const DATA = {
     {
       "theme": "wombat",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": false,
@@ -4621,6 +5091,7 @@ const DATA = {
     {
       "theme": "wryan",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4632,6 +5103,7 @@ const DATA = {
     {
       "theme": "zenburn",
       "variant": "default",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 24,
       "luminance_monotone": true,
@@ -4643,6 +5115,7 @@ const DATA = {
     {
       "theme": "aikido",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4654,6 +5127,7 @@ const DATA = {
     {
       "theme": "aikido",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -4665,6 +5139,7 @@ const DATA = {
     {
       "theme": "arctic_aurora",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4676,6 +5151,7 @@ const DATA = {
     {
       "theme": "arctic_aurora",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4687,6 +5163,7 @@ const DATA = {
     {
       "theme": "blue",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4698,6 +5175,7 @@ const DATA = {
     {
       "theme": "blue",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4709,6 +5187,7 @@ const DATA = {
     {
       "theme": "crystal_cave",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4720,6 +5199,7 @@ const DATA = {
     {
       "theme": "crystal_cave",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4731,6 +5211,7 @@ const DATA = {
     {
       "theme": "cyberspace",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -4742,6 +5223,7 @@ const DATA = {
     {
       "theme": "cyberspace",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -4753,6 +5235,7 @@ const DATA = {
     {
       "theme": "desert",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4764,6 +5247,7 @@ const DATA = {
     {
       "theme": "desert",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4775,6 +5259,7 @@ const DATA = {
     {
       "theme": "forest_night",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4786,6 +5271,7 @@ const DATA = {
     {
       "theme": "forest_night",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4797,6 +5283,7 @@ const DATA = {
     {
       "theme": "futuristic",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4808,6 +5295,7 @@ const DATA = {
     {
       "theme": "futuristic",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4819,6 +5307,7 @@ const DATA = {
     {
       "theme": "ghost",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4830,6 +5319,7 @@ const DATA = {
     {
       "theme": "ghost",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4841,6 +5331,7 @@ const DATA = {
     {
       "theme": "green",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4852,6 +5343,7 @@ const DATA = {
     {
       "theme": "green",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4863,6 +5355,7 @@ const DATA = {
     {
       "theme": "mainframe",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4874,6 +5367,7 @@ const DATA = {
     {
       "theme": "mainframe",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4885,6 +5379,7 @@ const DATA = {
     {
       "theme": "matrix",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4896,6 +5391,7 @@ const DATA = {
     {
       "theme": "matrix",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": false,
@@ -4907,6 +5403,7 @@ const DATA = {
     {
       "theme": "nordic",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4918,6 +5415,7 @@ const DATA = {
     {
       "theme": "nordic",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4929,6 +5427,7 @@ const DATA = {
     {
       "theme": "ocean_depths",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4940,6 +5439,7 @@ const DATA = {
     {
       "theme": "ocean_depths",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4951,6 +5451,7 @@ const DATA = {
     {
       "theme": "orange",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4962,6 +5463,7 @@ const DATA = {
     {
       "theme": "orange",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4973,6 +5475,7 @@ const DATA = {
     {
       "theme": "purple",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -4984,6 +5487,7 @@ const DATA = {
     {
       "theme": "purple",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -4995,6 +5499,7 @@ const DATA = {
     {
       "theme": "retro",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5006,6 +5511,7 @@ const DATA = {
     {
       "theme": "retro",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5017,6 +5523,7 @@ const DATA = {
     {
       "theme": "sepia",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5028,6 +5535,7 @@ const DATA = {
     {
       "theme": "sepia",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5039,6 +5547,7 @@ const DATA = {
     {
       "theme": "volcanic",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5050,6 +5559,7 @@ const DATA = {
     {
       "theme": "volcanic",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5061,6 +5571,7 @@ const DATA = {
     {
       "theme": "military",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5072,6 +5583,7 @@ const DATA = {
     {
       "theme": "military",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5083,6 +5595,7 @@ const DATA = {
     {
       "theme": "amber",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5094,6 +5607,7 @@ const DATA = {
     {
       "theme": "amber",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5105,6 +5619,7 @@ const DATA = {
     {
       "theme": "cyber",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5116,6 +5631,7 @@ const DATA = {
     {
       "theme": "cyber",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5127,6 +5643,7 @@ const DATA = {
     {
       "theme": "walnut",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5138,6 +5655,7 @@ const DATA = {
     {
       "theme": "walnut",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5149,6 +5667,7 @@ const DATA = {
     {
       "theme": "white",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": true,
@@ -5160,6 +5679,7 @@ const DATA = {
     {
       "theme": "white",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5171,6 +5691,7 @@ const DATA = {
     {
       "theme": "yoga",
       "variant": "night",
+      "scheme": "unknown",
       "polarity": "dark",
       "slots": 16,
       "luminance_monotone": false,
@@ -5182,6 +5703,7 @@ const DATA = {
     {
       "theme": "yoga",
       "variant": "day",
+      "scheme": "unknown",
       "polarity": "light",
       "slots": 16,
       "luminance_monotone": true,
@@ -5193,96 +5715,114 @@ const DATA = {
   ]
 }
 ;
-let currentFilter = 'all';
-let currentSort = 'theme';
-let sortAsc = true;
+let f='all', s='theme', asc=true, geom='card';
 
-function init() {
-  document.getElementById('dataset').textContent = DATA.meta.dataset;
-  document.getElementById('count').textContent = DATA.summary.total;
-
-  const cards = document.getElementById('cards');
-  cards.innerHTML = `
-    <div class="card info"><div class="value">${DATA.summary.total}</div><div class="label">Total Themes</div></div>
-    <div class="card pass"><div class="value">${DATA.summary.luminance_monotone}</div><div class="label">Monotone (${(DATA.summary.luminance_monotone/DATA.summary.total*100).toFixed(0)}%)</div></div>
-    <div class="card pass"><div class="value">${DATA.summary.wcag_aa}</div><div class="label">WCAG AA (${(DATA.summary.wcag_aa/DATA.summary.total*100).toFixed(0)}%)</div></div>
-    <div class="card info"><div class="value">${DATA.summary.dark}</div><div class="label">Dark</div></div>
-    <div class="card info"><div class="value">${DATA.summary.light}</div><div class="label">Light</div></div>
-    <div class="card fail"><div class="value">${DATA.summary.total - DATA.summary.luminance_monotone}</div><div class="label">Mono Failures</div></div>
-    <div class="card fail"><div class="value">${DATA.summary.total - DATA.summary.wcag_aa}</div><div class="label">WCAG Failures</div></div>
-  `;
-  renderTable();
-}
-
-function renderTable() {
-  const tbody = document.getElementById('tbody');
-  let rows = [...DATA.results];
-
-  // Filter
-  const search = document.getElementById('search').value.toLowerCase();
-  rows = rows.filter(r => {
-    if (search && !`${r.theme}/${r.variant}`.toLowerCase().includes(search)) return false;
-    if (currentFilter === 'pass') return r.luminance_monotone && r.wcag_aa;
-    if (currentFilter === 'fail') return !r.luminance_monotone || !r.wcag_aa;
-    if (currentFilter === 'dark') return r.polarity === 'dark';
-    if (currentFilter === 'light') return r.polarity === 'light';
+function render() {
+  const q = document.getElementById('q').value.toLowerCase();
+  let r = [...D.results].filter(x => {
+    if (q && !`${x.theme}/${x.variant}`.toLowerCase().includes(q)) return false;
+    if (f==='pass') return x.luminance_monotone && x.wcag_aa;
+    if (f==='fail') return !x.luminance_monotone || !x.wcag_aa;
+    if (f==='dark') return x.polarity==='dark';
+    if (f==='light') return x.polarity==='light';
     return true;
   });
-
-  // Sort
-  rows.sort((a, b) => {
-    let va = a[currentSort], vb = b[currentSort];
-    if (typeof va === 'boolean') { va = va ? 1 : 0; vb = vb ? 1 : 0; }
-    if (va == null) va = -1;
-    if (vb == null) vb = -1;
-    return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+  r.sort((a,b) => {
+    let va=a[s], vb=b[s];
+    if (typeof va==='boolean') { va=va?1:0; vb=vb?1:0; }
+    if (va==null) va=-1; if (vb==null) vb=-1;
+    return asc ? (va>vb?1:-1) : (va<vb?1:-1);
   });
 
-  tbody.innerHTML = rows.map((r, i) => {
-    const mono = r.luminance_monotone ? '<span class="pass-badge">✓</span>' : '<span class="fail-badge">✗</span>';
-    const wcag = r.wcag_aa ? '<span class="pass-badge">✓</span>' : '<span class="fail-badge">✗</span>';
-    const cr = r.contrast_ratio != null ? r.contrast_ratio.toFixed(1) + ':1' : '—';
-    const maxLum = Math.max(...r.luminance_ramp.map(x => x.luminance), 0.01);
-    const ramp = r.luminance_ramp.map((x, j) => {
-      const h = Math.max(2, (x.luminance / maxLum) * 40);
-      const cls = r.mono_break_at != null && j >= r.mono_break_at ? 'ramp-bar break' : 'ramp-bar';
-      return `<div class="${cls}" style="height:${h}px" title="${x.slot}: ${x.luminance.toFixed(3)}"></div>`;
+  // Cards (sparkline geom)
+  document.getElementById('grid').innerHTML = r.map(x => {
+    const ok = x.luminance_monotone && x.wcag_aa;
+    const cls = ok ? 'pass' : 'fail';
+    const mx = Math.max(...x.luminance_ramp.map(v=>v.luminance), 0.01);
+    const bars = x.luminance_ramp.map((v,j) => {
+      const h = Math.max(2, (v.luminance/mx)*32);
+      const c = x.mono_break_at!=null && j>=x.mono_break_at ? 'brk' : 'ok';
+      return `<div class="spark-bar ${c}" style="height:${h}px" title="${v.slot}: ${v.luminance.toFixed(3)}"></div>`;
     }).join('');
-    const trace = r.luminance_ramp.map(x => `${x.slot}: ${x.luminance.toFixed(4)}`).join('  ');
-    const breakInfo = r.mono_break_at != null ? ` — breaks at ${r.luminance_ramp[r.mono_break_at]?.slot || '?'}` : '';
+    const cr = x.contrast_ratio != null ? x.contrast_ratio : 0;
+    const crPct = Math.min(cr/21*100, 100);
+    const crCol = cr >= 7 ? 'var(--pass)' : cr >= 4.5 ? 'var(--warn)' : 'var(--fail)';
+    const brk = x.mono_break_at!=null ? `<span class="badge err">break@${x.luminance_ramp[x.mono_break_at]?.slot||'?'}</span>` : '';
+    const trace = x.luminance_ramp.map(v =>
+      `<span class="slot">${v.slot}</span><span class="val${x.mono_break_at!=null && x.luminance_ramp.indexOf(v)>=x.mono_break_at ? ' brk' : ''}">${v.luminance.toFixed(4)}</span>`
+    ).join('<br>');
 
+    return `<div class="theme-card ${cls}" onclick="this.querySelector('.detail').classList.toggle('open')">
+      <div class="name"><span>${x.theme}/${x.variant}</span><div class="badges">
+        <span class="badge ${x.luminance_monotone?'ok':'err'}">mono</span>
+        <span class="badge ${x.wcag_aa?'ok':'err'}">wcag</span>
+        <span class="badge info">${x.polarity}</span>
+        ${brk}
+      </div></div>
+      <div class="sparkline">${bars}</div>
+      <div class="bullet"><div class="bullet-fill" style="width:${crPct}%;background:${crCol}"></div>
+        <div class="bullet-mark aa" style="left:${4.5/21*100}%" title="AA 4.5:1"></div>
+        <div class="bullet-mark aaa" style="left:${7/21*100}%" title="AAA 7:1"></div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--fg2)">CR: ${cr.toFixed(1)}:1</div>
+      <div class="detail"><div class="detail-trace">${trace}</div></div>
+    </div>`;
+  }).join('');
+
+  // Table
+  document.getElementById('tbody').innerHTML = r.map(x => {
+    const mono = x.luminance_monotone ? '✓' : '✗';
+    const wcag = x.wcag_aa ? '✓' : '✗';
+    const cr = x.contrast_ratio!=null ? x.contrast_ratio.toFixed(1)+':1' : '—';
+    const mx = Math.max(...x.luminance_ramp.map(v=>v.luminance), 0.01);
+    const bars = x.luminance_ramp.map((v,j) => {
+      const h = Math.max(1, (v.luminance/mx)*20);
+      const c = x.mono_break_at!=null && j>=x.mono_break_at ? 'var(--fail)' : 'var(--accent)';
+      return `<div style="display:inline-block;width:8px;height:${h}px;background:${c};border-radius:1px 1px 0 0;vertical-align:bottom"></div>`;
+    }).join('');
     return `<tr>
-      <td>${r.theme}</td>
-      <td>${r.variant}</td>
-      <td>${r.polarity}</td>
-      <td>${mono}</td>
-      <td>${wcag}</td>
-      <td>${cr}</td>
-      <td>
-        <div class="ramp">${ramp}</div>
-        <div class="expandable" onclick="this.nextElementSibling.classList.toggle('open')">▸ trace${breakInfo}</div>
-        <div class="trace">${trace}</div>
-      </td>
+      <td>${x.theme}</td><td>${x.variant}</td><td>${x.polarity}</td>
+      <td style="color:${x.luminance_monotone?'var(--pass)':'var(--fail)'}">${mono}</td>
+      <td style="color:${x.wcag_aa?'var(--pass)':'var(--fail)'}">${wcag}</td>
+      <td>${cr}</td><td style="line-height:0">${bars}</td>
     </tr>`;
   }).join('');
 }
 
-function sortBy(col) {
-  if (currentSort === col) sortAsc = !sortAsc;
-  else { currentSort = col; sortAsc = true; }
-  renderTable();
+function init() {
+  document.getElementById('ds').textContent = D.meta.dataset;
+  document.getElementById('n').textContent = D.summary.total;
+  // Stats
+  const t = D.summary.total;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="n">${t}</div><div class="label">Themes</div></div>
+    <div class="stat ok"><div class="n">${D.summary.luminance_monotone}</div><div class="label">Monotone (${(D.summary.luminance_monotone/t*100).toFixed(0)}%)</div></div>
+    <div class="stat ok"><div class="n">${D.summary.wcag_aa}</div><div class="label">WCAG AA (${(D.summary.wcag_aa/t*100).toFixed(0)}%)</div></div>
+    <div class="stat"><div class="n">${D.summary.dark}</div><div class="label">Dark</div></div>
+    <div class="stat"><div class="n">${D.summary.light}</div><div class="label">Light</div></div>
+    <div class="stat bad"><div class="n">${t-D.summary.luminance_monotone}</div><div class="label">Mono Fail</div></div>
+    <div class="stat bad"><div class="n">${t-D.summary.wcag_aa}</div><div class="label">WCAG Fail</div></div>
+  `;
+  // Heatmap — one cell per theme
+  document.getElementById('heatmap').innerHTML = D.results.map(x => {
+    const c = x.luminance_monotone && x.wcag_aa ? 'pass' : (!x.luminance_monotone && !x.wcag_aa ? 'fail' : 'partial');
+    return `<div class="heatmap-cell ${c}" title="${x.theme}/${x.variant}"></div>`;
+  }).join('');
+  render();
 }
 
-function setFilter(f) {
-  currentFilter = f;
-  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
-  renderTable();
+function filt(v,el) { f=v; document.querySelectorAll('.controls>button').forEach(b=>b.classList.remove('active')); el.classList.add('active'); render(); }
+function sort(c) { if(s===c) asc=!asc; else { s=c; asc=true; } render(); }
+function setGeom(g,el) {
+  geom=g;
+  document.querySelectorAll('.geom-switch button').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('grid').classList.toggle('hidden', g==='table');
+  document.getElementById('tbl').classList.toggle('active', g==='table');
 }
-
-function filterTable() { renderTable(); }
 
 init();
 </script>
+</div>
 </body>
 </html>

@@ -45,6 +45,7 @@ pub fn to_json(results: &[ThemeResult], dataset_name: &str) -> String {
         json.push_str("    {\n");
         json.push_str(&format!("      \"theme\": \"{}\",\n", r.theme));
         json.push_str(&format!("      \"variant\": \"{}\",\n", r.variant));
+        json.push_str(&format!("      \"scheme\": \"{}\",\n", r.scheme));
         json.push_str(&format!("      \"polarity\": \"{}\",\n", r.polarity));
         json.push_str(&format!("      \"slots\": {},\n", r.slots_found));
         json.push_str(&format!(
@@ -95,15 +96,21 @@ fn chrono_now() -> String {
     "2026-04-09T00:00:00Z".to_string()
 }
 
-/// Generate an HTML report with embedded JSON for interactive visualization.
+/// Generate an ontology-driven HTML report.
 ///
-/// Single self-contained HTML file with:
-/// - Summary cards (total, pass/fail counts)
-/// - Sortable/filterable table of all themes
-/// - Expandable luminance ramp traces
-/// - Visual ramp bars showing where monotonicity breaks
+/// The visualization is determined by the ReportSpec:
+/// - Encodings from Cleveland-McGill ranking
+/// - Geoms from Grammar of Graphics
+/// - 3 Shneiderman levels: overview heatmap → sparkline grid → detail cards
+/// - Tufte principles: high data-ink ratio, sparklines, small multiples
 pub fn to_html(results: &[ThemeResult], dataset_name: &str) -> String {
     let json_data = to_json(results, dataset_name);
+
+    // The report spec drives the visualization
+    // Luminance: position (rank 1) + line geom (sparkline)
+    // Contrast: position (rank 1) + bar geom (bullet graph)
+    // Pass/fail: hue (rank 6 but acceptable for binary nominal)
+    // Scheme type: spatial region (facet)
 
     format!(
         r##"<!DOCTYPE html>
@@ -113,165 +120,241 @@ pub fn to_html(results: &[ThemeResult], dataset_name: &str) -> String {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vogix Theme Validation Report</title>
 <style>
-  :root {{
-    --bg: #0d1117; --fg: #c9d1d9; --border: #30363d;
-    --green: #3fb950; --red: #f85149; --yellow: #d29922;
-    --blue: #58a6ff; --card-bg: #161b22;
-  }}
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; background: var(--bg); color: var(--fg); padding: 2rem; }}
-  h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
-  .subtitle {{ color: #8b949e; margin-bottom: 2rem; }}
-  .cards {{ display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }}
-  .card {{ background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.5rem; min-width: 150px; }}
-  .card .value {{ font-size: 2rem; font-weight: bold; }}
-  .card .label {{ font-size: 0.8rem; color: #8b949e; }}
-  .card.pass .value {{ color: var(--green); }}
-  .card.fail .value {{ color: var(--red); }}
-  .card.info .value {{ color: var(--blue); }}
-  .controls {{ margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }}
-  .controls input {{ background: var(--card-bg); border: 1px solid var(--border); color: var(--fg); padding: 0.4rem 0.8rem; border-radius: 4px; }}
-  .controls button {{ background: var(--card-bg); border: 1px solid var(--border); color: var(--fg); padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }}
-  .controls button.active {{ background: var(--blue); color: var(--bg); }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
-  th {{ text-align: left; padding: 0.5rem; border-bottom: 2px solid var(--border); cursor: pointer; user-select: none; }}
-  th:hover {{ color: var(--blue); }}
-  td {{ padding: 0.5rem; border-bottom: 1px solid var(--border); }}
-  tr:hover {{ background: var(--card-bg); }}
-  .pass-badge {{ color: var(--green); }}
-  .fail-badge {{ color: var(--red); }}
-  .ramp {{ display: flex; gap: 2px; align-items: flex-end; height: 40px; }}
-  .ramp-bar {{ width: 30px; background: var(--blue); border-radius: 2px 2px 0 0; transition: background 0.2s; }}
-  .ramp-bar.break {{ background: var(--red); }}
-  .trace {{ display: none; background: var(--card-bg); padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; font-size: 0.75rem; font-family: monospace; }}
-  .trace.open {{ display: block; }}
-  .expandable {{ cursor: pointer; }}
-  .expandable:hover {{ color: var(--blue); }}
+:root {{
+  --bg: #0d1117; --fg: #c9d1d9; --fg2: #8b949e; --border: #30363d;
+  --pass: #3fb950; --fail: #f85149; --warn: #d29922;
+  --accent: #58a6ff; --card: #161b22; --hover: #1c2128;
+}}
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family: 'Inter', -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); line-height:1.5; }}
+
+/* Tufte: maximize data-ink ratio — minimal chrome */
+.container {{ max-width:1400px; margin:0 auto; padding:2rem; }}
+header {{ margin-bottom:2rem; border-bottom:1px solid var(--border); padding-bottom:1rem; }}
+header h1 {{ font-size:1.3rem; font-weight:600; letter-spacing:-0.02em; }}
+header p {{ color:var(--fg2); font-size:0.85rem; }}
+
+/* Level 1: Overview — Shneiderman "overview first" */
+.overview {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:0.75rem; margin-bottom:2rem; }}
+.stat {{ background:var(--card); border:1px solid var(--border); border-radius:4px; padding:0.75rem 1rem; }}
+.stat .n {{ font-size:1.8rem; font-weight:700; font-variant-numeric:tabular-nums; }}
+.stat .label {{ font-size:0.7rem; color:var(--fg2); text-transform:uppercase; letter-spacing:0.05em; }}
+.stat.ok .n {{ color:var(--pass); }}
+.stat.bad .n {{ color:var(--fail); }}
+
+/* Heatmap — overview of all themes × axioms */
+.heatmap {{ margin-bottom:2rem; }}
+.heatmap-grid {{ display:flex; flex-wrap:wrap; gap:1px; background:var(--border); padding:1px; }}
+.heatmap-cell {{ width:3px; height:12px; }}
+.heatmap-cell.pass {{ background:var(--pass); }}
+.heatmap-cell.fail {{ background:var(--fail); }}
+.heatmap-cell.partial {{ background:var(--warn); }}
+.heatmap-label {{ font-size:0.7rem; color:var(--fg2); margin-bottom:0.25rem; }}
+
+/* Level 2: Explore — Shneiderman "zoom and filter" */
+.controls {{ display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap; align-items:center; }}
+.controls input {{ background:var(--card); border:1px solid var(--border); color:var(--fg); padding:0.35rem 0.7rem; border-radius:3px; font-size:0.8rem; }}
+.controls button {{ background:var(--card); border:1px solid var(--border); color:var(--fg); padding:0.35rem 0.7rem; border-radius:3px; cursor:pointer; font-size:0.75rem; }}
+.controls button.active {{ background:var(--accent); color:var(--bg); border-color:var(--accent); }}
+.controls .geom-switch {{ margin-left:auto; display:flex; gap:0.25rem; }}
+.controls .geom-switch button {{ font-size:0.7rem; padding:0.25rem 0.5rem; }}
+
+/* Sparkline grid — Tufte "small multiples" */
+.sparkline-grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:0.5rem; margin-bottom:2rem; }}
+.theme-card {{ background:var(--card); border:1px solid var(--border); border-radius:4px; padding:0.6rem 0.8rem; cursor:pointer; transition:border-color 0.15s; }}
+.theme-card:hover {{ border-color:var(--accent); }}
+.theme-card.fail {{ border-left:3px solid var(--fail); }}
+.theme-card.pass {{ border-left:3px solid var(--pass); }}
+.theme-card .name {{ font-size:0.8rem; font-weight:600; margin-bottom:0.25rem; display:flex; justify-content:space-between; }}
+.theme-card .badges {{ display:flex; gap:0.3rem; }}
+.theme-card .badge {{ font-size:0.65rem; padding:0.1rem 0.3rem; border-radius:2px; }}
+.badge.ok {{ background:rgba(63,185,80,0.15); color:var(--pass); }}
+.badge.err {{ background:rgba(248,81,73,0.15); color:var(--fail); }}
+.badge.info {{ background:rgba(88,166,255,0.1); color:var(--accent); }}
+
+/* Sparkline — Cleveland rank 1 (position on common scale) */
+.sparkline {{ height:32px; display:flex; align-items:flex-end; gap:1px; margin:0.3rem 0; }}
+.spark-bar {{ flex:1; border-radius:1px 1px 0 0; min-width:2px; transition:background 0.15s; }}
+.spark-bar.ok {{ background:var(--accent); }}
+.spark-bar.brk {{ background:var(--fail); }}
+
+/* Bullet graph — Few: contrast ratio vs thresholds */
+.bullet {{ height:8px; background:var(--border); border-radius:1px; position:relative; margin:0.25rem 0; }}
+.bullet-fill {{ height:100%; border-radius:1px; position:absolute; left:0; top:0; }}
+.bullet-mark {{ position:absolute; top:-2px; width:1px; height:12px; }}
+.bullet-mark.aa {{ background:var(--warn); }}
+.bullet-mark.aaa {{ background:var(--pass); }}
+
+/* Level 3: Detail — Shneiderman "details on demand" */
+.detail {{ display:none; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:1rem; margin-top:0.5rem; }}
+.detail.open {{ display:block; }}
+.detail-trace {{ font-family:'JetBrains Mono', monospace; font-size:0.75rem; line-height:1.8; }}
+.detail-trace .slot {{ display:inline-block; width:50px; color:var(--fg2); }}
+.detail-trace .val {{ font-weight:600; }}
+.detail-trace .brk {{ color:var(--fail); }}
+
+/* Table view (alternative geom) */
+.table-view {{ display:none; }}
+.table-view.active {{ display:block; }}
+.sparkline-grid.hidden {{ display:none; }}
+table {{ width:100%; border-collapse:collapse; font-size:0.8rem; }}
+th {{ text-align:left; padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); cursor:pointer; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--fg2); }}
+th:hover {{ color:var(--accent); }}
+td {{ padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); }}
+tr:hover {{ background:var(--hover); }}
 </style>
 </head>
 <body>
-<h1>Vogix Theme Validation Report</h1>
-<p class="subtitle">Formal ontology axiom evaluation — <span id="dataset"></span> (<span id="count"></span> themes)</p>
+<div class="container">
+<header>
+  <h1>Theme Validation Report</h1>
+  <p>Ontology-driven axiom evaluation — <span id="ds"></span> · <span id="n"></span> themes · Encoding: position (Cleveland rank 1) + sparkline (Tufte)</p>
+</header>
 
-<div class="cards" id="cards"></div>
+<!-- Level 1: Overview (Shneiderman) -->
+<div class="overview" id="stats"></div>
 
-<div class="controls">
-  <input type="text" id="search" placeholder="Search themes..." oninput="filterTable()">
-  <button class="active" onclick="setFilter('all')">All</button>
-  <button onclick="setFilter('pass')">Pass</button>
-  <button onclick="setFilter('fail')">Fail</button>
-  <button onclick="setFilter('dark')">Dark</button>
-  <button onclick="setFilter('light')">Light</button>
+<div class="heatmap">
+  <div class="heatmap-label">All themes — each cell = one theme (green=pass both, red=fail any, yellow=partial)</div>
+  <div class="heatmap-grid" id="heatmap"></div>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th onclick="sortBy('theme')">Theme</th>
-      <th onclick="sortBy('variant')">Variant</th>
-      <th onclick="sortBy('polarity')">Polarity</th>
-      <th onclick="sortBy('luminance_monotone')">Monotonicity</th>
-      <th onclick="sortBy('wcag_aa')">WCAG AA</th>
-      <th onclick="sortBy('contrast_ratio')">Contrast</th>
-      <th>Luminance Ramp</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
+<!-- Level 2: Explore (Shneiderman) -->
+<div class="controls">
+  <input type="text" id="q" placeholder="Search..." oninput="render()">
+  <button class="active" onclick="filt('all',this)">All</button>
+  <button onclick="filt('pass',this)">Pass</button>
+  <button onclick="filt('fail',this)">Fail</button>
+  <button onclick="filt('dark',this)">Dark</button>
+  <button onclick="filt('light',this)">Light</button>
+  <div class="geom-switch">
+    <button class="active" onclick="setGeom('card',this)">Cards</button>
+    <button onclick="setGeom('table',this)">Table</button>
+  </div>
+</div>
+
+<div class="sparkline-grid" id="grid"></div>
+<div class="table-view" id="tbl"><table><thead><tr>
+  <th onclick="sort('theme')">Theme</th>
+  <th onclick="sort('variant')">Variant</th>
+  <th onclick="sort('polarity')">Polarity</th>
+  <th onclick="sort('luminance_monotone')">Mono</th>
+  <th onclick="sort('wcag_aa')">WCAG</th>
+  <th onclick="sort('contrast_ratio')">CR</th>
+  <th>Ramp</th>
+</tr></thead><tbody id="tbody"></tbody></table></div>
 
 <script>
-const DATA = {json_data};
-let currentFilter = 'all';
-let currentSort = 'theme';
-let sortAsc = true;
+const D = {json_data};
+let f='all', s='theme', asc=true, geom='card';
 
-function init() {{
-  document.getElementById('dataset').textContent = DATA.meta.dataset;
-  document.getElementById('count').textContent = DATA.summary.total;
-
-  const cards = document.getElementById('cards');
-  cards.innerHTML = `
-    <div class="card info"><div class="value">${{DATA.summary.total}}</div><div class="label">Total Themes</div></div>
-    <div class="card pass"><div class="value">${{DATA.summary.luminance_monotone}}</div><div class="label">Monotone (${{(DATA.summary.luminance_monotone/DATA.summary.total*100).toFixed(0)}}%)</div></div>
-    <div class="card pass"><div class="value">${{DATA.summary.wcag_aa}}</div><div class="label">WCAG AA (${{(DATA.summary.wcag_aa/DATA.summary.total*100).toFixed(0)}}%)</div></div>
-    <div class="card info"><div class="value">${{DATA.summary.dark}}</div><div class="label">Dark</div></div>
-    <div class="card info"><div class="value">${{DATA.summary.light}}</div><div class="label">Light</div></div>
-    <div class="card fail"><div class="value">${{DATA.summary.total - DATA.summary.luminance_monotone}}</div><div class="label">Mono Failures</div></div>
-    <div class="card fail"><div class="value">${{DATA.summary.total - DATA.summary.wcag_aa}}</div><div class="label">WCAG Failures</div></div>
-  `;
-  renderTable();
-}}
-
-function renderTable() {{
-  const tbody = document.getElementById('tbody');
-  let rows = [...DATA.results];
-
-  // Filter
-  const search = document.getElementById('search').value.toLowerCase();
-  rows = rows.filter(r => {{
-    if (search && !`${{r.theme}}/${{r.variant}}`.toLowerCase().includes(search)) return false;
-    if (currentFilter === 'pass') return r.luminance_monotone && r.wcag_aa;
-    if (currentFilter === 'fail') return !r.luminance_monotone || !r.wcag_aa;
-    if (currentFilter === 'dark') return r.polarity === 'dark';
-    if (currentFilter === 'light') return r.polarity === 'light';
+function render() {{
+  const q = document.getElementById('q').value.toLowerCase();
+  let r = [...D.results].filter(x => {{
+    if (q && !`${{x.theme}}/${{x.variant}}`.toLowerCase().includes(q)) return false;
+    if (f==='pass') return x.luminance_monotone && x.wcag_aa;
+    if (f==='fail') return !x.luminance_monotone || !x.wcag_aa;
+    if (f==='dark') return x.polarity==='dark';
+    if (f==='light') return x.polarity==='light';
     return true;
   }});
-
-  // Sort
-  rows.sort((a, b) => {{
-    let va = a[currentSort], vb = b[currentSort];
-    if (typeof va === 'boolean') {{ va = va ? 1 : 0; vb = vb ? 1 : 0; }}
-    if (va == null) va = -1;
-    if (vb == null) vb = -1;
-    return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+  r.sort((a,b) => {{
+    let va=a[s], vb=b[s];
+    if (typeof va==='boolean') {{ va=va?1:0; vb=vb?1:0; }}
+    if (va==null) va=-1; if (vb==null) vb=-1;
+    return asc ? (va>vb?1:-1) : (va<vb?1:-1);
   }});
 
-  tbody.innerHTML = rows.map((r, i) => {{
-    const mono = r.luminance_monotone ? '<span class="pass-badge">✓</span>' : '<span class="fail-badge">✗</span>';
-    const wcag = r.wcag_aa ? '<span class="pass-badge">✓</span>' : '<span class="fail-badge">✗</span>';
-    const cr = r.contrast_ratio != null ? r.contrast_ratio.toFixed(1) + ':1' : '—';
-    const maxLum = Math.max(...r.luminance_ramp.map(x => x.luminance), 0.01);
-    const ramp = r.luminance_ramp.map((x, j) => {{
-      const h = Math.max(2, (x.luminance / maxLum) * 40);
-      const cls = r.mono_break_at != null && j >= r.mono_break_at ? 'ramp-bar break' : 'ramp-bar';
-      return `<div class="${{cls}}" style="height:${{h}}px" title="${{x.slot}}: ${{x.luminance.toFixed(3)}}"></div>`;
+  // Cards (sparkline geom)
+  document.getElementById('grid').innerHTML = r.map(x => {{
+    const ok = x.luminance_monotone && x.wcag_aa;
+    const cls = ok ? 'pass' : 'fail';
+    const mx = Math.max(...x.luminance_ramp.map(v=>v.luminance), 0.01);
+    const bars = x.luminance_ramp.map((v,j) => {{
+      const h = Math.max(2, (v.luminance/mx)*32);
+      const c = x.mono_break_at!=null && j>=x.mono_break_at ? 'brk' : 'ok';
+      return `<div class="spark-bar ${{c}}" style="height:${{h}}px" title="${{v.slot}}: ${{v.luminance.toFixed(3)}}"></div>`;
     }}).join('');
-    const trace = r.luminance_ramp.map(x => `${{x.slot}}: ${{x.luminance.toFixed(4)}}`).join('  ');
-    const breakInfo = r.mono_break_at != null ? ` — breaks at ${{r.luminance_ramp[r.mono_break_at]?.slot || '?'}}` : '';
+    const cr = x.contrast_ratio != null ? x.contrast_ratio : 0;
+    const crPct = Math.min(cr/21*100, 100);
+    const crCol = cr >= 7 ? 'var(--pass)' : cr >= 4.5 ? 'var(--warn)' : 'var(--fail)';
+    const brk = x.mono_break_at!=null ? `<span class="badge err">break@${{x.luminance_ramp[x.mono_break_at]?.slot||'?'}}</span>` : '';
+    const trace = x.luminance_ramp.map(v =>
+      `<span class="slot">${{v.slot}}</span><span class="val${{x.mono_break_at!=null && x.luminance_ramp.indexOf(v)>=x.mono_break_at ? ' brk' : ''}}">${{v.luminance.toFixed(4)}}</span>`
+    ).join('<br>');
 
+    return `<div class="theme-card ${{cls}}" onclick="this.querySelector('.detail').classList.toggle('open')">
+      <div class="name"><span>${{x.theme}}/${{x.variant}}</span><div class="badges">
+        <span class="badge ${{x.luminance_monotone?'ok':'err'}}">mono</span>
+        <span class="badge ${{x.wcag_aa?'ok':'err'}}">wcag</span>
+        <span class="badge info">${{x.polarity}}</span>
+        ${{brk}}
+      </div></div>
+      <div class="sparkline">${{bars}}</div>
+      <div class="bullet"><div class="bullet-fill" style="width:${{crPct}}%;background:${{crCol}}"></div>
+        <div class="bullet-mark aa" style="left:${{4.5/21*100}}%" title="AA 4.5:1"></div>
+        <div class="bullet-mark aaa" style="left:${{7/21*100}}%" title="AAA 7:1"></div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--fg2)">CR: ${{cr.toFixed(1)}}:1</div>
+      <div class="detail"><div class="detail-trace">${{trace}}</div></div>
+    </div>`;
+  }}).join('');
+
+  // Table
+  document.getElementById('tbody').innerHTML = r.map(x => {{
+    const mono = x.luminance_monotone ? '✓' : '✗';
+    const wcag = x.wcag_aa ? '✓' : '✗';
+    const cr = x.contrast_ratio!=null ? x.contrast_ratio.toFixed(1)+':1' : '—';
+    const mx = Math.max(...x.luminance_ramp.map(v=>v.luminance), 0.01);
+    const bars = x.luminance_ramp.map((v,j) => {{
+      const h = Math.max(1, (v.luminance/mx)*20);
+      const c = x.mono_break_at!=null && j>=x.mono_break_at ? 'var(--fail)' : 'var(--accent)';
+      return `<div style="display:inline-block;width:8px;height:${{h}}px;background:${{c}};border-radius:1px 1px 0 0;vertical-align:bottom"></div>`;
+    }}).join('');
     return `<tr>
-      <td>${{r.theme}}</td>
-      <td>${{r.variant}}</td>
-      <td>${{r.polarity}}</td>
-      <td>${{mono}}</td>
-      <td>${{wcag}}</td>
-      <td>${{cr}}</td>
-      <td>
-        <div class="ramp">${{ramp}}</div>
-        <div class="expandable" onclick="this.nextElementSibling.classList.toggle('open')">▸ trace${{breakInfo}}</div>
-        <div class="trace">${{trace}}</div>
-      </td>
+      <td>${{x.theme}}</td><td>${{x.variant}}</td><td>${{x.polarity}}</td>
+      <td style="color:${{x.luminance_monotone?'var(--pass)':'var(--fail)'}}">${{mono}}</td>
+      <td style="color:${{x.wcag_aa?'var(--pass)':'var(--fail)'}}">${{wcag}}</td>
+      <td>${{cr}}</td><td style="line-height:0">${{bars}}</td>
     </tr>`;
   }}).join('');
 }}
 
-function sortBy(col) {{
-  if (currentSort === col) sortAsc = !sortAsc;
-  else {{ currentSort = col; sortAsc = true; }}
-  renderTable();
+function init() {{
+  document.getElementById('ds').textContent = D.meta.dataset;
+  document.getElementById('n').textContent = D.summary.total;
+  // Stats
+  const t = D.summary.total;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="n">${{t}}</div><div class="label">Themes</div></div>
+    <div class="stat ok"><div class="n">${{D.summary.luminance_monotone}}</div><div class="label">Monotone (${{(D.summary.luminance_monotone/t*100).toFixed(0)}}%)</div></div>
+    <div class="stat ok"><div class="n">${{D.summary.wcag_aa}}</div><div class="label">WCAG AA (${{(D.summary.wcag_aa/t*100).toFixed(0)}}%)</div></div>
+    <div class="stat"><div class="n">${{D.summary.dark}}</div><div class="label">Dark</div></div>
+    <div class="stat"><div class="n">${{D.summary.light}}</div><div class="label">Light</div></div>
+    <div class="stat bad"><div class="n">${{t-D.summary.luminance_monotone}}</div><div class="label">Mono Fail</div></div>
+    <div class="stat bad"><div class="n">${{t-D.summary.wcag_aa}}</div><div class="label">WCAG Fail</div></div>
+  `;
+  // Heatmap — one cell per theme
+  document.getElementById('heatmap').innerHTML = D.results.map(x => {{
+    const c = x.luminance_monotone && x.wcag_aa ? 'pass' : (!x.luminance_monotone && !x.wcag_aa ? 'fail' : 'partial');
+    return `<div class="heatmap-cell ${{c}}" title="${{x.theme}}/${{x.variant}}"></div>`;
+  }}).join('');
+  render();
 }}
 
-function setFilter(f) {{
-  currentFilter = f;
-  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
-  renderTable();
+function filt(v,el) {{ f=v; document.querySelectorAll('.controls>button').forEach(b=>b.classList.remove('active')); el.classList.add('active'); render(); }}
+function sort(c) {{ if(s===c) asc=!asc; else {{ s=c; asc=true; }} render(); }}
+function setGeom(g,el) {{
+  geom=g;
+  document.querySelectorAll('.geom-switch button').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('grid').classList.toggle('hidden', g==='table');
+  document.getElementById('tbl').classList.toggle('active', g==='table');
 }}
-
-function filterTable() {{ renderTable(); }}
 
 init();
 </script>
+</div>
 </body>
 </html>"##
     )
@@ -286,6 +369,7 @@ mod tests {
             ThemeResult {
                 theme: "test-dark".into(),
                 variant: "default".into(),
+                scheme: "base16".into(),
                 slots_found: 16,
                 luminance_monotone: true,
                 wcag_aa: true,
@@ -302,6 +386,7 @@ mod tests {
             ThemeResult {
                 theme: "test-broken".into(),
                 variant: "default".into(),
+                scheme: "base16".into(),
                 slots_found: 16,
                 luminance_monotone: false,
                 wcag_aa: false,
@@ -404,6 +489,7 @@ mod tests {
             .prop_map(|(theme, variant, mono, wcag, cr)| ThemeResult {
                 theme,
                 variant,
+                scheme: "base16".into(),
                 slots_found: 16,
                 luminance_monotone: mono,
                 wcag_aa: wcag,
