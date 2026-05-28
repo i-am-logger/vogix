@@ -2,20 +2,28 @@
 #
 # Two sub-domains:
 #   keybindings: modKey, mouse, layers (input config)
-#   modes: app, desktop, arrange, theme (contextual actions)
+#   modes: app, desktop (+ console infra) — a single, unified WM mode
 #
 # Philosophy:
 #   - App mode (default): Super = Command (macOS-like), keys → apps
-#   - Desktop mode (Super+Escape / CapsLock toggle): single keys for WM
-#   - Arrange mode (from desktop): move + resize windows
-#   - Theme mode (from desktop): vogix appearance switching
+#   - Desktop mode: the one WM mode. Hold CapsLock to activate, release to
+#     leave (pure spring — no sticky/toggle). Esc is a never-needed safety net.
+#   - Console: F12 tmux overlay (infra, passthrough).
 #
-# Semantic keys (consistent across modes):
-#   h/j/k/l = directional, q = quit, f = fullscreen, y = float (yank),
-#   o = split, a = arrange, s = swap, d = dismiss, n/p = next/prev,
-#   v = vogix, x = lock, Space = command palette
+# Desktop keys — the modifier on a direction picks the verb:
+#   direction (arrows or h/j/k/l) = focus
+#   Shift + direction             = move window
+#   Ctrl  + direction             = resize window
+#   number                        = go to workspace
+#   Shift + number                = send window to workspace + follow
+#   q = close, f = fullscreen, y = float, x = lock, d = dismiss, Space = launcher
 _:
 
+let
+  # Console toggle command — used in every mode that supports F12 console access.
+  # Checks if console workspace is visible, starts wezterm+tmux if needed, switches submap.
+  consoleToggleAction = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi";
+in
 {
   # ── Input settings ──
   input = {
@@ -84,11 +92,44 @@ _:
     };
 
     layers = {
-      # CapsLock → Scroll_Lock (toggles desktop mode via Hyprland)
+      # ── CapsLock interaction model (the single source of truth) ──
+      #
+      #   caps + a WM key   = MOMENTARY: do the action, return to app when you
+      #                       let go of caps. (caps+→ nudge, caps+q close, …)
+      #   caps clicked alone = STICKY: stay in desktop for several actions;
+      #                       click caps again to leave.
+      #   Esc                = safety net only; never required.
+      #
+      # Kanata `(tap-hold-press 250 250 f24 (multi f23 (on-release-fakekey vogixsubmapexit tap)))`:
+      #   • caps + another key → HOLD → F23 down (enter) ; on caps RELEASE →
+      #     F22 tap (exit). Momentary: enter on press, exit on release.
+      #   • a LONE caps press < 250ms → TAP → F24 → toggle sticky on/off.
+      #
+      # CRITICAL — why exit is a SEPARATE keypress (F22), not the hold key's
+      # release: Hyprland's `bindr` (release-bind) does NOT fire when a key's
+      # PRESS entered a submap and its RELEASE happens inside that submap —
+      # Hyprland loses the press across the submap switch. Proven via evtest:
+      # F23-up fired on caps release but the submap only reset on a later click.
+      # So kanata emits an explicit F22 keypress on release, and Hyprland exits
+      # via a normal press-`bind` (reliable). F22/F23/F24 are internal keys —
+      # Hyprland's binds consume them, apps never see them.
+      #
+      # Hyprland (generated from app/desktop modes):
+      #   app:     bind = , F23, submap desktop  (hold press → enter)
+      #            bind = , F24, submap desktop  (click → sticky on)
+      #   submap:  bind = , F22, submap reset    (hold RELEASE → exit; press-bind)
+      #            bind = , F24, submap reset    (click → off)
+      #            bind = , escape, submap reset (safety net)
+      #
+      # Per-binding exit semantics live on each binding via `exitAfter`:
+      #   exitAfter=true  → return to app after the action (one-shot commands).
+      #   exitAfter=false → stay (chainable: focus/workspace/send/etc).
       desktopToggle = {
         hold = "capslock";
-        tapAction = "slck";
-        tapHoldMs = 1; # Effectively always tap — no hold behavior for now
+        tapAction = "f24"; # lone click → F24 (Hyprland toggles the submap)
+        holdAction = "f23"; # caps+key → F23 on press → ENTER submap (bind)
+        holdReleaseAction = "f22"; # caps release → F22 tap → EXIT submap (bind, not bindr)
+        tapHoldMs = 250; # lone press released within this = click; else hold
         bindings = { };
       };
     };
@@ -118,6 +159,36 @@ _:
     quit = { from = "super + q"; to = "ctrl + q"; };
     goToLine = { from = "super + g"; to = "ctrl + g"; };
     devTools = { from = "super + d"; to = "ctrl + d"; };
+  };
+
+  # ── Mode graph — defines mode topology ──
+  # Mirrors the ModeGraph ontology in praxis applied/hmi/input/modes.rs
+  # root: the default mode (Hyprland "reset" submap)
+  # modes: each mode's parent (exit target) and type
+  # Axioms: NoDeadStates, RootReachable, RootNoParent
+  #
+  # Design: a SINGLE WM mode (`desktop`). The old `arrange` and `theme`
+  # sub-modes were removed entirely:
+  #   - arrange folded into desktop — focus = dir, Shift+dir = move,
+  #     Ctrl+dir = resize, Shift+number = send-and-follow. No sub-mode hop.
+  #   - theme dropped — it was used once in two weeks of telemetry; appearance
+  #     switching lives in the `vogix` CLI / brightness keys instead.
+  #
+  # Entering/leaving desktop is dual-role on CapsLock — see the full model on
+  # layers.desktopToggle above. In short: caps+key = momentary (exit on
+  # release), caps clicked alone = sticky toggle, Esc = safety net only.
+  # move/resize are flat sub-modes (parent = app) entered from desktop via m/r.
+  # Each is its own submap so the daemon can give it a distinct semantic border
+  # colour (desktop=active/cyan, move=link/blue, resize=highlight/purple).
+  modeGraph = {
+    root = "app";
+    modes = {
+      app = { parent = null; type = "normal"; };
+      desktop = { parent = "app"; type = "submap"; };
+      move = { parent = "app"; type = "submap"; };
+      resize = { parent = "app"; type = "submap"; };
+      console = { parent = "app"; type = "passthrough"; };
+    };
   };
 
   # ── Modes (contextual actions) ──
@@ -174,28 +245,41 @@ _:
         help = { key = "super + slash"; action = "exec, vogix-modes-global"; description = "Show keybindings"; };
 
         # ── System console (fullscreen tmux overlay, available everywhere) ──
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "Toggle system console"; };
+        console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
 
-        # ── Desktop mode entry ──
-        enterDesktop = { key = "Scroll_Lock"; action = "submap, desktop"; description = "Enter desktop mode (CapsLock tap)"; };
-        enterDesktopFallback = { key = "super + escape"; action = "submap, desktop"; description = "Enter desktop mode"; };
+        # ── Desktop mode entry (dual-role CapsLock) ──
+        # kanata maps caps → click=F24 / hold=F23 (see desktopToggle).
+        #   click caps → F24 → toggle sticky desktop on (F24 again exits)
+        #   hold  caps → F23 → momentary desktop (release exits via bindr , F23)
+        enterDesktopToggle = { key = "F24"; action = "submap, desktop"; description = "Desktop mode (click CapsLock)"; };
+        enterDesktopHold = { key = "F23"; action = "submap, desktop"; description = "Desktop mode (hold CapsLock)"; };
       };
     };
 
-    # Desktop mode: manage environment with single keys
+    # Desktop mode (caps) — the WM hub. Border = active/cyan (set by daemon).
+    #   arrows / hjkl = focus
+    #   m = enter MOVE sub-mode (blue), r = enter RESIZE sub-mode (purple)
+    #   numbers = workspace, Shift+number = send window there + follow
+    # Hold CapsLock the whole time you work here; release to return to app.
     desktop = {
       enter = null;
       exit = "escape";
       bindings = {
-        focusLeft = { key = "h"; action = "movefocus, l"; description = "Focus left"; };
-        focusDown = { key = "j"; action = "movefocus, d"; description = "Focus down"; };
-        focusUp = { key = "k"; action = "movefocus, u"; description = "Focus up"; };
-        focusRight = { key = "l"; action = "movefocus, r"; description = "Focus right"; };
-        focusLeftArrow = { key = "left"; action = "movefocus, l"; description = "Focus left"; };
-        focusDownArrow = { key = "down"; action = "movefocus, d"; description = "Focus down"; };
-        focusUpArrow = { key = "up"; action = "movefocus, u"; description = "Focus up"; };
-        focusRightArrow = { key = "right"; action = "movefocus, r"; description = "Focus right"; };
+        # ── Focus: direction (arrows + hjkl), repeats while held ──
+        focusLeft = { key = "h"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
+        focusDown = { key = "j"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
+        focusUp = { key = "k"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
+        focusRight = { key = "l"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
+        focusLeftArrow = { key = "left"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
+        focusDownArrow = { key = "down"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
+        focusUpArrow = { key = "up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
+        focusRightArrow = { key = "right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
 
+        # ── Enter MOVE / RESIZE sub-modes (native submap → daemon colours them) ──
+        enterMove = { key = "m"; action = "submap, move"; description = "Move-window mode"; };
+        enterResize = { key = "r"; action = "submap, resize"; description = "Resize-window mode"; };
+
+        # ── Workspaces: number = go there ──
         workspace1 = { key = "1"; action = "workspace, 1"; description = "Workspace 1"; };
         workspace2 = { key = "2"; action = "workspace, 2"; description = "Workspace 2"; };
         workspace3 = { key = "3"; action = "workspace, 3"; description = "Workspace 3"; };
@@ -209,109 +293,105 @@ _:
         workspaceNext = { key = "n"; action = "workspace, +1"; description = "Next workspace"; };
         workspacePrev = { key = "p"; action = "workspace, -1"; description = "Previous workspace"; };
 
-        closeWindow = { key = "q"; action = "killactive,"; description = "Close window"; };
-        fullscreen = { key = "f"; action = "fullscreen"; description = "Fullscreen"; };
+        # ── Send window to workspace AND follow it: Shift + number ──
+        sendToWs1 = { key = "shift + 1"; action = "movetoworkspace, 1"; description = "Send window to ws 1 + follow"; };
+        sendToWs2 = { key = "shift + 2"; action = "movetoworkspace, 2"; description = "Send window to ws 2 + follow"; };
+        sendToWs3 = { key = "shift + 3"; action = "movetoworkspace, 3"; description = "Send window to ws 3 + follow"; };
+        sendToWs4 = { key = "shift + 4"; action = "movetoworkspace, 4"; description = "Send window to ws 4 + follow"; };
+        sendToWs5 = { key = "shift + 5"; action = "movetoworkspace, 5"; description = "Send window to ws 5 + follow"; };
+        sendToWs6 = { key = "shift + 6"; action = "movetoworkspace, 6"; description = "Send window to ws 6 + follow"; };
+        sendToWs7 = { key = "shift + 7"; action = "movetoworkspace, 7"; description = "Send window to ws 7 + follow"; };
+        sendToWs8 = { key = "shift + 8"; action = "movetoworkspace, 8"; description = "Send window to ws 8 + follow"; };
+        sendToWs9 = { key = "shift + 9"; action = "movetoworkspace, 9"; description = "Send window to ws 9 + follow"; };
+        sendToWs10 = { key = "shift + 0"; action = "movetoworkspace, 10"; description = "Send window to ws 10 + follow"; };
+
+        # ── Window state ──
+        # One-shot commands return to app (exitAfter); float + split stay so you
+        # can keep arranging the window you just floated/split.
+        closeWindow = { key = "q"; action = "killactive,"; description = "Close window"; exitAfter = true; };
+        fullscreen = { key = "f"; action = "fullscreen"; description = "Fullscreen"; exitAfter = true; };
         toggleFloat = { key = "y"; action = "togglefloating,"; description = "Float (yank from tiling)"; };
-        toggleSplit = { key = "o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
+        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split orientation"; };
 
-        openTerminal = { key = "t"; action = "exec, $TERMINAL"; description = "Terminal"; };
-        openBrowser = { key = "e"; action = "exec, $BROWSER"; description = "Browser"; };
-        openLauncher = { key = "space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
+        # ── Quick launches (auto-exit desktop so you can use the app) ──
+        openTerminal = { key = "t"; action = "exec, $TERMINAL"; description = "Terminal"; exitAfter = true; };
+        openBrowser = { key = "e"; action = "exec, $BROWSER"; description = "Browser"; exitAfter = true; };
+        openLauncher = { key = "space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; exitAfter = true; };
 
-        dismissNotification = { key = "d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
-        dismissAll = { key = "shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all"; };
-
-        lock = { key = "x"; action = "exec, hyprlock"; description = "Lock screen"; };
-
-        enterArrange = { key = "a"; action = "submap, arrange"; description = "Arrange mode"; };
-        enterTheme = { key = "v"; action = "submap, theme"; description = "Theme mode (vogix)"; };
+        # ── Notifications + lock (one-shot → return to app) ──
+        dismissNotification = { key = "d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; exitAfter = true; };
+        dismissAll = { key = "shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all"; exitAfter = true; };
+        lock = { key = "x"; action = "exec, hyprlock"; description = "Lock screen"; exitAfter = true; };
 
         # ── Console + history ──
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
+        console = { key = "F12"; action = consoleToggleAction; description = "System console"; };
         undoSession = { key = "u"; action = "exec, vogix session undo"; description = "Undo last window change"; };
 
         help = { key = "slash"; action = "exec, vogix-modes-desktop"; description = "Show keybindings"; };
 
-        exitDesktop = { key = "Scroll_Lock"; action = "submap, reset"; description = "Back to app mode"; };
+        # Exits: click CapsLock (F24) toggles sticky off; releasing a HELD
+        # CapsLock fires the generated `bindr = , Scroll_Lock, submap reset`;
+        # Esc is also bound by the submap builder as a never-needed safety net.
+        exitDesktopToggle = { key = "F24"; action = "submap, reset"; description = "Back to app (click CapsLock)"; };
       };
     };
 
-    # Arrange mode: move + resize windows
-    arrange = {
-      enter = "a";
+    # Move-window sub-mode (entered with 'm' from desktop). Border = link/blue.
+    # arrows / hjkl move the active window; Esc / click-caps / release-caps exit.
+    move = {
+      enter = "m";
       exit = "escape";
       bindings = {
-        moveLeft = { key = "h"; action = "movewindow, l"; description = "Move left"; };
-        moveDown = { key = "j"; action = "movewindow, d"; description = "Move down"; };
-        moveUp = { key = "k"; action = "movewindow, u"; description = "Move up"; };
-        moveRight = { key = "l"; action = "movewindow, r"; description = "Move right"; };
-        moveLeftArrow = { key = "left"; action = "movewindow, l"; description = "Move left"; };
-        moveDownArrow = { key = "down"; action = "movewindow, d"; description = "Move down"; };
-        moveUpArrow = { key = "up"; action = "movewindow, u"; description = "Move up"; };
-        moveRightArrow = { key = "right"; action = "movewindow, r"; description = "Move right"; };
+        moveLeft = { key = "h"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
+        moveDown = { key = "j"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
+        moveUp = { key = "k"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
+        moveRight = { key = "l"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
+        moveLeftArrow = { key = "left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
+        moveDownArrow = { key = "down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
+        moveUpArrow = { key = "up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
+        moveRightArrow = { key = "right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
 
-        resizeLeft = { key = "shift + h"; action = "resizeactive, -30 0"; description = "Shrink width"; repeat = true; };
-        resizeDown = { key = "shift + j"; action = "resizeactive, 0 30"; description = "Grow height"; repeat = true; };
-        resizeUp = { key = "shift + k"; action = "resizeactive, 0 -30"; description = "Shrink height"; repeat = true; };
-        resizeRight = { key = "shift + l"; action = "resizeactive, 30 0"; description = "Grow width"; repeat = true; };
-        resizeLeftArrow = { key = "shift + left"; action = "resizeactive, -30 0"; description = "Shrink width"; repeat = true; };
-        resizeDownArrow = { key = "shift + down"; action = "resizeactive, 0 30"; description = "Grow height"; repeat = true; };
-        resizeUpArrow = { key = "shift + up"; action = "resizeactive, 0 -30"; description = "Shrink height"; repeat = true; };
-        resizeRightArrow = { key = "shift + right"; action = "resizeactive, 30 0"; description = "Grow width"; repeat = true; };
-
-        sendToWorkspace1 = { key = "1"; action = "movetoworkspace, 1"; description = "Send to workspace 1"; };
-        sendToWorkspace2 = { key = "2"; action = "movetoworkspace, 2"; description = "Send to workspace 2"; };
-        sendToWorkspace3 = { key = "3"; action = "movetoworkspace, 3"; description = "Send to workspace 3"; };
-        sendToWorkspace4 = { key = "4"; action = "movetoworkspace, 4"; description = "Send to workspace 4"; };
-        sendToWorkspace5 = { key = "5"; action = "movetoworkspace, 5"; description = "Send to workspace 5"; };
-        sendToWorkspace6 = { key = "6"; action = "movetoworkspace, 6"; description = "Send to workspace 6"; };
-        sendToWorkspace7 = { key = "7"; action = "movetoworkspace, 7"; description = "Send to workspace 7"; };
-        sendToWorkspace8 = { key = "8"; action = "movetoworkspace, 8"; description = "Send to workspace 8"; };
-        sendToWorkspace9 = { key = "9"; action = "movetoworkspace, 9"; description = "Send to workspace 9"; };
-        sendToWorkspace10 = { key = "0"; action = "movetoworkspace, 10"; description = "Send to workspace 10"; };
-
-        fullscreen = { key = "f"; action = "fullscreen"; description = "Fullscreen"; };
-        toggleFloat = { key = "y"; action = "togglefloating,"; description = "Float"; };
-        toggleSplit = { key = "o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
-        swap = { key = "s"; action = "swapnext,"; description = "Swap with neighbor"; };
-
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
-        help = { key = "slash"; action = "exec, vogix-modes-arrange"; description = "Show keybindings"; };
+        toResize = { key = "r"; action = "submap, resize"; description = "Switch to resize mode"; };
+        exitToggle = { key = "F24"; action = "submap, reset"; description = "Back to app (click CapsLock)"; };
+        help = { key = "slash"; action = "exec, vogix-modes-move"; description = "Show keybindings"; };
       };
     };
 
-    # Theme mode: vogix appearance switching
-    theme = {
-      enter = "v";
+    # Resize-window sub-mode (entered with 'r' from desktop). Border = highlight/purple.
+    # arrows / hjkl resize the active window (grow toward the arrow); Esc exits.
+    resize = {
+      enter = "r";
       exit = "escape";
       bindings = {
-        nextTheme = { key = "n"; action = "exec, vogix -t next"; description = "Next theme"; };
-        prevTheme = { key = "p"; action = "exec, vogix -t prev"; description = "Previous theme"; };
-        darker = { key = "d"; action = "exec, vogix -v darker"; description = "Darker variant"; };
-        lighter = { key = "l"; action = "exec, vogix -v lighter"; description = "Lighter variant"; };
-        cycleScheme = { key = "s"; action = "exec, vogix -s next"; description = "Cycle scheme"; };
+        resizeLeft = { key = "h"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
+        resizeDown = { key = "j"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
+        resizeUp = { key = "k"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
+        resizeRight = { key = "l"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
+        resizeLeftArrow = { key = "left"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
+        resizeDownArrow = { key = "down"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
+        resizeUpArrow = { key = "up"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
+        resizeRightArrow = { key = "right"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
 
-        screenBrighterTheme = { key = "XF86MonBrightnessUp"; action = "exec, vogix -v lighter"; description = "Lighter variant"; };
-        screenDimmerTheme = { key = "XF86MonBrightnessDown"; action = "exec, vogix -v darker"; description = "Darker variant"; };
-        peripheralBrighterTheme = { key = "XF86KbdBrightnessUp"; action = "exec, openrgb --brightness +10"; description = "Peripherals brighter"; };
-        peripheralDimmerTheme = { key = "XF86KbdBrightnessDown"; action = "exec, openrgb --brightness -10"; description = "Peripherals dimmer"; };
-
-        showStatus = { key = "space"; action = "exec, vogix status | xargs notify-send 'Vogix'"; description = "Show current theme"; };
-
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
-        help = { key = "slash"; action = "exec, vogix-modes-theme"; description = "Show keybindings"; };
+        toMove = { key = "m"; action = "submap, move"; description = "Switch to move mode"; };
+        exitToggle = { key = "F24"; action = "submap, reset"; description = "Back to app (click CapsLock)"; };
+        help = { key = "slash"; action = "exec, vogix-modes-resize"; description = "Show keybindings"; };
       };
     };
+
     # Console mode: system terminal overlay (tmux)
     # Keys pass through to tmux — only F12/Escape exit the mode
     # NO catchall — unlike other modes, unbound keys go to the terminal
     console = {
       enter = null;
-      # No exit key — F12 and Escape are handled in bindings (they need to close the workspace too)
-      # Two F12 bindings execute sequentially: toggle workspace first (triggers animation), then exit submap
+      # Single exec binding: toggle workspace (starts close animation), delay, then reset submap.
+      # The sleep ensures the Hyprland slide-out animation completes before submap resets.
+      # Without the delay, submap reset fires in the same frame and kills the animation.
       bindings = {
-        exitConsoleA = { key = "F12"; action = "togglespecialworkspace, console"; description = "Close console"; };
-        exitConsoleB = { key = "F12"; action = "submap, reset"; description = "Return to app mode"; };
+        exitConsole = {
+          key = "F12";
+          action = "exec, hyprctl dispatch togglespecialworkspace console && sleep 0.3 && hyprctl dispatch submap reset && hyprctl --batch 'keyword general:col.active_border rgb(585b70) ; keyword general:col.inactive_border rgb(313244)'";
+          description = "Close console";
+        };
       };
     };
   };

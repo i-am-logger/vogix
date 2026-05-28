@@ -86,15 +86,29 @@ impl ThemeCache {
             return Ok(cache_path);
         }
 
-        // Render to cache
+        // Render to a .tmp directory then atomically rename into place.
+        // Prevents TOCTOU race where two concurrent processes both render.
+        let tmp_path = cache_path.with_file_name(format!(
+            "{}.tmp",
+            cache_path.file_name().unwrap_or_default().to_string_lossy()
+        ));
         renderer::render_to_cache(
-            &cache_path,
+            &tmp_path,
             &self.templates.path,
             &self.theme_sources,
             scheme,
             theme,
             variant,
         )?;
+        // Atomic rename — readers see either the complete set or nothing
+        if let Err(e) = std::fs::rename(&tmp_path, &cache_path) {
+            // Another process may have raced and won — use their result
+            if cache_path.exists() {
+                let _ = std::fs::remove_dir_all(&tmp_path);
+            } else {
+                return Err(e.into());
+            }
+        }
 
         Ok(cache_path)
     }

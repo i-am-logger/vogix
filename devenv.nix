@@ -1,7 +1,6 @@
 { pkgs
 , config
 , lib
-, inputs
 , ...
 }:
 let
@@ -134,22 +133,16 @@ in
   };
 
   # https://devenv.sh/outputs/
+  # NOTE: hermetic crate2nix build is DEFERRED while vogix depends on local
+  # praxis via a path dep (unpinned, for dev). Vendoring praxis into the sandbox
+  # works up to a wall: crate2nix resolves pr4xis-domains' ALL features, whose
+  # optional deps (lopdf/xsd-parser/rustls via pdf/codegen/fetch) rely on praxis's
+  # `[patch.crates-io]` forks that don't apply cross-workspace. Re-enable once
+  # praxis is consumed as a proper crate (git rev / crates.io) — see input-engine
+  # notes. Dev/cargo (`devenv shell -- cargo …`) works against ../praxis today.
   outputs =
-    let
-      # Vendor praxis into the source tree and patch Cargo.toml path
-      nixSrc = pkgs.runCommand "vogix-nix-src" { } ''
-        cp -r ${./.} $out
-        chmod -R u+w $out
-        mkdir -p $out/.nix-deps/praxis $out/.nix-deps/domains
-        cp -r ${inputs.praxis-src}/crates/praxis/. $out/.nix-deps/praxis/
-        cp -r ${inputs.praxis-src}/crates/domains/. $out/.nix-deps/domains/
-        substituteInPlace $out/Cargo.toml \
-          --replace-fail '../praxis/crates/praxis' '.nix-deps/praxis' \
-          --replace-fail '../praxis/crates/domains' '.nix-deps/domains'
-      '';
-    in
     {
-      vogix = config.languages.rust.import nixSrc {
+      vogix = config.languages.rust.import ./. {
         # Override to skip Windows-specific dependencies
         crateOverrides = pkgs.defaultCrateOverrides // {
           # Skip all Windows-specific crates

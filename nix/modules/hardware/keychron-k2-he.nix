@@ -32,7 +32,10 @@ in
       { name = "Keychron K2 HE"; vid = "0x3434"; pid = "0x0E20"; }
     ];
 
-    # Theme apply: set keyboard color from vogix palette on theme change
-    vogix.hardware.themeApply.keychron-k2-he = "openrgb -d 'Keychron K2 HE' -m static -c {{base01}}";
+    # Theme apply: set keyboard color from vogix palette on theme change.
+    # Slot is configurable because base01 is too dark to read through the keycaps;
+    # base0D (accent) is the new default — see options.nix for rationale.
+    vogix.hardware.themeApply.keychron-k2-he =
+      "openrgb -d 'Keychron K2 HE' -m static -c {{${cfg.colorSlot}}}";
   };
 }

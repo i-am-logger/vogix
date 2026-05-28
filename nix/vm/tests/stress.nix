@@ -23,7 +23,7 @@ testLib.mkTest "stress" ''
   print("=== Test: Rapid Theme Switching (Stress Test) ===")
   # Rapidly switch themes to ensure no race conditions or state corruption
 
-  themes_cycle = ["aikido", "nordic", "matrix", "desert", "aikido"]
+  themes_cycle = ["yoga", "nordic", "matrix", "desert", "yoga"]
   for i, theme in enumerate(themes_cycle):
       machine.succeed(f"su - vogix -c 'vogix theme set -t {theme}'")
       status = machine.succeed("su - vogix -c 'vogix theme status'")
@@ -31,7 +31,7 @@ testLib.mkTest "stress" ''
   print("    ✓ Rapid theme switching works")
 
   # Note: -v dark/light selects by polarity, actual variant names may differ
-  # aikido uses night/day for dark/light polarities
+  # yoga uses night/day for dark/light polarities
   variants_cycle = [("dark", "night"), ("light", "day"), ("dark", "night"), ("light", "day"), ("dark", "night")]
   for i, (polarity, expected_variant) in enumerate(variants_cycle):
       machine.succeed(f"su - vogix -c 'vogix theme set -v {polarity}'")
@@ -44,11 +44,11 @@ testLib.mkTest "stress" ''
   # Format: (theme, polarity_request, expected_variant_name)
   # Different themes have different variant names for dark/light polarities
   combinations = [
-      ("aikido", "dark", "night"),
+      ("yoga", "dark", "night"),
       ("nordic", "light", "day"),
       ("matrix", "dark", "night"),
       ("desert", "light", "day"),
-      ("aikido", "dark", "night"),
+      ("yoga", "dark", "night"),
   ]
   for i, (theme, polarity, expected_variant) in enumerate(combinations):
       machine.succeed(f"su - vogix -c 'vogix theme set -t {theme} -v {polarity}'")
@@ -60,16 +60,16 @@ testLib.mkTest "stress" ''
   print("\n=== Test: Symlink Integrity After Stress ===")
   # After rapid switching, verify symlinks are still correct
 
-  # Final state should be aikido-night (dark polarity)
+  # Final state should be yoga-night (dark polarity)
   current_link = machine.succeed(f"su - vogix -c 'readlink {current_theme}'").strip()
-  assert "aikido" in current_link.lower(), "Symlink should point to aikido after stress test!"
+  assert "yoga" in current_link.lower(), "Symlink should point to yoga after stress test!"
   assert "night" in current_link.lower(), "Symlink should point to night variant after stress test!"
   print("    ✓ Symlink integrity maintained after stress test")
 
   # Verify config is accessible and correct
   alacritty = machine.succeed("su - vogix -c 'cat ~/.config/alacritty/alacritty.toml'")
-  aikido_night_bg = all_themes['aikido']['night']['base00'].lower()
-  assert aikido_night_bg in alacritty.lower(), "Config should have aikido night colors after stress test!"
+  yoga_night_bg = all_themes['yoga']['night']['base00'].lower()
+  assert yoga_night_bg in alacritty.lower(), "Config should have yoga night colors after stress test!"
   print("    ✓ Config content correct after stress test")
 
   print("\n✓ Stress test passed!")

@@ -41,7 +41,7 @@ For detailed implementation of specific components, see the specialized document
 ~/.local/share/vogix/themes/                   # Theme packages (home-manager)
     ├── base16-catppuccin-mocha -> /nix/store/...
     ├── base16-catppuccin-latte -> /nix/store/...
-    ├── vogix16-aikido-dark -> /nix/store/...
+    ├── vogix16-yoga-dark -> /nix/store/...
     └── ...
 
 ~/.local/state/vogix/                          # CLI managed (mutable)
@@ -84,7 +84,7 @@ The home-manager module (`programs.vogix`) handles all build-time generation:
   programs.vogix = {
     enable = true;
     scheme = "vogix16";
-    theme = "aikido";
+    theme = "yoga";
     variant = "dark";
   };
 }

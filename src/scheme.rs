@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use praxis_domains::technology::theming::schemes::SchemeType;
+use pr4xis_domains::applied::hmi::theming::schemes::SchemeType;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -25,7 +25,6 @@ pub enum Scheme {
 
 impl Scheme {
     /// Convert to praxis SchemeType for ontological reasoning.
-    #[allow(dead_code)]
     pub fn to_praxis(self) -> SchemeType {
         match self {
             Scheme::Ansi16 => SchemeType::Ansi16,
@@ -35,19 +34,7 @@ impl Scheme {
         }
     }
 
-    /// Create from praxis SchemeType.
-    #[allow(dead_code)]
-    pub fn from_praxis(st: SchemeType) -> Self {
-        match st {
-            SchemeType::Ansi16 => Scheme::Ansi16,
-            SchemeType::Base16 => Scheme::Base16,
-            SchemeType::Base24 => Scheme::Base24,
-            SchemeType::Vogix16 => Scheme::Vogix16,
-        }
-    }
-
     /// Number of color slots for this scheme (from ontology).
-    #[allow(dead_code)]
     pub fn slot_count(self) -> usize {
         self.to_praxis().slot_count()
     }
@@ -60,6 +47,17 @@ impl fmt::Display for Scheme {
             Scheme::Base16 => write!(f, "base16"),
             Scheme::Base24 => write!(f, "base24"),
             Scheme::Ansi16 => write!(f, "ansi16"),
+        }
+    }
+}
+
+impl From<SchemeType> for Scheme {
+    fn from(st: SchemeType) -> Self {
+        match st {
+            SchemeType::Ansi16 => Scheme::Ansi16,
+            SchemeType::Base16 => Scheme::Base16,
+            SchemeType::Base24 => Scheme::Base24,
+            SchemeType::Vogix16 => Scheme::Vogix16,
         }
     }
 }
@@ -109,8 +107,13 @@ mod tests {
 
     #[test]
     fn test_praxis_roundtrip() {
-        for scheme in [Scheme::Ansi16, Scheme::Base16, Scheme::Base24, Scheme::Vogix16] {
-            assert_eq!(Scheme::from_praxis(scheme.to_praxis()), scheme);
+        for scheme in [
+            Scheme::Ansi16,
+            Scheme::Base16,
+            Scheme::Base24,
+            Scheme::Vogix16,
+        ] {
+            assert_eq!(Scheme::from(scheme.to_praxis()), scheme);
         }
     }
 

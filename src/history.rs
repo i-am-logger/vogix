@@ -35,7 +35,10 @@ impl History {
         }
         let contents =
             serde_json::to_string_pretty(self).map_err(|e| VogixError::Config(e.to_string()))?;
-        fs::write(&path, contents)?;
+        // Atomic write: tmp + rename prevents corruption on concurrent invocations
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, contents)?;
+        fs::rename(&tmp, &path)?;
         Ok(())
     }
 
@@ -80,7 +83,6 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scheme::Scheme;
     use crate::state::ShaderState;
 
     fn state(theme: &str) -> State {
@@ -94,7 +96,7 @@ mod tests {
     fn test_push_and_undo() {
         let mut history = History::default();
 
-        history.push(&state("aikido"));
+        history.push(&state("yoga"));
         history.push(&state("catppuccin"));
 
         assert_eq!(history.undo_depth(), 2);
@@ -103,20 +105,20 @@ mod tests {
         assert_eq!(prev.current_theme, "catppuccin");
 
         let prev = history.undo(&state("catppuccin")).unwrap();
-        assert_eq!(prev.current_theme, "aikido");
+        assert_eq!(prev.current_theme, "yoga");
 
-        assert!(history.undo(&state("aikido")).is_none());
+        assert!(history.undo(&state("yoga")).is_none());
     }
 
     #[test]
     fn test_redo() {
         let mut history = History::default();
-        history.push(&state("aikido"));
+        history.push(&state("yoga"));
 
         let prev = history.undo(&state("catppuccin")).unwrap();
-        assert_eq!(prev.current_theme, "aikido");
+        assert_eq!(prev.current_theme, "yoga");
 
-        let next = history.redo(&state("aikido")).unwrap();
+        let next = history.redo(&state("yoga")).unwrap();
         assert_eq!(next.current_theme, "catppuccin");
 
         assert!(history.redo(&state("catppuccin")).is_none());
@@ -125,7 +127,7 @@ mod tests {
     #[test]
     fn test_push_clears_future() {
         let mut history = History::default();
-        history.push(&state("aikido"));
+        history.push(&state("yoga"));
 
         history.undo(&state("catppuccin"));
         assert_eq!(history.redo_depth(), 1);
@@ -150,7 +152,7 @@ mod tests {
         let path = temp_dir.path().join("history.json");
 
         let mut history = History::default();
-        history.push(&state("aikido"));
+        history.push(&state("yoga"));
         history.push(&state("catppuccin"));
 
         let contents = serde_json::to_string_pretty(&history).unwrap();
@@ -164,7 +166,7 @@ mod tests {
     fn test_shader_state_serializes_in_history() {
         let mut history = History::default();
         let s = State {
-            current_theme: "aikido".to_string(),
+            current_theme: "yoga".to_string(),
             shader: ShaderState::On {
                 intensity: 0.3,
                 brightness: 1.0,

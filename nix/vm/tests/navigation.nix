@@ -21,11 +21,11 @@ let
 in
 testLib.mkTest "navigation" ''
   print("=== Test: Darker/Lighter Navigation ===")
-  # Start from dark (aikido uses 'night'), try lighter
+  # Start from dark (yoga uses 'night'), try lighter
   machine.succeed("su - vogix -c 'vogix theme set -v dark'")
   machine.succeed("su - vogix -c 'vogix theme set -v lighter'")
   nav_status = machine.succeed("su - vogix -c 'vogix theme status'")
-  # aikido uses 'day' for light polarity, not 'light'
+  # yoga uses 'day' for light polarity, not 'light'
   assert "day" in nav_status.lower(), "Navigation to lighter failed!"
   print("✓ 'vogix theme set -v lighter' navigates from night to day")
 
@@ -36,7 +36,7 @@ testLib.mkTest "navigation" ''
   # Navigate back with darker
   machine.succeed("su - vogix -c 'vogix theme set -v darker'")
   nav_back = machine.succeed("su - vogix -c 'vogix theme status'")
-  # aikido uses 'night' for dark polarity, not 'dark'
+  # yoga uses 'night' for dark polarity, not 'dark'
   assert "night" in nav_back.lower(), "Navigation to darker failed!"
   print("✓ 'vogix theme set -v darker' navigates from day to night")
 
@@ -48,7 +48,7 @@ testLib.mkTest "navigation" ''
 
   # Start from dark (night), navigate to lighter (day)
   print("  --- Starting from dark (night), navigating lighter ---")
-  machine.succeed("su - vogix -c 'vogix theme set -t aikido -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -t yoga -v dark'")
   status = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "night" in status.lower()
 
@@ -133,7 +133,7 @@ testLib.mkTest "navigation" ''
       print(f"    ✓ {scheme}/catppuccin: Full navigation cycle complete!")
 
   # Reset
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
 
   print("\n=== Test: Single-Variant Theme Handling (Dracula) ===")
   # dracula only has 'default' variant (dark polarity)
@@ -170,7 +170,7 @@ testLib.mkTest "navigation" ''
       print("⚠ Could not test single-variant handling (base16/dracula not available)")
 
   # Final reset
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
 
   print("\n" + "="*60)
   print("NAVIGATION TESTS PASSED!")

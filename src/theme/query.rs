@@ -26,7 +26,7 @@ mod tests {
     fn sample_themes() -> Vec<ThemeInfo> {
         vec![
             ThemeInfo {
-                name: "aikido".to_string(),
+                name: "yoga".to_string(),
                 scheme: Scheme::Vogix16,
                 variants: vec![VariantInfo {
                     name: "night".to_string(),
@@ -73,7 +73,7 @@ mod tests {
 
         let vogix16_themes = filter_by_scheme(&themes, &Scheme::Vogix16);
         assert_eq!(vogix16_themes.len(), 1);
-        assert_eq!(vogix16_themes[0].name, "aikido");
+        assert_eq!(vogix16_themes[0].name, "yoga");
 
         let ansi16_themes = filter_by_scheme(&themes, &Scheme::Ansi16);
         assert!(ansi16_themes.is_empty());
@@ -94,8 +94,8 @@ mod tests {
     #[test]
     fn test_get_theme_returns_clone() {
         let themes = sample_themes();
-        let theme1 = get_theme(&themes, "aikido").unwrap();
-        let theme2 = get_theme(&themes, "aikido").unwrap();
+        let theme1 = get_theme(&themes, "yoga").unwrap();
+        let theme2 = get_theme(&themes, "yoga").unwrap();
 
         // Both are independent clones
         assert_eq!(theme1.name, theme2.name);

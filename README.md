@@ -101,7 +101,7 @@ Add to your `flake.nix`:
           programs.vogix = {
             enable = true;
             scheme = "vogix16";
-            theme = "aikido";
+            theme = "yoga";
             variant = "dark";
           };
         }
@@ -164,13 +164,13 @@ See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## Defaults
 
-Vogix ships with the vogix16 scheme as the default, using the `aikido` theme in `dark` mode unless configured otherwise.
+Vogix ships with the vogix16 scheme as the default, using the `yoga` theme in `dark` mode unless configured otherwise.
 
 ## Example Themes
 
 Vogix supports themes from multiple sources:
 
-- **vogix16**: Native themes from [vogix16-themes](https://github.com/i-am-logger/vogix16-themes) (aikido, forest, etc.)
+- **vogix16**: Native themes from [vogix16-themes](https://github.com/i-am-logger/vogix16-themes) (yoga, forest, etc.)
 - **ansi16**: Imported from [iTerm2-Color-Schemes](https://github.com/i-am-logger/iTerm2-Color-Schemes)
 - **base16/base24**: Imported from [tinted-schemes](https://github.com/i-am-logger/tinted-schemes) (catppuccin, dracula, gruvbox, nord, etc.)
 

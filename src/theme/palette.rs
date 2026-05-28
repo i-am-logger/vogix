@@ -11,15 +11,14 @@
 //! - WCAG 2.1: contrast validation axioms
 
 use crate::scheme::Scheme;
-use praxis::category::Entity;
-use praxis_domains::science::colors::Rgb;
-use praxis_domains::technology::theming::base16::{ColorSlot, Polarity};
-use praxis_domains::technology::theming::ontology::{self, Palette};
-use praxis_domains::technology::theming::schemes::{Ansi16Color, Vogix16Semantic};
+use pr4xis::category::Concept;
+use pr4xis_domains::applied::hmi::theming::base16::{ColorSlot, Polarity};
+use pr4xis_domains::applied::hmi::theming::ontology::{self, Palette};
+use pr4xis_domains::applied::hmi::theming::schemes::{Ansi16Color, Vogix16Semantic};
+use pr4xis_domains::natural::colors::Rgb;
 use std::collections::HashMap;
 
 /// Try to insert a color into the palette from a hex string.
-#[allow(dead_code)]
 fn insert_hex(palette: &mut Palette, slot: ColorSlot, hex: &str) {
     if let Some(rgb) = Rgb::from_hex(hex) {
         palette.insert(slot, rgb);
@@ -30,7 +29,6 @@ fn insert_hex(palette: &mut Palette, slot: ColorSlot, hex: &str) {
 ///
 /// Handles all scheme naming conventions using the praxis ontology
 /// to map keys to ColorSlots.
-#[allow(dead_code)]
 pub fn build_palette(colors: &HashMap<String, String>, scheme: Scheme) -> Palette {
     let mut palette = Palette::new();
 
@@ -69,17 +67,15 @@ pub fn build_palette(colors: &HashMap<String, String>, scheme: Scheme) -> Palett
 }
 
 /// Detect theme polarity using the praxis ontology.
-#[allow(dead_code)]
 pub fn polarity(palette: &Palette) -> Option<Polarity> {
     ontology::detect_polarity(palette)
 }
 
 /// Validate palette against praxis axioms.
 /// Returns list of failed axiom descriptions, empty if all pass.
-#[allow(dead_code)]
 pub fn validate(palette: &Palette) -> Vec<String> {
-    use praxis::ontology::Axiom;
-    use praxis_domains::technology::theming::ontology::{
+    use pr4xis::ontology::Axiom;
+    use pr4xis_domains::applied::hmi::theming::ontology::{
         LuminanceMonotonicity, WcagForegroundContrast,
     };
 
@@ -88,15 +84,15 @@ pub fn validate(palette: &Palette) -> Vec<String> {
     let mono = LuminanceMonotonicity {
         palette: palette.clone(),
     };
-    if !mono.holds() {
-        failures.push(mono.description().to_string());
+    if mono.verify().is_err() {
+        failures.push(mono.description().as_str().to_string());
     }
 
     let contrast = WcagForegroundContrast {
         palette: palette.clone(),
     };
-    if !contrast.holds() {
-        failures.push(contrast.description().to_string());
+    if contrast.verify().is_err() {
+        failures.push(contrast.description().as_str().to_string());
     }
 
     failures

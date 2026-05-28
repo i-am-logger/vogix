@@ -35,7 +35,7 @@ testLib.mkTest "smoke" ''
 
   print("\n=== Test: List Themes ===")
   output = machine.succeed("su - vogix -c 'vogix theme list'")
-  assert "aikido" in output or "Available themes:" in output
+  assert "yoga" in output or "Available themes:" in output
   print("✓ List command works")
   print(f"Output: {output}")
 

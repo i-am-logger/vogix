@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
+use log::warn;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -183,8 +184,18 @@ impl ReloadDispatcher {
                     && comm.trim() == process_name
                     && let Ok(pid) = pid_str.parse::<i32>()
                 {
-                    unsafe { libc::kill(pid, sig) };
-                    found = true;
+                    let ret = unsafe { libc::kill(pid, sig) };
+                    if ret == 0 {
+                        found = true;
+                    } else {
+                        warn!(
+                            "Signal {} to {} (pid {}) failed: errno {}",
+                            sig,
+                            process_name,
+                            pid,
+                            std::io::Error::last_os_error()
+                        );
+                    }
                 }
             }
         }
@@ -215,30 +226,61 @@ impl ReloadDispatcher {
         Ok(())
     }
 
-    /// Apply theme colors to hardware devices
+    /// Apply theme colors to hardware devices in parallel.
+    ///
+    /// Each device runs as a separate `sh -c` child process spawned concurrently;
+    /// we then join them all so the call still returns synchronously. This matters
+    /// when multiple devices are configured (keyboard + kraken + DRAM): on a theme
+    /// change all three light up together instead of cascading over ~hundreds of ms.
     pub fn apply_hardware(&self, config: &Config, colors: &HashMap<String, String>, quiet: bool) {
         if config.hardware.is_empty() {
             return;
         }
 
-        for (device_name, device) in &config.hardware {
-            // Resolve {{color}} placeholders in the command
-            let mut cmd = device.command.clone();
-            for (color_name, hex_value) in colors {
-                let placeholder = format!("{{{{{}}}}}", color_name);
-                let hex_no_hash = hex_value.trim_start_matches('#');
-                cmd = cmd.replace(&placeholder, hex_no_hash);
-            }
+        let children: Vec<(String, std::io::Result<std::process::Child>)> = config
+            .hardware
+            .iter()
+            .map(|(device_name, device)| {
+                let mut cmd = device.command.clone();
+                for (color_name, hex_value) in colors {
+                    let placeholder = format!("{{{{{}}}}}", color_name);
+                    let hex_no_hash = hex_value.trim_start_matches('#');
+                    cmd = cmd.replace(&placeholder, hex_no_hash);
+                }
+                let child = Command::new("sh")
+                    .arg("-c")
+                    .arg(&cmd)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn();
+                (device_name.clone(), child)
+            })
+            .collect();
 
-            match self.run_command(&cmd) {
-                Ok(_) => {
+        for (device_name, child) in children {
+            let child = match child {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("⚠ Hardware {}: failed to spawn: {}", device_name, e);
+                    continue;
+                }
+            };
+
+            match child.wait_with_output() {
+                Ok(out) if out.status.success() => {
                     if !quiet {
                         println!("✓ Hardware: {}", device_name);
                     }
                 }
-                Err(e) => {
-                    eprintln!("⚠ Hardware {}: {}", device_name, e);
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    eprintln!(
+                        "⚠ Hardware {}: command failed: {}",
+                        device_name,
+                        stderr.trim()
+                    );
                 }
+                Err(e) => eprintln!("⚠ Hardware {}: {}", device_name, e),
             }
         }
     }

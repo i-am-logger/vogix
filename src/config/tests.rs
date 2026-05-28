@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn test_default_config() {
     let config = Config::default();
-    assert_eq!(config.default_theme, "aikido");
+    assert_eq!(config.default_theme, "yoga");
     assert_eq!(config.default_variant, "dark");
 }
 
@@ -34,7 +34,7 @@ process_name = "btop"
         .get("default")
         .and_then(|d| d.get("theme"))
         .and_then(|t| t.as_str())
-        .unwrap_or("aikido");
+        .unwrap_or("yoga");
 
     let default_variant = manifest_value
         .get("default")
@@ -67,7 +67,7 @@ reload_method = "touch"
         .get("default")
         .and_then(|d| d.get("theme"))
         .and_then(|t| t.as_str())
-        .unwrap_or("aikido");
+        .unwrap_or("yoga");
 
     let default_variant = manifest_value
         .get("default")
@@ -76,7 +76,7 @@ reload_method = "touch"
         .unwrap_or("dark");
 
     // Should fall back to defaults
-    assert_eq!(default_theme, "aikido");
+    assert_eq!(default_theme, "yoga");
     assert_eq!(default_variant, "dark");
 }
 
@@ -119,7 +119,7 @@ fn test_themes_dir_under_data_dir() {
 fn test_parse_templates_config() {
     let manifest = r##"
 [default]
-theme = "aikido"
+theme = "yoga"
 variant = "dark"
 
 [templates]
@@ -143,7 +143,7 @@ hash = "sha256-abcdef123456"
 fn test_parse_theme_sources_config() {
     let manifest = r##"
 [default]
-theme = "aikido"
+theme = "yoga"
 variant = "dark"
 
 [theme_sources]
@@ -243,7 +243,7 @@ command = "openrgb -d 'Keychron K2 HE' -m static -c {{base01}}"
 fn test_parse_hardware_empty() {
     let manifest = r##"
 [default]
-theme = "aikido"
+theme = "yoga"
 variant = "dark"
 "##;
 

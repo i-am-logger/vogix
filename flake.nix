@@ -52,12 +52,6 @@
       flake = false;
     };
 
-    # Praxis — ontology-driven rule enforcement
-    praxis-src = {
-      url = "github:i-am-logger/praxis";
-      flake = false;
-    };
-
     # liquidctl fork with Kraken 2024 Elite RGB ring support
     liquidctl-src = {
       url = "github:i-am-logger/liquidctl/feat/kraken-2024-elite-rgb";
@@ -216,6 +210,15 @@
 
           # Template architecture tests
           templates = import ./nix/vm/tests/templates.nix testArgs;
+
+          # Keybinding behavior: real kanata config on a virtual keyboard,
+          # asserts tap-hold output (caps click→F24, caps+key→F23 enter+F22 exit).
+          keybindings = import ./nix/vm/tests/keybindings.nix testArgs;
+
+          # Hyprland RUNTIME: boots Hyprland headless, injects the internal
+          # keysyms, asserts the submap actually enters AND exits (F22 press) —
+          # the test that catches the "it stays in the mode" bug.
+          keybindings-hyprland = import ./nix/vm/tests/keybindings-hyprland.nix testArgs;
         }
       );
 

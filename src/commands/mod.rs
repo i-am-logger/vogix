@@ -11,7 +11,9 @@
 mod cache;
 mod completions;
 mod daemon;
+mod input;
 mod list;
+mod modes;
 pub mod refresh;
 pub mod session;
 pub mod shader;
@@ -21,7 +23,9 @@ pub mod theme_change;
 pub use cache::handle_cache_clean;
 pub use completions::handle_completions;
 pub use daemon::handle_daemon;
+pub use input::handle_input_check;
 pub use list::handle_list;
+pub use modes::{handle_modes_confusion, handle_modes_recent, handle_modes_stats};
 pub use session::{
     handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
     handle_session_undo,

@@ -21,7 +21,7 @@
     vogix = {
       enable = true;
       appearance = {
-        theme = "aikido";
+        theme = "yoga";
         variant = "dark";
       };
       # Apps are auto-detected from enabled programs (alacritty, btop, bash, console)

@@ -104,7 +104,7 @@ in
       type = types.nullOr types.path;
       default = null;
       description = "Path to theme file for console colors (overrides auto-detection).";
-      example = literalExpression "./themes/aikido.nix";
+      example = literalExpression "./themes/yoga.nix";
     };
 
     variant = mkOption {

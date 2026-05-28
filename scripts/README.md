@@ -15,7 +15,7 @@ Automated demo script with typing effects for recording with OBS or screen captu
 
 **What it does:**
 - Simulates typing commands with configurable speed
-- Shows theme switching between aikido, sepia, and ocean_depths
+- Shows theme switching between yoga, sepia, and ocean_depths
 - Demonstrates both dark and light variants
 - Displays fastfetch color palette for each theme
 - Includes explanatory comments and architecture diagram

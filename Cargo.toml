@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/vogix-ontology"]
+members = ["."]
 resolver = "3"
 
 [package]
@@ -35,10 +35,10 @@ glob = "0.3"
 # Error handling
 thiserror = "2.0"
 
-# Ontology-driven rule enforcement
-praxis = { path = "../praxis/crates/praxis" }
-praxis-domains = { path = "../praxis/crates/domains" }
-vogix-ontology = { path = "crates/vogix-ontology" }
+# Ontology-driven rule enforcement (local praxis; switch to git/published rev
+# for the hermetic Nix build once praxis is pushed)
+pr4xis = { path = "../praxis/crates/pr4xis" }
+pr4xis-domains = { path = "../praxis/crates/domains" }
 
 # Date/time for state timestamps
 chrono = "0.4"
@@ -50,9 +50,13 @@ libc = "0.2"
 # Sway IPC
 swayipc = { version = "3.0", optional = true }
 
+# evdev — grab the keyboard + emit via uinput for the input engine (Phase 2b)
+evdev = "0.13"
+
 [dev-dependencies]
 tempfile = "3.10"
 serial_test = "3.2"
+proptest = "1.5"
 
 [features]
 default = []

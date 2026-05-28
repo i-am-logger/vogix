@@ -87,6 +87,12 @@ impl SymlinkManager {
 
     /// Update the 'current-theme' symlink in state directory to point to cached configs
     /// Path: ~/.local/state/vogix/current-theme -> ~/.cache/vogix/themes/{hash}/...
+    ///
+    /// Currently unused — `maybe_render_templates` no longer touches the state
+    /// symlink (see commands/refresh.rs for rationale). Kept as public API
+    /// because the cache layout differs from share-themes layout, and any
+    /// future "use cache as canonical source" pathway will need this.
+    #[allow(dead_code)]
     pub fn update_state_current_symlink(&self, cache_path: &std::path::Path) -> Result<()> {
         let state_dir = State::state_dir()?;
 
@@ -179,7 +185,7 @@ mod tests {
         let state_dir = temp_dir.path().join("state/vogix");
         let cache_path = temp_dir
             .path()
-            .join("cache/themes/hash123/vogix16/aikido/dark");
+            .join("cache/themes/hash123/vogix16/yoga/dark");
 
         // Create cache directory and state directory
         fs::create_dir_all(&cache_path).unwrap();
@@ -204,12 +210,10 @@ mod tests {
     fn test_update_state_current_symlink_replaces_existing() {
         let temp_dir = TempDir::new().unwrap();
         let state_dir = temp_dir.path().join("state/vogix");
-        let cache_path1 = temp_dir
-            .path()
-            .join("cache/themes/hash1/vogix16/aikido/dark");
+        let cache_path1 = temp_dir.path().join("cache/themes/hash1/vogix16/yoga/dark");
         let cache_path2 = temp_dir
             .path()
-            .join("cache/themes/hash2/vogix16/aikido/light");
+            .join("cache/themes/hash2/vogix16/yoga/light");
 
         fs::create_dir_all(&cache_path1).unwrap();
         fs::create_dir_all(&cache_path2).unwrap();

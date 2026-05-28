@@ -5,6 +5,7 @@ mod config;
 mod engine;
 mod errors;
 mod history;
+mod input;
 mod reload;
 mod scheme;
 mod shader;
@@ -13,16 +14,19 @@ mod symlink;
 mod template;
 mod theme;
 
-use cli::{CacheCommands, Cli, Commands, SessionCommands, ShaderCommands, ThemeCommands};
+use cli::{
+    CacheCommands, Cli, Commands, InputCommands, ModesCommands, SessionCommands, ShaderCommands,
+    ThemeCommands,
+};
 use commands::{
-    handle_cache_clean, handle_completions, handle_daemon, handle_list, handle_session_list,
+    handle_cache_clean, handle_completions, handle_daemon, handle_input_check, handle_list,
+    handle_modes_confusion, handle_modes_recent, handle_modes_stats, handle_session_list,
     handle_session_restore, handle_session_restore_file, handle_session_save, handle_session_undo,
     handle_status,
 };
 use engine::{ShaderParam, VogixAction};
 use errors::Result;
 use log::{debug, error, info, warn};
-use praxis::engine::{Action, Situation};
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -88,6 +92,22 @@ fn run() -> Result<()> {
 
         Commands::Daemon => handle_daemon(),
 
+        Commands::Input {
+            command: InputCommands::Check { config },
+        } => handle_input_check(config.as_deref()),
+
+        Commands::Modes {
+            command: ModesCommands::Recent { count },
+        } => handle_modes_recent(*count),
+
+        Commands::Modes {
+            command: ModesCommands::Stats,
+        } => handle_modes_stats(),
+
+        Commands::Modes {
+            command: ModesCommands::Confusion { threshold_ms },
+        } => handle_modes_confusion(*threshold_ms),
+
         // ── Undo/redo — restore from history, not engine ──
         Commands::Theme {
             command: ThemeCommands::Undo,
@@ -118,18 +138,17 @@ fn run_with_engine(command: &Commands) -> Result<()> {
         Ok(e) => e,
         Err(err) => {
             let violations = match err {
-                praxis::engine::EngineError::Violated { violations, .. } => violations,
-                praxis::engine::EngineError::LogicalError { reason, .. } => {
+                pr4xis::engine::EngineError::Violated { violations, .. } => violations,
+                pr4xis::engine::EngineError::LogicalError { counterexample, .. } => {
                     return Err(errors::VogixError::Config(format!(
                         "Engine error: {}",
-                        reason
+                        counterexample.meta().description.as_str()
                     )));
                 }
             };
             for v in &violations {
-                if !v.is_satisfied() {
-                    error!("{}: {}", v.rule(), v.reason());
-                }
+                let m = v.meta();
+                error!("{}: {}", m.name.as_str(), m.description.as_str());
             }
             return Ok(());
         }
@@ -137,8 +156,16 @@ fn run_with_engine(command: &Commands) -> Result<()> {
 
     let new_state = engine.situation();
 
-    // Skip if no state change
-    if *new_state == state {
+    // Refresh is intentionally a no-op state transition — its whole purpose is
+    // to re-run side effects (templates, symlinks, app reloads, hardware, shader).
+    // For all other actions, skip when nothing actually changed.
+    let is_refresh = matches!(
+        command,
+        Commands::Theme {
+            command: ThemeCommands::Refresh { .. },
+        },
+    );
+    if !is_refresh && *new_state == state {
         info!("No changes to apply");
         return Ok(());
     }
@@ -149,6 +176,11 @@ fn run_with_engine(command: &Commands) -> Result<()> {
 
     // Side effects first — if they fail, state is NOT persisted
     execute_side_effects(command, &config, new_state)?;
+
+    // Refresh deliberately produces no state change; don't pollute history.
+    if *new_state == state {
+        return Ok(());
+    }
 
     // Commit: push history and persist state only after side effects succeed
     let mut hist = history::History::load()?;
@@ -168,11 +200,7 @@ fn handle_theme_undo() -> Result<()> {
 
     match hist.undo(&state) {
         Some(prev) => {
-            prev.save()?;
-            hist.save()?;
-            info!("Undo → {}", prev.describe());
-
-            // Re-apply everything for the restored state
+            // Side effects first — if they fail, state is NOT persisted (same as engine flow)
             execute_side_effects(
                 &Commands::Theme {
                     command: ThemeCommands::Refresh { quiet: false },
@@ -180,6 +208,9 @@ fn handle_theme_undo() -> Result<()> {
                 &config,
                 &prev,
             )?;
+            prev.save()?;
+            hist.save()?;
+            info!("Undo → {}", prev.describe());
             Ok(())
         }
         None => {
@@ -197,10 +228,7 @@ fn handle_theme_redo() -> Result<()> {
 
     match hist.redo(&state) {
         Some(next) => {
-            next.save()?;
-            hist.save()?;
-            info!("Redo → {}", next.describe());
-
+            // Side effects first — if they fail, state is NOT persisted (same as engine flow)
             execute_side_effects(
                 &Commands::Theme {
                     command: ThemeCommands::Refresh { quiet: false },
@@ -208,6 +236,9 @@ fn handle_theme_redo() -> Result<()> {
                 &config,
                 &next,
             )?;
+            next.save()?;
+            hist.save()?;
+            info!("Redo → {}", next.describe());
             Ok(())
         }
         None => {
@@ -302,6 +333,10 @@ fn cli_to_action(command: &Commands, state: &state::State) -> Result<VogixAction
             value: *value,
         }),
 
+        Commands::Mode { target } => Ok(VogixAction::ModeChange {
+            target: target.clone(),
+        }),
+
         _ => unreachable!("non-mutating commands handled before engine"),
     }
 }
@@ -335,10 +370,8 @@ fn execute_side_effects(
             let reload_dispatcher = reload::ReloadDispatcher::new();
             let reload_result = reload_dispatcher.reload_apps(config, *quiet);
 
-            // Hardware color push
-            if !config.hardware.is_empty()
-                && let Some(theme_sources) = &config.theme_sources
-            {
+            // Load theme colors for validation and hardware
+            if let Some(theme_sources) = &config.theme_sources {
                 let variant_path = cache::paths::theme_variant_path(
                     theme_sources,
                     &state.current_scheme,
@@ -346,8 +379,31 @@ fn execute_side_effects(
                     &state.current_variant,
                 );
                 match theme::load_theme_colors(&variant_path, state.current_scheme) {
-                    Ok(colors) => reload_dispatcher.apply_hardware(config, &colors, *quiet),
-                    Err(e) => warn!("Hardware theme apply skipped: {}", e),
+                    Ok(colors) => {
+                        // Validate palette against praxis axioms
+                        let palette = theme::palette::build_palette(&colors, state.current_scheme);
+                        let expected = state.current_scheme.slot_count();
+                        if palette.len() < expected {
+                            warn!(
+                                "Theme palette has {} slots, expected {} for {}",
+                                palette.len(),
+                                expected,
+                                state.current_scheme
+                            );
+                        }
+                        if let Some(pol) = theme::palette::polarity(&palette) {
+                            debug!("Theme polarity: {:?}", pol);
+                        }
+                        for failure in theme::palette::validate(&palette) {
+                            warn!("Theme axiom: {}", failure);
+                        }
+
+                        // Hardware color push
+                        if !config.hardware.is_empty() {
+                            reload_dispatcher.apply_hardware(config, &colors, *quiet);
+                        }
+                    }
+                    Err(e) => warn!("Theme colors not loaded: {}", e),
                 }
             }
 
@@ -374,6 +430,26 @@ fn execute_side_effects(
             // Apply or clear shader based on new state
             if let Err(e) = commands::shader::maybe_apply_shader(config, state) {
                 warn!("Shader apply failed: {}", e);
+            }
+        }
+
+        Commands::Mode { target } => {
+            // Dispatch Hyprland submap change — "app" maps to "reset" (default submap)
+            let submap = if target == "app" { "reset" } else { target };
+            match std::process::Command::new("hyprctl")
+                .args(["dispatch", "submap", submap])
+                .output()
+            {
+                Ok(output) if output.status.success() => {
+                    info!("Mode: {} → {}", state.current_mode, target);
+                }
+                Ok(output) => {
+                    warn!(
+                        "Mode switch failed: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    );
+                }
+                Err(e) => warn!("hyprctl not available: {}", e),
             }
         }
 

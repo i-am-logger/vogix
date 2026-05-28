@@ -65,9 +65,10 @@ let
   mkAllHelpScripts = modes:
     lib.mapAttrs mkHelpScript (filterAttrs (name: _: name != "normal") modes);
 
-  # Generate help script for normal/global mode
+  # Generate help script for the always-available (root/app) bindings.
+  # Falls back across the historical names so the overlay is never empty.
   mkGlobalHelpScript = modes:
-    mkHelpScript "global" (modes.normal or { bindings = { }; });
+    mkHelpScript "global" (modes.normal or modes.app or { bindings = { }; });
 
 in
 {

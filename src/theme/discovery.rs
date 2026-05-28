@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_parse_themes_with_variant_details() {
         let manifest = r##"
-[themes.aikido]
+[themes.yoga]
 scheme = "vogix16"
 variants = ["night", "day"]
 night = { polarity = "dark", order = 1 }
@@ -123,15 +123,15 @@ day = { polarity = "light", order = 0 }
         let themes = parse_themes_from_manifest(manifest).unwrap();
         assert_eq!(themes.len(), 1);
 
-        let aikido = &themes[0];
-        assert_eq!(aikido.name, "aikido");
-        assert_eq!(aikido.variants.len(), 2);
+        let yoga = &themes[0];
+        assert_eq!(yoga.name, "yoga");
+        assert_eq!(yoga.variants.len(), 2);
 
-        let night = get_variant(aikido, "night").unwrap();
+        let night = get_variant(yoga, "night").unwrap();
         assert_eq!(night.polarity, "dark");
         assert_eq!(night.order, 1);
 
-        let day = get_variant(aikido, "day").unwrap();
+        let day = get_variant(yoga, "day").unwrap();
         assert_eq!(day.polarity, "light");
         assert_eq!(day.order, 0);
     }
@@ -187,7 +187,7 @@ variants = ["mocha", "latte", "dawn"]
     fn test_parse_empty_themes() {
         let manifest = r##"
 [default]
-theme = "aikido"
+theme = "yoga"
 variant = "dark"
 "##;
         let themes = parse_themes_from_manifest(manifest).unwrap();

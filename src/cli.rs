@@ -43,8 +43,54 @@ pub enum Commands {
         command: ShaderCommands,
     },
 
+    /// Switch desktop mode (normal, focus, gaming, presentation, etc.)
+    Mode {
+        /// Target mode name
+        target: String,
+    },
+
+    /// Inspect submap-mode telemetry captured by the daemon
+    Modes {
+        #[command(subcommand)]
+        command: ModesCommands,
+    },
+
     /// Run the vogix daemon (session auto-save, event monitoring)
     Daemon,
+
+    /// Ontology-driven input engine (keybinding modes)
+    Input {
+        #[command(subcommand)]
+        command: InputCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum InputCommands {
+    /// Validate the loaded input schema's mode graph + engine invariants
+    Check {
+        /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ModesCommands {
+    /// Show the most recent N transitions from modes.log
+    Recent {
+        /// Number of transitions to show (default 20)
+        #[arg(short = 'n', long, default_value_t = 20)]
+        count: usize,
+    },
+    /// Per-mode dwell-time histogram across the entire log
+    Stats,
+    /// Re-entries within a short window — likely accidental or canceled
+    Confusion {
+        /// Threshold in milliseconds; re-entries faster than this are flagged
+        #[arg(short = 't', long, default_value_t = 1000)]
+        threshold_ms: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -434,14 +480,6 @@ mod tests {
 
     #[test]
     fn test_invalid_commands_fail() {
-        let invalid_commands = [
-            vec!["vogix", "invalid"],
-            vec!["vogix", "theme", "invalid"],
-            vec!["vogix", "session", "invalid"],
-            vec!["vogix", "theme", "set"], // set with no flags is valid but does nothing
-        ];
-        // "set" with no flags is actually valid (clap allows optional args)
-        // Only truly invalid subcommands should fail
         assert!(Cli::try_parse_from(["vogix", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "theme", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "session", "invalid"]).is_err());

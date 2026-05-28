@@ -91,26 +91,26 @@ testLib.mkTest "templates" ''
   print(f"  > vogix16 source: {vogix16_path}")
 
   # Check vogix16 theme files are accessible
-  aikido_night = machine.succeed(f"su - vogix -c 'cat {vogix16_path}/aikido/night.toml'")
-  assert "polarity" in aikido_night, "Theme file should have polarity"
-  assert "[colors]" in aikido_night, "Theme file should have [colors] section"
-  assert "base00" in aikido_night, "Theme file should have base00"
-  print("  > aikido/night.toml readable with correct structure")
+  yoga_night = machine.succeed(f"su - vogix -c 'cat {vogix16_path}/yoga/night.toml'")
+  assert "polarity" in yoga_night, "Theme file should have polarity"
+  assert "[colors]" in yoga_night, "Theme file should have [colors] section"
+  assert "base00" in yoga_night, "Theme file should have base00"
+  print("  > yoga/night.toml readable with correct structure")
 
   print("  Theme source files verified")
 
   print("\n=== Test: Pre-Generated Configs in Theme Packages ===")
 
   # In the new architecture, configs are pre-generated in ~/.local/share/vogix/themes/
-  # Check aikido-night has pre-generated alacritty config
-  alacritty_config = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/aikido-night/alacritty/alacritty.toml'")
+  # Check yoga-night has pre-generated alacritty config
+  alacritty_config = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/yoga-night/alacritty/alacritty.toml'")
   assert "{{ colors." not in alacritty_config, "Config should be pre-rendered, not have Tera variables!"
   assert "#" in alacritty_config, "Config should have actual hex colors"
-  print("  > aikido-night/alacritty/alacritty.toml is pre-rendered")
+  print("  > yoga-night/alacritty/alacritty.toml is pre-rendered")
 
   # Check current-theme symlink points to themes dir
   current_target = machine.succeed(f"su - vogix -c 'readlink {current_theme}'").strip()
-  assert "aikido" in current_target, "current-theme should point to aikido"
+  assert "yoga" in current_target, "current-theme should point to yoga"
   print(f"  > current-theme -> {current_target}")
 
   # Verify configs accessible through current-theme

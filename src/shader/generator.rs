@@ -101,8 +101,8 @@ fn with_saturation(color: &ShaderColor, saturation: f32) -> ShaderColor {
 ///
 /// These are preserved through the monochromatic tint so UI elements stay readable.
 fn functional_color_keys() -> Vec<String> {
-    use praxis::category::Entity;
-    use praxis_domains::technology::theming::base16::{ColorSlot, SemanticRole};
+    use pr4xis::category::Concept;
+    use pr4xis_domains::applied::hmi::theming::base16::{ColorSlot, SemanticRole};
 
     let mut keys = Vec::new();
 
@@ -124,16 +124,19 @@ fn functional_color_keys() -> Vec<String> {
     }
 
     // vogix16 semantic names from praxis ontology
-    for semantic in praxis_domains::technology::theming::schemes::Vogix16Semantic::variants() {
+    for semantic in pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic::variants() {
         if semantic.is_functional() {
             keys.push(semantic.key().to_string());
         }
     }
 
     // ansi16 key names from praxis ontology
-    for ansi in praxis_domains::technology::theming::schemes::Ansi16Color::variants() {
+    for ansi in pr4xis_domains::applied::hmi::theming::schemes::Ansi16Color::variants() {
         let slot = ansi.to_base16_slot();
-        if matches!(slot.role(), SemanticRole::Accent | SemanticRole::BrightAccent) {
+        if matches!(
+            slot.role(),
+            SemanticRole::Accent | SemanticRole::BrightAccent
+        ) {
             keys.push(ansi.key());
         }
     }
@@ -174,9 +177,9 @@ pub fn generate_glsl(
     // Detect polarity using praxis theming ontology
     // Build a palette from the hex colors, then ask the ontology for polarity
     let is_dark = {
-        use praxis_domains::science::colors::Rgb;
-        use praxis_domains::technology::theming::base16::{ColorSlot, Polarity};
-        use praxis_domains::technology::theming::ontology;
+        use pr4xis_domains::applied::hmi::theming::base16::{ColorSlot, Polarity};
+        use pr4xis_domains::applied::hmi::theming::ontology;
+        use pr4xis_domains::natural::colors::Rgb;
 
         let mut palette = ontology::Palette::new();
         if let Some(hex) = colors.get("base00")

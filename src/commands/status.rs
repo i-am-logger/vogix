@@ -8,9 +8,14 @@ pub fn handle_status() -> Result<()> {
     let state = State::load()?;
     state.save()?;
 
-    println!("scheme:  {}", state.current_scheme);
+    println!(
+        "scheme:  {} ({} slots)",
+        state.current_scheme,
+        state.current_scheme.slot_count()
+    );
     println!("theme:   {}", state.current_theme);
     println!("variant: {}", state.current_variant);
+    println!("mode:    {}", state.current_mode);
 
     if let Some(ref last_applied) = state.last_applied {
         println!("applied: {}", last_applied);

@@ -77,7 +77,7 @@ body:
       placeholder: |
         programs.vogix = {
           enable = true;
-          defaultTheme = "aikido";
+          defaultTheme = "yoga";
           defaultVariant = "dark";
         };
       render: nix

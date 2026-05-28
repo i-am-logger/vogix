@@ -39,7 +39,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            default_theme: "aikido".to_string(),
+            default_theme: "yoga".to_string(),
             default_variant: "dark".to_string(),
             apps: HashMap::new(),
             hardware: HashMap::new(),
@@ -68,7 +68,7 @@ impl Config {
             .get("default")
             .and_then(|d| d.get("theme"))
             .and_then(|t| t.as_str())
-            .unwrap_or("aikido")
+            .unwrap_or("yoga")
             .to_string();
 
         let default_variant = manifest

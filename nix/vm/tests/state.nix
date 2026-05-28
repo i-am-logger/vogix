@@ -35,14 +35,14 @@ testLib.mkTest "state" ''
       print("⚠ State file not found in expected locations (may use different path)")
 
   # Reset for other tests
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v dark'")
-  print("✓ Reset to vogix16/aikido/dark")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
+  print("✓ Reset to vogix16/yoga/dark")
 
   print("\n=== Test: State Consistency After Multiple Operations ===")
   # Perform a series of operations and verify state is consistent
 
   # Complex sequence of operations
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
   machine.succeed("su - vogix -c 'vogix theme set -t nordic'")
   machine.succeed("su - vogix -c 'vogix theme set -v light'")
   machine.succeed("su - vogix -c 'vogix theme set -t matrix -v dark'")
@@ -77,7 +77,7 @@ testLib.mkTest "state" ''
   print("\n✓ State consistency verified!")
 
   # Reset to default for any subsequent tests
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
 
   print("\n" + "="*60)
   print("STATE TESTS PASSED!")

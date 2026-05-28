@@ -258,10 +258,18 @@ in
           modes = {
             app = lib.mkDefault behaviorDefaults.modes.app;
             desktop = lib.mkDefault behaviorDefaults.modes.desktop;
-            arrange = lib.mkDefault behaviorDefaults.modes.arrange;
-            theme = lib.mkDefault behaviorDefaults.modes.theme;
 
-            # Derive mode border colors from vogix semantic theme
+            # Derive mode border colors from vogix semantic theme.
+            #
+            # Modes are NOT statuses — using `warning` / `danger` / `notice`
+            # for navigation modes is a category error: those slots are
+            # reserved for actual conditions (errors, alerts), and overloading
+            # them desensitises the user to real status colors.
+            #
+            # Mode colors should come from neutral or accent slots:
+            #   app       → foreground-border  (base04, muted neutral)
+            #   desktop   → link               (base0D, blue accent — the WM mode)
+            #   console   → foreground-comment (base03, muted — passthrough)
             modeColors =
               let
                 colors = cfg.colors or { };
@@ -273,19 +281,11 @@ in
                   inactive = toRgb (colors.background-selection or "313244");
                 };
                 desktop = {
-                  active = toRgb (colors.active or "89b4fa");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                arrange = {
-                  active = toRgb (colors.warning or "f9e2af");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                theme = {
-                  active = toRgb (colors.success or "a6e3a1");
+                  active = toRgb (colors.link or "89b4fa");
                   inactive = toRgb (colors.background-selection or "313244");
                 };
                 console = {
-                  active = toRgb (colors.special or "cba6f7");
+                  active = toRgb (colors.foreground-comment or "6c7086");
                   inactive = toRgb (colors.background-selection or "313244");
                 };
               };

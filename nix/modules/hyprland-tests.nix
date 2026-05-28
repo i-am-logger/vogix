@@ -72,8 +72,6 @@ let
     # === Behavior extraConfig has submaps ===
     (check "behavior extraConfig is non-empty" (behavior.extraConfig != ""))
     (assertContains "behavior has desktop submap" "submap = desktop" behavior.extraConfig)
-    (assertContains "behavior has arrange submap" "submap = arrange" behavior.extraConfig)
-    (assertContains "behavior has theme submap" "submap = theme" behavior.extraConfig)
     (assertContains "behavior has console submap" "submap = console" behavior.extraConfig)
 
     # === Appearance extraConfig is empty (no raw config needed) ===

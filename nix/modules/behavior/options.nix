@@ -3,7 +3,7 @@
 # Defines programs.vogix.behavior.* options
 # Two sub-domains:
 #   - keybindings: input config (modKey, mouse, layers)
-#   - modes: modal system (desktop, arrange, theme)
+#   - modes: modal system (desktop, theme — flat, all parented to app)
 { lib }:
 
 let
@@ -51,6 +51,17 @@ let
               default = false;
               description = "Whether this binding repeats when held";
             };
+            exitAfter = mkOption {
+              type = types.bool;
+              default = false;
+              description = ''
+                Return to the root (app) mode immediately after this action
+                runs. For launch/leaf actions (terminal, browser, launcher,
+                lock) so you aren't stranded in the submap with keys eaten.
+                Only meaningful inside submap modes; exec actions reset the
+                submap first, then run the command.
+              '';
+            };
           };
         });
         default = { };
@@ -76,6 +87,26 @@ let
         type = types.nullOr types.str;
         default = null;
         description = "What the toggle/hold key does on tap";
+      };
+      holdAction = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          What the hold key emits on hold — a single key, not a layer.
+          When set alongside tapAction (and no layer bindings), the source key
+          becomes a dual-role tap-hold remap: tap → tapAction, hold → holdAction.
+          Used for caps = tap (toggle submap) / hold (spring submap).
+        '';
+      };
+      holdReleaseAction = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Key tapped (via a kanata fake key) when the HOLD is RELEASED. Used to
+          exit a Hyprland submap on caps-release via a reliable press-`bind`
+          instead of `bindr` — Hyprland's release-binds don't fire when the
+          press entered the submap (the momentary mode never exited otherwise).
+        '';
       };
       tapHoldMs = mkOption {
         type = types.int;
@@ -160,19 +191,7 @@ in
               desktop = mkOption {
                 type = modeBindingType;
                 default = { };
-                description = "Desktop mode — WM commands with single keys";
-              };
-
-              arrange = mkOption {
-                type = modeBindingType;
-                default = { };
-                description = "Arrange mode — move + resize windows";
-              };
-
-              theme = mkOption {
-                type = modeBindingType;
-                default = { };
-                description = "Theme mode — vogix appearance switching";
+                description = "Desktop mode — focus, move, resize, workspaces, send-and-follow (single, unified WM mode)";
               };
 
               modeColors = mkOption {

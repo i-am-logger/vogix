@@ -5,7 +5,20 @@
 
 use crate::scheme::Scheme;
 use crate::state::{ShaderState, State};
-use praxis::engine::{Action, Engine, Precondition, PreconditionResult, Situation};
+use pr4xis::engine::{Action, Engine, Precondition};
+use pr4xis::logic::proof::{Counterexample, SimpleCounterexample, SimpleProof, Verdict};
+use pr4xis::ontology::meta::{Citation, Label, ModulePath, OntologyName, Provenance};
+
+/// Build a [`Provenance`] for a precondition proof/counterexample, preserving
+/// the rule name and the human-readable reason text.
+fn meta(name: &'static str, description: &str) -> Provenance {
+    Provenance {
+        name: OntologyName::new_static(name),
+        description: Label::new(description.to_string()),
+        citation: Citation::EMPTY,
+        module_path: ModulePath::new_static(module_path!()),
+    }
+}
 
 /// All state-mutating operations in vogix
 #[derive(Debug, Clone)]
@@ -26,7 +39,6 @@ pub enum VogixAction {
         param: ShaderParam,
         value: f32,
     },
-    #[allow(dead_code)]
     ModeChange {
         target: String,
     },
@@ -42,8 +54,10 @@ pub enum ShaderParam {
 
 impl Action for VogixAction {
     type Sit = State;
+}
 
-    fn describe(&self) -> String {
+impl VogixAction {
+    pub fn describe(&self) -> String {
         match self {
             VogixAction::SetTheme {
                 scheme,
@@ -66,7 +80,7 @@ impl Action for VogixAction {
 }
 
 /// Pure state transition — no I/O, no side effects
-pub fn apply_action(state: &State, action: &VogixAction) -> Result<State, String> {
+pub fn apply_action(state: &State, action: &VogixAction) -> Result<State, Box<dyn Counterexample>> {
     let mut next = state.clone();
 
     match action {
@@ -135,7 +149,8 @@ pub fn apply_action(state: &State, action: &VogixAction) -> Result<State, String
                     saturation: s,
                 };
             }
-            _ => return Err("Cannot set shader param when shader is off".into()),
+            // ShaderMustBeOn precondition ensures this is unreachable
+            ShaderState::Off | ShaderState::Auto => {}
         },
         VogixAction::ModeChange { target } => {
             next.current_mode = target.clone();
@@ -154,7 +169,7 @@ pub fn apply_action(state: &State, action: &VogixAction) -> Result<State, String
 pub struct ValidShaderParams;
 
 impl Precondition<VogixAction> for ValidShaderParams {
-    fn check(&self, state: &State, action: &VogixAction) -> PreconditionResult {
+    fn check(&self, _state: &State, action: &VogixAction) -> Verdict {
         match action {
             VogixAction::ShaderOn {
                 intensity,
@@ -178,14 +193,15 @@ impl Precondition<VogixAction> for ValidShaderParams {
                     issues.push(format!("saturation {:.2} not in [0.0, 2.0]", s));
                 }
                 if issues.is_empty() {
-                    PreconditionResult::satisfied("valid_shader_params", "all parameters in range")
+                    Ok(Box::new(SimpleProof::new(meta(
+                        "valid_shader_params",
+                        "all parameters in range",
+                    ))))
                 } else {
-                    PreconditionResult::violated(
+                    Err(Box::new(SimpleCounterexample::new(meta(
                         "valid_shader_params",
                         &issues.join("; "),
-                        &state.describe(),
-                        &action.describe(),
-                    )
+                    ))))
                 }
             }
             VogixAction::ShaderParam { param, value } => {
@@ -195,22 +211,22 @@ impl Precondition<VogixAction> for ValidShaderParams {
                     ShaderParam::Saturation => (0.0..=2.0).contains(value),
                 };
                 if valid {
-                    PreconditionResult::satisfied("valid_shader_params", "parameter in range")
+                    Ok(Box::new(SimpleProof::new(meta(
+                        "valid_shader_params",
+                        "parameter in range",
+                    ))))
                 } else {
-                    PreconditionResult::violated(
+                    Err(Box::new(SimpleCounterexample::new(meta(
                         "valid_shader_params",
                         &format!("{:?} value {:.2} out of range", param, value),
-                        &state.describe(),
-                        &action.describe(),
-                    )
+                    ))))
                 }
             }
-            _ => PreconditionResult::satisfied("valid_shader_params", "not a shader param action"),
+            _ => Ok(Box::new(SimpleProof::new(meta(
+                "valid_shader_params",
+                "not a shader param action",
+            )))),
         }
-    }
-
-    fn describe(&self) -> &str {
-        "shader parameters must be within valid ranges"
     }
 }
 
@@ -218,68 +234,74 @@ impl Precondition<VogixAction> for ValidShaderParams {
 pub struct ShaderMustBeOn;
 
 impl Precondition<VogixAction> for ShaderMustBeOn {
-    fn check(&self, state: &State, action: &VogixAction) -> PreconditionResult {
+    fn check(&self, state: &State, action: &VogixAction) -> Verdict {
         if let VogixAction::ShaderParam { .. } = action {
             if state.shader.is_on() {
-                PreconditionResult::satisfied("shader_must_be_on", "shader is on")
+                Ok(Box::new(SimpleProof::new(meta(
+                    "shader_must_be_on",
+                    "shader is on",
+                ))))
             } else {
-                PreconditionResult::violated(
+                Err(Box::new(SimpleCounterexample::new(meta(
                     "shader_must_be_on",
                     "cannot set shader param when shader is off",
-                    &state.describe(),
-                    &action.describe(),
-                )
+                ))))
             }
         } else {
-            PreconditionResult::satisfied("shader_must_be_on", "not a shader param action")
+            Ok(Box::new(SimpleProof::new(meta(
+                "shader_must_be_on",
+                "not a shader param action",
+            ))))
         }
-    }
-
-    fn describe(&self) -> &str {
-        "shader must be on to adjust parameters"
     }
 }
 
 /// Verify mode transition is valid against the ontology ModeGraph.
 pub struct ValidModeTransition {
-    pub graph: vogix_ontology::modes::ModeGraph,
+    pub graph: pr4xis_domains::applied::hmi::input::modes::ModeGraph,
 }
 
 impl Precondition<VogixAction> for ValidModeTransition {
-    fn check(&self, state: &State, action: &VogixAction) -> PreconditionResult {
+    fn check(&self, state: &State, action: &VogixAction) -> Verdict {
         if let VogixAction::ModeChange { target } = action {
-            let from = vogix_ontology::modes::ModeId::new(&state.current_mode);
-            let to = vogix_ontology::modes::ModeId::new(target);
+            let from = pr4xis_domains::applied::hmi::input::modes::ModeId::new(&state.current_mode);
+            let to = pr4xis_domains::applied::hmi::input::modes::ModeId::new(target);
             if self.graph.is_valid_transition(&from, &to) {
-                PreconditionResult::satisfied(
+                Ok(Box::new(SimpleProof::new(meta(
                     "valid_mode_transition",
                     &format!("{} → {}", state.current_mode, target),
-                )
+                ))))
             } else {
-                PreconditionResult::violated(
+                Err(Box::new(SimpleCounterexample::new(meta(
                     "valid_mode_transition",
                     &format!(
                         "cannot transition from '{}' to '{}'",
                         state.current_mode, target
                     ),
-                    &state.describe(),
-                    &action.describe(),
-                )
+                ))))
             }
         } else {
-            PreconditionResult::satisfied("valid_mode_transition", "not a mode change")
+            Ok(Box::new(SimpleProof::new(meta(
+                "valid_mode_transition",
+                "not a mode change",
+            ))))
         }
-    }
-
-    fn describe(&self) -> &str {
-        "mode transitions must follow the validated mode graph"
     }
 }
 
 pub type VogixEngine = Engine<VogixAction>;
 
 pub fn create_engine(state: State) -> VogixEngine {
-    let mode_graph = vogix_ontology::modes::default_mode_graph();
+    create_engine_with_graph(
+        state,
+        pr4xis_domains::applied::hmi::input::modes::default_mode_graph(),
+    )
+}
+
+pub fn create_engine_with_graph(
+    state: State,
+    mode_graph: pr4xis_domains::applied::hmi::input::modes::ModeGraph,
+) -> VogixEngine {
     Engine::new(
         state,
         vec![
@@ -396,7 +418,9 @@ mod tests {
     }
 
     #[test]
-    fn test_shader_param_when_off_fails() {
+    fn test_shader_param_when_off_is_noop() {
+        // apply_action is a no-op when shader is off — ShaderMustBeOn precondition
+        // blocks this at the engine level before apply_action is ever called.
         let state = State {
             shader: ShaderState::Off,
             ..Default::default()
@@ -405,7 +429,8 @@ mod tests {
             param: ShaderParam::Intensity,
             value: 0.3,
         };
-        assert!(apply_action(&state, &action).is_err());
+        let next = apply_action(&state, &action).unwrap();
+        assert_eq!(next.shader, ShaderState::Off); // unchanged
     }
 
     #[test]
@@ -420,7 +445,7 @@ mod tests {
     #[test]
     fn test_engine_basic_flow() {
         let engine = create_engine(default_state());
-        assert_eq!(engine.situation().current_theme, "aikido");
+        assert_eq!(engine.situation().current_theme, "yoga");
 
         let engine = engine
             .next(VogixAction::SetTheme {
@@ -445,7 +470,7 @@ mod tests {
         assert_eq!(engine.situation().current_theme, "gruvbox");
 
         let engine = engine.back().unwrap();
-        assert_eq!(engine.situation().current_theme, "aikido");
+        assert_eq!(engine.situation().current_theme, "yoga");
 
         let engine = engine.forward().unwrap();
         assert_eq!(engine.situation().current_theme, "gruvbox");

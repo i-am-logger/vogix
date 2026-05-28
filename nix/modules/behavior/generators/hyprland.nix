@@ -2,16 +2,16 @@
 #
 # Generates:
 # - Normal mode bindings (bind/binde in settings) — workspaces, media, Super+non-letter
-# - Desktop/arrange/theme submaps (extraConfig) — single-key modal actions
+# - Desktop/theme submaps (extraConfig) — single-key modal actions
 # - Mouse bindings (bindm)
 #
 # Visual feedback: ALL borders change color per mode (like vim's mode indicator)
 # Border colors derived from vogix semantic theme colors via modeColors config.
 # Waybar's hyprland/submap module also reads the current submap automatically.
 #
-# Submap flow:
-#   reset (app mode) ↔ desktop ↔ arrange
-#                              ↔ theme
+# Submap flow (flat — every submap parented to app, single-Esc exit):
+#   reset (app mode) ↔ desktop
+#                    ↔ theme
 { lib }:
 
 let
@@ -25,43 +25,25 @@ let
     optionalString
     ;
 
-  # Fallback border colors if modeColors not provided
-  fallbackBorders = {
-    app = { active = "rgb(585b70)"; inactive = "rgb(313244)"; };
-    desktop = { active = "rgb(89b4fa)"; inactive = "rgb(313244)"; };
-    arrange = { active = "rgb(f9e2af)"; inactive = "rgb(313244)"; };
-    theme = { active = "rgb(a6e3a1)"; inactive = "rgb(313244)"; };
-    console = { active = "rgb(cba6f7)"; inactive = "rgb(3b2d4f)"; }; # special — system console
-  };
+  # ── Submap transitions are NATIVE (synchronous), never exec ──
+  #
+  # CRITICAL: a "submap, X" action MUST be emitted verbatim so Hyprland's native
+  # submap dispatcher runs it synchronously, switching the submap BEFORE the next
+  # key event is processed. This is what makes momentary mode work: caps held →
+  # kanata emits Scroll_Lock then (≈1ms later) the arrow; Hyprland must enter the
+  # submap on Scroll_Lock before handling the arrow.
+  #
+  # A previous version wrapped transitions into `exec, hyprctl … dispatch submap`
+  # to also set per-mode border colours. That exec is ASYNC (~6–7ms process
+  # spawn + IPC) — the arrow arrived first and leaked to the app, so momentary
+  # mode did nothing. Border colours belong OFF the keypress path (the vogix
+  # daemon already watches submap changes — that is their home), never here.
+  #
+  # So actions pass through unchanged: "submap, X" stays native; exec actions
+  # (launches, console toggle) stay exec.
 
-  # Resolve colors for a mode (from modeColors config or fallback)
-  getModeColors = modeColors: name:
-    let colorKey = if name == "reset" then "app" else name;
-    in modeColors.${colorKey} or fallbackBorders.${colorKey} or fallbackBorders.app;
-
-  # Wrap a "submap, X" action with border color change
-  wrapSubmapAction = modeColors: action:
-    let
-      parts = lib.splitString ", " action;
-      isSubmap = builtins.length parts == 2 && builtins.head parts == "submap";
-      isConsole = builtins.length parts == 2 && builtins.head parts == "togglespecialworkspace";
-      target = if isSubmap then lib.last parts else null;
-      colors = if isSubmap then getModeColors modeColors target else null;
-      consoleColors = getModeColors modeColors "console";
-    in
-    if isSubmap then
-      "exec, hyprctl --batch 'keyword general:col.active_border ${colors.active} ; keyword general:col.inactive_border ${colors.inactive} ; dispatch submap ${target}'"
-    else if isConsole then
-      let
-        wsName = lib.last parts;
-        appColors = getModeColors modeColors "app";
-      in
-      "exec, hyprctl dispatch togglespecialworkspace ${wsName} && (hyprctl workspaces -j | grep -q '\"special:${wsName}\"' && hyprctl --batch 'keyword general:col.active_border ${consoleColors.active} ; keyword general:col.inactive_border ${consoleColors.inactive}' || hyprctl --batch 'keyword general:col.active_border ${appColors.active} ; keyword general:col.inactive_border ${appColors.inactive}')"
-    else
-      action;
-
-  # Generate bind entries for normal mode
-  mkNormalBinds = modeColors: modKey: bindings:
+  # Generate bind entries for normal (root/app) mode.
+  mkNormalBinds = modKey: bindings:
     let
       regular = filterAttrs (_: b: !(b.repeat or false)) bindings;
       repeating = filterAttrs (_: b: b.repeat or false) bindings;
@@ -69,11 +51,8 @@ let
     {
       bind = mapAttrsToList
         (_name: binding:
-          let
-            hyprBind = toHyprlandBind modKey binding.key;
-            action = wrapSubmapAction modeColors binding.action;
-          in
-          "${hyprBind}, ${action}"
+          let hyprBind = toHyprlandBind modKey binding.key;
+          in "${hyprBind}, ${binding.action}"
         )
         regular;
 
@@ -85,8 +64,9 @@ let
         repeating;
     };
 
-  # Generate a submap block
-  mkSubmapBlock = modeColors: modKey: name: mode: parentSubmap:
+  # Generate a submap block. `holdExitKey` is the Hyprland keysym kanata taps
+  # when CapsLock-hold is RELEASED; a press-`bind` on it exits the submap.
+  mkSubmapBlock = holdExitKey: modKey: name: mode: parentSubmap:
     let
       bindings = mode.bindings or { };
       exitKey = mode.exit or "escape";
@@ -94,14 +74,28 @@ let
       regularBindings = filterAttrs (_: b: !(b.repeat or false)) bindings;
       repeatingBindings = filterAttrs (_: b: b.repeat or false) bindings;
 
+      # "killactive," → "killactive"; "movetoworkspace, 3" → "movetoworkspace 3"
+      toDispatch = a: lib.removeSuffix "," (builtins.replaceStrings [ ", " ] [ " " ] a);
+
+      # Resolve a binding's action. exitAfter returns to app after the action
+      # (one-shot commands). These are NOT on the momentary critical path — no
+      # following key depends on the timing — so an async exec reset is fine:
+      #   exec actions  → reset first, then run the command
+      #   non-exec      → dispatch the action, then reset
+      # Everything else passes through unchanged (native "submap, X" stays
+      # synchronous; this is what makes momentary mode work).
+      resolveAction = binding:
+        if (binding.exitAfter or false) then
+          (if lib.hasPrefix "exec, " binding.action
+          then "exec, hyprctl dispatch submap reset ; ${lib.removePrefix "exec, " binding.action}"
+          else "exec, hyprctl dispatch ${toDispatch binding.action} ; hyprctl dispatch submap reset")
+        else binding.action;
+
       regularLines = concatStringsSep "\n" (
         mapAttrsToList
           (_: binding:
-            let
-              hyprBind = toHyprlandBind modKey binding.key;
-              action = wrapSubmapAction modeColors binding.action;
-            in
-            "bind = ${hyprBind}, ${action}"
+            let hyprBind = toHyprlandBind modKey binding.key;
+            in "bind = ${hyprBind}, ${resolveAction binding}"
           )
           regularBindings
       );
@@ -110,18 +104,20 @@ let
         mapAttrsToList
           (_: binding:
             let hyprBind = toHyprlandBind modKey binding.key;
-            in "binde = ${hyprBind}, ${binding.action}"
+            in "binde = ${hyprBind}, ${resolveAction binding}"
           )
           repeatingBindings
       );
 
-      exitAction = wrapSubmapAction modeColors "submap, ${parentSubmap}";
+      # Native submap exits — synchronous, so a key after the exit lands in app.
+      exitAction = "submap, ${parentSubmap}";
     in
     ''
       submap = ${name}
       ${regularLines}
       ${optionalString (repeatingLines != "") repeatingLines}
       bind = , ${exitKey}, ${exitAction}
+      bind = , ${holdExitKey}, submap, reset
       bind = , catchall, exec,
       submap = reset
     '';
@@ -134,63 +130,71 @@ let
       )
       mouseBindings;
 
-  # Main generator
+  # Generate passthrough submap (keys pass to underlying app, only explicit bindings work)
+  mkPassthroughSubmap = modKey: name: mode:
+    let
+      bindings = mode.bindings or { };
+      bindLines = concatStringsSep "\n" (
+        mapAttrsToList
+          (_: b:
+            let hyprBind = toHyprlandBind modKey (b.key or "");
+            in "bind = ${hyprBind}, ${b.action or ""}"
+          )
+          bindings
+      );
+    in
+    ''
+      submap = ${name}
+      ${bindLines}
+      submap = reset
+    '';
+
+  # Main generator — driven by modeGraph
   generate = cfg:
     let
       inherit (cfg) modKey;
       modes = cfg.modes or { };
-      modeColors = cfg.modeColors or { };
+      modeGraph = cfg.modeGraph or { root = "app"; modes = { app = { parent = null; type = "normal"; }; }; };
 
-      # Normal mode → settings.bind/binde
-      normalMode = modes.normal or { bindings = { }; };
-      normalBinds = mkNormalBinds modeColors modKey (normalMode.bindings or { });
+      rootMode = modeGraph.root;
+      graphModes = modeGraph.modes;
 
-      # Desktop mode → submap (Escape returns to reset/app mode)
-      desktopMode = modes.desktop or { bindings = { }; };
-      desktopSubmap = mkSubmapBlock modeColors modKey "desktop" desktopMode "reset";
+      # The Hyprland keysym that EXITS a momentary submap. kanata taps this key
+      # (holdReleaseAction) when CapsLock-hold is released, and Hyprland exits via
+      # a normal press-`bind`. We deliberately do NOT use `bindr` on the hold key:
+      # Hyprland's release-binds don't fire when the press entered the submap, so
+      # the mode would stick. A separate exit keypress + press-bind is reliable.
+      kanataToHyprKeysym = k:
+        if k == "slck" then "Scroll_Lock"
+        else if k == null then "F22"
+        else lib.toUpper k; # f22 → F22
+      holdExitKey = kanataToHyprKeysym
+        (cfg.layers.desktopToggle.holdReleaseAction or null);
 
-      # Arrange mode → submap (Escape returns to desktop mode)
-      arrangeMode = modes.arrange or null;
-      arrangeSubmap = optionalString (arrangeMode != null)
-        (mkSubmapBlock modeColors modKey "arrange" arrangeMode "desktop");
+      # Root mode → settings.bind/binde
+      normalMode = modes.${rootMode} or { bindings = { }; };
+      normalBinds = mkNormalBinds modKey (normalMode.bindings or { });
 
-      # Theme mode → submap (Escape returns to desktop mode)
-      themeMode = modes.theme or null;
-      themeSubmap = optionalString (themeMode != null)
-        (mkSubmapBlock modeColors modKey "theme" themeMode "desktop");
-
-      # Console mode → passthrough submap (only F12 exits, no catchall — keys go to terminal)
-      # Bindings are emitted raw (no wrapSubmapAction) so native dispatchers work for animation
-      consoleMode = modes.console or null;
-      consoleSubmap = optionalString (consoleMode != null)
-        (
+      # Generate submaps from mode graph — all non-root modes
+      submapList = mapAttrsToList
+        (name: graphDef:
           let
-            bindings = consoleMode.bindings or { };
-            bindLines = concatStringsSep "\n" (
-              mapAttrsToList
-                (_: b:
-                  let
-                    hyprBind = toHyprlandBind modKey (b.key or "");
-                  in
-                  "bind = ${hyprBind}, ${b.action or ""}"
-                )
-                bindings
-            );
+            mode = modes.${name} or null;
+            modeType = graphDef.type or "submap";
+            parentName = graphDef.parent or rootMode;
+            # In Hyprland, "reset" means the default (no submap). Root mode = "reset".
+            parentSubmap = if parentName == rootMode then "reset" else parentName;
           in
-          ''
-            submap = console
-            ${bindLines}
-            submap = reset
-          ''
-        );
+          if name == rootMode || mode == null then ""
+          else if modeType == "passthrough" then
+            mkPassthroughSubmap modKey name mode
+          else
+            mkSubmapBlock holdExitKey modKey name mode parentSubmap
+        )
+        graphModes;
 
       submapConfigs = concatStringsSep "\n\n" (
-        builtins.filter (s: s != "") [
-          desktopSubmap
-          arrangeSubmap
-          themeSubmap
-          consoleSubmap
-        ]
+        builtins.filter (s: s != "") submapList
       );
 
       mouseBinds = mkMouseBindings modKey (cfg.mouse or { });
@@ -246,8 +250,8 @@ let
         # Gestures
         gestures = cfg.gestures or { };
 
-        # Console window rules
-        windowrule = lib.optionals (consoleMode != null) [
+        # Console window rules (enabled when console mode exists in mode graph)
+        windowrule = lib.optionals (graphModes ? console) [
           "match:class ^(vogix-console)$, workspace special:console"
           "match:class ^(vogix-console)$, float true"
           "match:class ^(vogix-console)$, size 90% 75%"
@@ -255,7 +259,7 @@ let
         ];
 
         # Console workspace
-        workspace = lib.optionals (consoleMode != null) [
+        workspace = lib.optionals (graphModes ? console) [
           "special:console, persistent:true, gapsout:0, gapsin:0, shadow:false, on-created-empty:wezterm start --class vogix-console -- tmux new-session -A -s console"
         ];
       };

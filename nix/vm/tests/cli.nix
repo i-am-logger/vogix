@@ -25,13 +25,13 @@ testLib.mkTest "cli" ''
   # Basic list
   list_output = machine.succeed("su - vogix -c 'vogix theme list'")
   print(f"  List output (first 500 chars): {list_output[:500]}")
-  assert "aikido" in list_output.lower(), "List should show aikido theme!"
+  assert "yoga" in list_output.lower(), "List should show yoga theme!"
   print("    ✓ Basic list shows themes")
 
   # List with scheme filter (vogix16)
   list_vogix16 = machine.succeed("su - vogix -c 'vogix theme list -s vogix16'")
-  assert "aikido" in list_vogix16.lower(), "vogix16 list should show aikido!"
-  print("    ✓ List -s vogix16 shows aikido")
+  assert "yoga" in list_vogix16.lower(), "vogix16 list should show yoga!"
+  print("    ✓ List -s vogix16 shows yoga")
 
   # List with scheme filter (base16)
   list_base16 = machine.succeed("su - vogix -c 'vogix theme list -s base16'")
@@ -65,21 +65,21 @@ testLib.mkTest "cli" ''
 
   print("\n=== Test: Combined Flags ===")
   # Test combined -s, -t, -v flags
-  # Note: aikido uses 'day' for light polarity and 'night' for dark polarity
-  machine.succeed("su - vogix -c 'vogix theme set -t aikido -v day'")
+  # Note: yoga uses 'day' for light polarity and 'night' for dark polarity
+  machine.succeed("su - vogix -c 'vogix theme set -t yoga -v day'")
   combined_status = machine.succeed("su - vogix -c 'vogix theme status'")
-  assert "aikido" in combined_status.lower(), "Theme not set in combined flags!"
+  assert "yoga" in combined_status.lower(), "Theme not set in combined flags!"
   assert "day" in combined_status.lower(), "Variant not set in combined flags!"
-  print("✓ Combined flags (-t aikido -v day) work")
+  print("✓ Combined flags (-t yoga -v day) work")
 
-  # Reset back to night (aikido's dark variant)
+  # Reset back to night (yoga's dark variant)
   machine.succeed("su - vogix -c 'vogix theme set -v night'")
 
   print("\n=== Test: Combined Flags in Various Orders ===")
   # Note: vogix16 themes use 'night'/'day' for dark/light polarities
 
   # Reset
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
 
   # Order 1: -t -v -s (using actual variant names)
   machine.succeed("su - vogix -c 'vogix theme set -t nordic -v day -s vogix16'")
@@ -100,9 +100,9 @@ testLib.mkTest "cli" ''
   print("    ✓ Order -s -t -v works")
 
   # Single flags should work
-  machine.succeed("su - vogix -c 'vogix theme set -t aikido'")
+  machine.succeed("su - vogix -c 'vogix theme set -t yoga'")
   status = machine.succeed("su - vogix -c 'vogix theme status'")
-  assert "aikido" in status.lower()
+  assert "yoga" in status.lower()
   print("    ✓ Single flag -t works")
 
   machine.succeed("su - vogix -c 'vogix theme set -v night'")
@@ -135,8 +135,8 @@ testLib.mkTest "cli" ''
 
   print("\n✓ Error handling works!")
 
-  # Reset to default (aikido uses 'night' for dark polarity)
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  # Reset to default (yoga uses 'night' for dark polarity)
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
 
   print("\n" + "="*60)
   print("CLI TESTS PASSED!")

@@ -23,21 +23,21 @@ let
   mkGeneratorConfig = behaviorCfg:
     let
       kb = behaviorCfg.keybindings or { };
-      modes = behaviorCfg.modes or { };
+      userModes = behaviorCfg.modes or { };
+      modeGraph = behaviorCfg.modeGraph or defaults.modeGraph;
     in
     {
       modKey = kb.modKey or defaults.keybindings.modKey;
-      modes = {
-        normal = mergeOr (modes.app or { }) defaults.modes.app;
-        desktop = mergeOr (modes.desktop or { }) defaults.modes.desktop;
-        arrange = mergeOr (modes.arrange or { }) defaults.modes.arrange;
-        theme = mergeOr (modes.theme or { }) defaults.modes.theme;
-        console = mergeOr (modes.console or { }) defaults.modes.console;
-      };
+      inherit modeGraph;
+      modes = lib.mapAttrs
+        (name: _:
+          mergeOr (userModes.${name} or { }) (defaults.modes.${name} or { })
+        )
+        modeGraph.modes;
       mouse = mergeOr (kb.mouse or { }) defaults.keybindings.mouse;
       layers = mergeOr (kb.layers or { }) defaults.keybindings.layers;
       universal = defaults._superCtrlRemaps;
-      modeColors = modes.modeColors or { };
+      modeColors = userModes.modeColors or { };
       input = mergeOr (behaviorCfg.input or { }) defaults.input;
       touchpad = mergeOr (behaviorCfg.touchpad or { }) defaults.touchpad;
       layout = behaviorCfg.layout or defaults.layout;

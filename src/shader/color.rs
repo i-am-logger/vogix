@@ -3,7 +3,7 @@
 //! Uses praxis::science::colors for color parsing and analysis,
 //! then produces a fully-saturated tint color for the GLSL screen shader.
 
-use praxis_domains::science::colors::Rgb;
+use pr4xis_domains::natural::colors::Rgb;
 use std::collections::HashMap;
 
 /// Normalized RGB color with components in [0.0, 1.0] for GLSL embedding.

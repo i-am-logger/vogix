@@ -70,7 +70,7 @@ in
 
       theme = mkOption {
         type = types.str;
-        default = "aikido";
+        default = "yoga";
         description = "Theme to use.";
       };
 
@@ -85,7 +85,7 @@ in
         default = { };
         example = literalExpression ''
           {
-            aikido = ./themes/aikido.nix;
+            yoga = ./themes/yoga.nix;
             synthwave = ./themes/synthwave.nix;
           }
         '';

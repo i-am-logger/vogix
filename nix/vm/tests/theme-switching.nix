@@ -25,8 +25,8 @@ testLib.mkTest "theme-switching" ''
   app_sections = re.findall(r'\[apps\.([^\]]+)\]', manifest_content)
   app_sections = [app.strip('"') for app in app_sections]
 
-  # aikido uses night/day for dark/light polarities
-  aikido_dark_colors = aikido_colors['night']
+  # yoga uses night/day for dark/light polarities
+  yoga_dark_colors = yoga_colors['night']
 
   print("=== Test: SWITCH VARIANT Dark→Light ===")
 
@@ -125,8 +125,8 @@ testLib.mkTest "theme-switching" ''
       print("✓ All app configs point to correct variant")
 
   # Verify ALL app configs changed and have correct light colors
-  # aikido uses 'day' for its light polarity variant
-  light_bg = aikido_colors['day']['base00'].lower()
+  # yoga uses 'day' for its light polarity variant
+  light_bg = yoga_colors['day']['base00'].lower()
   for app_name in app_configs_before.keys():
       app_section_match = re.search(rf'\[apps\."{app_name}"\].*?config_path = "([^"]+)"', manifest_content, re.DOTALL)
       if not app_section_match:
@@ -167,10 +167,10 @@ testLib.mkTest "theme-switching" ''
   print("✓ Switched back to night (dark) variant")
 
   print("\n=== Test: Switch Theme and Verify Symlink Changes ===")
-  theme_names = [name for name in all_themes.keys() if name != 'aikido']
+  theme_names = [name for name in all_themes.keys() if name != 'yoga']
 
   if len(theme_names) == 0:
-      print("⚠ Only aikido theme available, skipping theme switch test")
+      print("⚠ Only yoga theme available, skipping theme switch test")
   else:
       themes_to_test = theme_names[:3]  # Test first 3
 
@@ -203,10 +203,10 @@ testLib.mkTest "theme-switching" ''
               assert alacritty_before != alacritty_after, f"App config didn't change after switching to {theme_name}!"
               print("✓ App config updated (colors changed)")
 
-          machine.succeed("su - vogix -c 'vogix theme set -t aikido'")
+          machine.succeed("su - vogix -c 'vogix theme set -t yoga'")
           current_back = machine.succeed(f"su - vogix -c 'readlink {current_theme}'")
-          assert "aikido" in current_back.lower(), "Failed to switch back to aikido!"
-          print(f"✓ Successfully switched back to aikido from {theme_name}")
+          assert "yoga" in current_back.lower(), "Failed to switch back to yoga!"
+          print(f"✓ Successfully switched back to yoga from {theme_name}")
 
       print(f"\n✓ All {len(themes_to_test)} tested themes switch correctly!")
 
