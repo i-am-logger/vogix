@@ -232,7 +232,8 @@ let
 
         # Layout
         general.layout = cfg.layout or "dwindle";
-        dwindle = layoutsCfg.dwindle or { pseudotile = true; preserve_split = true; force_split = 2; };
+        # No `pseudotile` — Hyprland removed the dwindle:pseudotile option (≥0.55).
+        dwindle = layoutsCfg.dwindle or { preserve_split = true; force_split = 2; };
         master = layoutsCfg.master or { new_status = "slave"; new_on_top = true; };
 
         # Misc

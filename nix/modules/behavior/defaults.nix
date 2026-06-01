@@ -47,7 +47,10 @@ in
 
   layouts = {
     dwindle = {
-      pseudotile = true;
+      # NOTE: no `pseudotile` here — Hyprland removed the `dwindle:pseudotile`
+      # config option (gone as of 0.55). Pseudotiling is now only the `pseudo`
+      # dispatcher (a keybind), so the toggle would error
+      # ("config option <dwindle:pseudotile> does not exist").
       preserve_split = true;
       force_split = 2;
       smart_resizing = true;
