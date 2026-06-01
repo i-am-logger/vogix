@@ -17,10 +17,10 @@
 //! as a tap. This was the seam where the old two-system setup leaked the
 //! "stuck in a mode" bug; here it is one state machine with proven invariants.
 //!
-//! The detector emits abstract [`CapsIntent`]s. Mapping them to engine
-//! [`ModeTransition`](super::engine::ModeTransition)s (and deciding sticky
-//! on/off from the engine's current state) is the device loop's job — the
-//! detector stays pure and stateless about modes.
+//! The detector emits abstract [`CapsIntent`]s. Mapping them to praxis engine
+//! `ModeTransition`s (`pr4xis_domains::applied::hmi::input::engine`) — and
+//! deciding sticky on/off from the engine's current state — is the device
+//! loop's job; the detector stays pure and stateless about modes.
 
 /// A raw CapsLock-related event, timestamped in milliseconds (monotonic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -69,4 +69,32 @@ in
       helpGen.mkGlobalHelpScript ((mkGeneratorConfig behaviorCfg).modes or { })
     else
       null;
+
+  # Render the behavior config to the JSON shape `src/input/schema.rs` expects.
+  # The Rust side reads this via `Schema::load()` from
+  # `~/.local/state/vogix/input.json`. The top-level keys mirror defaults.nix
+  # 1:1 (`modeGraph`, `modes`, `keybindings`, `_superCtrlRemaps`) — the Rust
+  # struct's `#[serde(rename)]` lines were written against that layout.
+  #
+  # We iterate `modeGraph.modes` (not `behaviorCfg.modes`) so every declared
+  # mode lands in the schema even if only some are exposed as user options.
+  mkSchemaJSON = behaviorCfg:
+    let
+      userModes = behaviorCfg.modes or { };
+      modeGraph = behaviorCfg.modeGraph or defaults.modeGraph;
+      effectiveModes = lib.mapAttrs
+        (name: _:
+          mergeOr (userModes.${name} or { }) (defaults.modes.${name} or { })
+        )
+        modeGraph.modes;
+      effectiveKeybindings = mergeOr
+        (behaviorCfg.keybindings or { })
+        defaults.keybindings;
+    in
+    builtins.toJSON {
+      inherit modeGraph;
+      modes = effectiveModes;
+      keybindings = effectiveKeybindings;
+      inherit (defaults) _superCtrlRemaps;
+    };
 }

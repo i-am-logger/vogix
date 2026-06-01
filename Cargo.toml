@@ -35,10 +35,14 @@ glob = "0.3"
 # Error handling
 thiserror = "2.0"
 
-# Ontology-driven rule enforcement (local praxis; switch to git/published rev
-# for the hermetic Nix build once praxis is pushed)
-pr4xis = { path = "../praxis/crates/pr4xis" }
-pr4xis-domains = { path = "../praxis/crates/domains" }
+# Ontology-driven rule enforcement (github-pinned, hermetic for Nix).
+# Pinned to the `fix/pr4xis-domains-publishable` branch tip that inlines
+# `[lints]` into each crate. The previous `[lints] workspace = true` form
+# broke crate2nix's vendor step (each crate is unpacked into a separate
+# /nix/store path with no workspace root, so the inheritance fails).
+# Bump to a tagged release once a `pr4xis-v0.22.x` tag lands on master.
+pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "a93e91b3e2453366301c2e2b9901a63b53d8a7f1" }
+pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "a93e91b3e2453366301c2e2b9901a63b53d8a7f1" }
 
 # Date/time for state timestamps
 chrono = "0.4"

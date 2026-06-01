@@ -19,10 +19,10 @@ use cli::{
     ThemeCommands,
 };
 use commands::{
-    handle_cache_clean, handle_completions, handle_daemon, handle_input_check, handle_list,
-    handle_modes_confusion, handle_modes_recent, handle_modes_stats, handle_session_list,
-    handle_session_restore, handle_session_restore_file, handle_session_save, handle_session_undo,
-    handle_status,
+    handle_cache_clean, handle_completions, handle_daemon, handle_input_check, handle_input_run,
+    handle_list, handle_modes_confusion, handle_modes_recent, handle_modes_stats,
+    handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
+    handle_session_undo, handle_status,
 };
 use engine::{ShaderParam, VogixAction};
 use errors::Result;
@@ -95,6 +95,10 @@ fn run() -> Result<()> {
         Commands::Input {
             command: InputCommands::Check { config },
         } => handle_input_check(config.as_deref()),
+
+        Commands::Input {
+            command: InputCommands::Run { config },
+        } => handle_input_run(config.as_deref()),
 
         Commands::Modes {
             command: ModesCommands::Recent { count },

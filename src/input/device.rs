@@ -14,13 +14,13 @@
 //! every unbound key is swallowed too; in passthrough modes unbound keys are
 //! re-emitted. CapsLock is never emitted — it is the mode trigger.
 
-use super::engine::{ModeTransition, drive, new_input_engine};
 use super::keys::{Chord, Modifier, Mods, is_capslock, modifier_code, modifier_of, parse_chord};
 use super::schema::{ActionKind, Schema, parse_action};
 use super::taphold::{CapsDetector, CapsEvent, CapsIntent};
 use evdev::KeyCode;
 use pr4xis::engine::Engine;
-use pr4xis_domains::applied::theming::modes::ModeId;
+use pr4xis_domains::applied::hmi::input::engine::{ModeTransition, drive, new_input_engine};
+use pr4xis_domains::applied::hmi::input::modes::ModeId;
 use std::collections::HashMap;
 
 /// A side effect the I/O shell should perform.
@@ -299,8 +299,17 @@ impl Router {
 
 // ── I/O shell ────────────────────────────────────────────────────────────────
 
-/// Grab the keyboard, create a uinput device, and pump events through a
+/// Open the uinput emit device, grab the keyboard, and pump events through a
 /// [`Router`] built from the loaded schema. Blocks until interrupted.
+///
+/// **Order matters.** uinput is opened BEFORE the keyboard grab so that an
+/// uinput failure (e.g. EACCES because the user isn't in the `uinput` group
+/// yet — a stale-session gotcha after a fresh nix rebuild) returns without
+/// ever taking the keyboard. The previous order let the grab succeed first,
+/// then failed on uinput, then exited; with `Restart=on-failure` that loop
+/// briefly stole the keyboard every cycle, breaking login screens and TTY
+/// input. Real keystrokes never reach the rest of the system during a grab,
+/// so we'd rather refuse to start than half-start.
 ///
 /// VM-tested only until proven on the host (it takes over the keyboard).
 pub fn run(schema: Schema) -> crate::errors::Result<()> {
@@ -309,28 +318,30 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     use std::os::fd::AsRawFd;
     use std::time::Instant;
 
-    let hypr = super::hypr::Hypr::discover();
-    if hypr.is_none() {
-        log::warn!("Hyprland control socket not found; dispatches will be dropped");
+    // vogix owns the keyboard regardless of whether a compositor is running.
+    // It has two output paths and only ONE of them depends on a compositor:
+    //   1. normal keys are re-emitted on the virtual uinput device — read by
+    //      the TTY console AND by any Wayland compositor, so typing always
+    //      works (this is what makes vogix the universal keybinding layer,
+    //      independent of Hyprland);
+    //   2. WM actions are sent as best-effort control messages to whatever
+    //      compositor is up — if none is, they are simply dropped.
+    // So we do NOT gate the grab on a compositor. Discovery is lazy and
+    // self-healing (see `execute`): a compositor that appears later, or
+    // restarts, is picked up on the next dispatch.
+    let mut hypr = super::hypr::Hypr::discover();
+    match &hypr {
+        Some(h) => log::info!("compositor socket: {}", h.socket_path().display()),
+        None => log::warn!(
+            "no compositor control socket yet; WM actions are best-effort until one \
+             appears (typing still works via re-emit)"
+        ),
     }
 
-    // Grab every keyboard-like device (has the 'A' key).
-    let mut devices: Vec<evdev::Device> = evdev::enumerate()
-        .map(|(_, d)| d)
-        .filter(|d| {
-            d.supported_keys()
-                .is_some_and(|k| k.contains(KeyCode::KEY_A))
-        })
-        .collect();
-    if devices.is_empty() {
-        return Err(VogixError::Config("no keyboard devices found".into()));
-    }
-    for d in &mut devices {
-        d.grab()
-            .map_err(|e| VogixError::Config(format!("cannot grab keyboard: {e}")))?;
-    }
-
-    // Virtual device able to emit any key code.
+    // Build the virtual uinput device FIRST. If this fails (most commonly
+    // because we don't have rw on /dev/uinput), we exit before grabbing any
+    // real keyboard — the user can keep typing into their login screen / TTY
+    // while we figure out the permission problem.
     let mut keys = AttributeSet::<KeyCode>::new();
     for c in 1u16..=0x2ff {
         keys.insert(KeyCode(c));
@@ -342,6 +353,24 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         .map_err(|e| VogixError::Config(format!("uinput keys: {e}")))?
         .build()
         .map_err(|e| VogixError::Config(format!("uinput build: {e}")))?;
+
+    // Enumerate keyboard-like devices (have the 'A' key).
+    let mut devices: Vec<evdev::Device> = evdev::enumerate()
+        .map(|(_, d)| d)
+        .filter(|d| {
+            d.supported_keys()
+                .is_some_and(|k| k.contains(KeyCode::KEY_A))
+        })
+        .collect();
+    if devices.is_empty() {
+        return Err(VogixError::Config("no keyboard devices found".into()));
+    }
+    // Grab last. If we got this far, uinput is open and we can route; the
+    // grab is the last thing that takes input away from anyone else.
+    for d in &mut devices {
+        d.grab()
+            .map_err(|e| VogixError::Config(format!("cannot grab keyboard: {e}")))?;
+    }
 
     let mut router = Router::new(&schema);
     let start = Instant::now();
@@ -379,7 +408,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             return Err(VogixError::Config(format!("poll: {err}")));
         }
         if n == 0 {
-            execute(&mut vdev, hypr.as_ref(), router.on_timeout(ms(&start)));
+            execute(&mut vdev, &mut hypr, router.on_timeout(ms(&start)));
             continue;
         }
         for i in 0..devices.len() {
@@ -395,7 +424,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             };
             for (code, value) in events {
                 let fx = router.on_key(code, value, ms(&start));
-                execute(&mut vdev, hypr.as_ref(), fx);
+                execute(&mut vdev, &mut hypr, fx);
             }
         }
         let _ = InputEvent::new; // keep import meaningful across cfgs
@@ -404,7 +433,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
 
 fn execute(
     vdev: &mut evdev::uinput::VirtualDevice,
-    hypr: Option<&super::hypr::Hypr>,
+    hypr: &mut Option<super::hypr::Hypr>,
     fx: Vec<Effect>,
 ) {
     use evdev::{EventType, InputEvent};
@@ -414,10 +443,20 @@ fn execute(
                 let _ = vdev.emit(&[InputEvent::new(EventType::KEY.0, code, value)]);
             }
             Effect::Dispatch(action) => {
-                if let Some(h) = hypr {
-                    if let Err(e) = h.dispatch(&action) {
-                        log::warn!("dispatch '{action}' failed: {e}");
-                    }
+                // Best-effort + self-healing: if we have no socket yet (no
+                // compositor when we started, or it restarted) try to find one
+                // now. A dispatch error means the socket went stale, so drop it
+                // and re-discover on the next action. Either way a missing
+                // compositor never blocks the engine — the WM action is just
+                // dropped while typing (re-emit) keeps working.
+                if hypr.is_none() {
+                    *hypr = super::hypr::Hypr::discover();
+                }
+                if let Some(h) = hypr.as_ref()
+                    && let Err(e) = h.dispatch(&action)
+                {
+                    log::warn!("dispatch '{action}' failed: {e}; will re-discover compositor");
+                    *hypr = None;
                 }
             }
             Effect::ModeChanged(mode) => log::info!("mode → {mode}"),

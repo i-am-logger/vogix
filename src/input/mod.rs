@@ -7,25 +7,28 @@
 //!
 //! This module collapses both into ONE engine, driven by *loaded config* (the
 //! schema), not hard-coded — the way praxis loads a linguistic ontology rather
-//! than baking in English. The plan:
+//! than baking in English.
+//!
+//! The mode *ontology* and statechart dynamics — `ModeGraph`/`ModeId`,
+//! `InputState`, `ModeTransition`, `new_input_engine`/`drive`, and the no-stuck
+//! axioms (proven by property tests over arbitrary graphs) — live in praxis
+//! (`pr4xis_domains::applied::hmi::input::{modes,engine,ontology}`). This module
+//! is the *runtime / I/O* layer that consumes them:
 //!   - [`schema`] — loads the keybinding ontology (mode graph + bindings) from
 //!     config (`defaults.nix` → JSON) and derives the praxis mode graph from it.
-//!   - [`engine`] — the generic mode statechart dynamics, with the no-stuck
-//!     guarantee proven by property tests (relocated from praxis; see its docs).
 //!   - [`taphold`] — the CapsLock tap/hold detector (the only real-time timing).
-//!   - (Phase 2b) device layer: grab evdev, run the statechart in-process,
-//!     dispatch window actions to Hyprland's IPC socket and re-emit normal keys
-//!     via uinput. No kanata, no submaps, no F22/F23/F24 bridge.
+//!   - [`keys`] — evdev keycode ↔ logical chord mapping.
+//!   - [`hypr`] — best-effort compositor control over its IPC socket.
+//!   - [`device`] — the device layer: grabs evdev, drives the praxis statechart
+//!     in-process, dispatches window actions to the compositor's IPC socket and
+//!     re-emits normal keys via uinput. No kanata, no submaps, no F22/F23/F24
+//!     bridge.
 //!
 //! caps↓ enters a (validated) mode; caps↑ is `ReleaseHold`, which is always
 //! legal. "Stuck" is not a bug to fix here — it is an unrepresentable state.
 
-pub mod engine;
-pub mod schema;
-// Consumed by the device loop (next 2b step); kept allow(dead_code) until wired.
-#[allow(dead_code)]
+pub mod device;
 pub mod hypr;
-#[allow(dead_code)]
 pub mod keys;
-#[allow(dead_code)]
+pub mod schema;
 pub mod taphold;

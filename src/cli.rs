@@ -73,6 +73,16 @@ pub enum InputCommands {
         #[arg(long)]
         config: Option<String>,
     },
+    /// Run the input engine: grab evdev, drive the mode statechart, dispatch
+    /// window actions to Hyprland's IPC socket, and re-emit normal keys via
+    /// uinput. This replaces kanata + Hyprland submaps; only one of the two
+    /// should be active at a time (gate via the NixOS option
+    /// `programs.vogix.input.engine`).
+    Run {
+        /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

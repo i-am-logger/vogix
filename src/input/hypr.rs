@@ -38,27 +38,70 @@ pub struct Hypr {
 }
 
 impl Hypr {
-    /// Locate Hyprland's control socket from the environment, if running.
+    /// Locate Hyprland's control socket.
     ///
-    /// Tries `$XDG_RUNTIME_DIR/hypr/$HIS/.socket.sock` (current) then
-    /// `/tmp/hypr/$HIS/.socket.sock` (legacy), where `$HIS` is
-    /// `HYPRLAND_INSTANCE_SIGNATURE`.
+    /// Preferred path: `$XDG_RUNTIME_DIR/hypr/$HIS/.socket.sock` (then the
+    /// legacy `/tmp/hypr/...`), where `$HIS` is `HYPRLAND_INSTANCE_SIGNATURE`.
+    ///
+    /// Fallback when `$HIS` is absent — which is the normal case for a systemd
+    /// *user* service, since it does not inherit the compositor's session
+    /// environment: scan the per-instance socket directories under
+    /// `$XDG_RUNTIME_DIR/hypr` (and `/tmp/hypr`) and pick the most recently
+    /// modified live `.socket.sock`. `XDG_RUNTIME_DIR` is always set by systemd
+    /// for user units, so this works without any env propagation into the
+    /// unit. The daemon discovers its environment rather than depending on it
+    /// being injected.
     pub fn discover() -> Option<Self> {
-        let his = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()?;
-        let candidates = [
-            std::env::var("XDG_RUNTIME_DIR").ok().map(|x| {
-                PathBuf::from(x)
-                    .join("hypr")
-                    .join(&his)
-                    .join(".socket.sock")
-            }),
-            Some(PathBuf::from("/tmp/hypr").join(&his).join(".socket.sock")),
-        ];
-        candidates
-            .into_iter()
-            .flatten()
-            .find(|p| p.exists())
-            .map(|socket| Self { socket })
+        if let Ok(his) = std::env::var("HYPRLAND_INSTANCE_SIGNATURE") {
+            for base in Self::socket_bases() {
+                let p = base.join(&his).join(".socket.sock");
+                if p.exists() {
+                    return Some(Self { socket: p });
+                }
+            }
+        }
+        Self::scan_latest_socket()
+    }
+
+    /// Directories that hold per-instance Hyprland socket folders, preferred
+    /// first.
+    fn socket_bases() -> Vec<PathBuf> {
+        let mut bases = Vec::new();
+        if let Ok(x) = std::env::var("XDG_RUNTIME_DIR") {
+            bases.push(PathBuf::from(x).join("hypr"));
+        }
+        bases.push(PathBuf::from("/tmp/hypr"));
+        bases
+    }
+
+    /// Scan all instance directories and return the most recently modified
+    /// live control socket — the best guess at the active Hyprland when the
+    /// instance signature isn't available to name it directly.
+    fn scan_latest_socket() -> Option<Self> {
+        let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+        for base in Self::socket_bases() {
+            let Ok(entries) = std::fs::read_dir(&base) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let sock = entry.path().join(".socket.sock");
+                if !sock.exists() {
+                    continue;
+                }
+                let mtime = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                let is_newer = match &best {
+                    Some((t, _)) => mtime > *t,
+                    None => true,
+                };
+                if is_newer {
+                    best = Some((mtime, sock));
+                }
+            }
+        }
+        best.map(|(_, socket)| Self { socket })
     }
 
     /// Use an explicit socket path (for tests / non-standard setups).

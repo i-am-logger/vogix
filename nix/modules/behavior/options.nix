@@ -209,6 +209,35 @@ in
           };
         };
 
+        # ── Input engine selection ──
+        # Two implementations of the keystroke/mode-switch pipeline can be
+        # selected from. They are mutually exclusive — running both means two
+        # processes fight for evdev grabs and Hyprland submap state.
+        #
+        # - "kanata" (default, back-compat): the previous setup. `services.kanata`
+        #   handles tap-hold remapping at the evdev layer; Hyprland's submap
+        #   binds handle mode-switch keys. The split between the two systems is
+        #   what produced the recurring "stuck in a mode" bug.
+        # - "vogix": the ontology-driven `vogix input run` engine. One process
+        #   grabs evdev, runs the praxis-validated mode statechart in-process,
+        #   re-emits normal keys via uinput, and dispatches WM actions to the
+        #   Hyprland control socket. Kanata + the Hyprland submap binds are
+        #   omitted entirely under this engine.
+        inputEngine = mkOption {
+          type = types.enum [ "kanata" "vogix" ];
+          default = "kanata";
+          description = ''
+            Which input subsystem activates. "kanata" (default) keeps the
+            legacy kanata + Hyprland-submaps split. "vogix" is the
+            ontology-driven daemon (`vogix input run`); its proven-by-axiom
+            mode graph runs in one process and "stuck in a mode" is
+            unrepresentable. The vogix engine stays opt-in until it is
+            proven end-to-end in the NixOS VM test (uinput keyboard → engine
+            → Hyprland) — running it unproven on a host can take over the
+            keyboard at boot before the compositor is up.
+          '';
+        };
+
         # ── Internal generated outputs ──
         generatedHyprland = mkOption {
           type = types.attrsOf types.anything;

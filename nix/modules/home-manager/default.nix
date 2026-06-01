@@ -482,10 +482,61 @@ in
           ExecStart = "${cfg.package}/bin/vogix daemon";
           Restart = "on-failure";
           RestartSec = 5;
+          # When the input engine is "vogix", make sure that service has
+          # finished initializing before the theme daemon runs (the input
+          # daemon's startup gate also validates the loaded schema, so a
+          # failure surfaces there first rather than mid-daemon).
         };
 
         Install = {
           WantedBy = [ "default.target" ];
+        };
+      };
+    })
+
+    # ── Engine = "vogix": render the schema + run the input daemon ──
+    # The state file is the bridge from the authored Nix config to the Rust
+    # runtime — `Schema::load()` reads it on startup. Writing it via
+    # home.file (instead of an activation script) keeps it under nix's GC
+    # roots and gives us atomic replacement on switch.
+    (mkIf (behaviorCfg.inputEngine == "vogix") {
+      home.file.".local/state/vogix/input.json" = {
+        text = behaviorModule.mkSchemaJSON behaviorCfg;
+      };
+
+      # The user systemd service that grabs evdev, runs the praxis-validated
+      # mode statechart, and dispatches to Hyprland over its control socket.
+      # Replaces kanata + Hyprland submap binds (see the NixOS module: under
+      # this engine `services.kanata` is disabled and the user is in the
+      # `input` + `uinput` groups so the grab + uinput emit don't need root).
+      #
+      # `After = graphical-session.target` because the Hyprland IPC socket is
+      # owned by that session; dispatches before it lands would be dropped.
+      systemd.user.services.vogix-input = {
+        Unit = {
+          Description = "Vogix Input Engine (ontology-driven; replaces kanata + Hyprland submaps)";
+          After = [ "graphical-session.target" ];
+          PartOf = [ "graphical-session.target" ];
+          # Hard cap on the restart loop. The engine grabs evdev as its last
+          # startup step; a tight crash-restart loop briefly takes the
+          # keyboard away from whoever else has it (login screen, TTY) every
+          # cycle. Three failures in 30s → service goes permanently failed
+          # and stops restarting, so the user always retains a usable
+          # keyboard even if our daemon is fundamentally broken on this host.
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 30;
+        };
+
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/vogix input run";
+          Restart = "on-failure";
+          # 2s back-off between attempts within the burst window.
+          RestartSec = 2;
+        };
+
+        Install = {
+          WantedBy = [ "graphical-session.target" ];
         };
       };
     })

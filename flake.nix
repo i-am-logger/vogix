@@ -219,6 +219,12 @@
           # keysyms, asserts the submap actually enters AND exits (F22 press) —
           # the test that catches the "it stays in the mode" bug.
           keybindings-hyprland = import ./nix/vm/tests/keybindings-hyprland.nix testArgs;
+
+          # Input ENGINE end-to-end (the kanata-free path): runs the real
+          # `vogix input run` against a virtual keyboard + a mock compositor
+          # socket, asserts re-emit (typing works, compositor-agnostic), IPC
+          # dispatch of a bound key, and no keyboard lockout after mode use.
+          input-engine = import ./nix/vm/tests/input-engine.nix testArgs;
         }
       );
 
