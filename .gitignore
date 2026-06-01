@@ -32,3 +32,6 @@ AGENTS.md
 # Internal tracking
 todo.md
 TODO.md
+
+# Local cargo config (git-fetch-with-cli for SSH-rewritten git deps) — dev-only
+.cargo/
