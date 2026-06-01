@@ -208,13 +208,11 @@ pkgs.testers.nixosTest {
   name = "vogix-input-engine";
 
   nodes.machine = _: {
-    # Make pkgs.vogix the flake's build (same overlay the other VM tests use).
-    nixpkgs.overlays = [
-      (_final: _prev: { inherit (self.packages.x86_64-linux) vogix; })
-    ];
-
     environment.etc."vogix-test-schema.json".text = testSchema;
-    environment.systemPackages = [ pkgs.vogix pyenv pkgs.evtest ];
+    # Reference the flake's vogix build directly (the `pkgs` in scope here is the
+    # outer test pkgs, which carries no vogix overlay; an overlay would only land
+    # on the machine's own pkgs arg). pyenv/evtest come from the plain pkgs.
+    environment.systemPackages = [ self.packages.x86_64-linux.vogix pyenv pkgs.evtest ];
 
     # The engine needs /dev/uinput to emit and /dev/input/* to grab. The test
     # runs as root so it bypasses the input/uinput group wiring that the real

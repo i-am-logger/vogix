@@ -338,6 +338,10 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         ),
     }
 
+    // The name of our virtual re-emit device. We must NOT grab it back (see the
+    // enumerate filter below), or we'd capture our own emitted events.
+    const VIRTUAL_NAME: &str = "vogix-input";
+
     // Build the virtual uinput device FIRST. If this fails (most commonly
     // because we don't have rw on /dev/uinput), we exit before grabbing any
     // real keyboard — the user can keep typing into their login screen / TTY
@@ -348,18 +352,24 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     }
     let mut vdev = evdev::uinput::VirtualDevice::builder()
         .map_err(|e| VogixError::Config(format!("uinput: {e}")))?
-        .name("vogix-input")
+        .name(VIRTUAL_NAME)
         .with_keys(&keys)
         .map_err(|e| VogixError::Config(format!("uinput keys: {e}")))?
         .build()
         .map_err(|e| VogixError::Config(format!("uinput build: {e}")))?;
 
-    // Enumerate keyboard-like devices (have the 'A' key).
+    // Enumerate keyboard-like devices (have the 'A' key) — EXCLUDING our own
+    // virtual device. Because uinput is built before this enumerate (so a uinput
+    // failure never leaves a real keyboard grabbed), `vogix-input` is already
+    // present and itself advertises KEY_A; grabbing it would make the engine
+    // capture the very events it re-emits (a feedback loop that drops all
+    // passthrough — caught by the VM test's "plain key re-emitted" assertion).
     let mut devices: Vec<evdev::Device> = evdev::enumerate()
         .map(|(_, d)| d)
         .filter(|d| {
-            d.supported_keys()
-                .is_some_and(|k| k.contains(KeyCode::KEY_A))
+            d.name() != Some(VIRTUAL_NAME)
+                && d.supported_keys()
+                    .is_some_and(|k| k.contains(KeyCode::KEY_A))
         })
         .collect();
     if devices.is_empty() {
