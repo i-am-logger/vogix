@@ -171,11 +171,33 @@ let
       holdExitKey = kanataToHyprKeysym
         (cfg.layers.desktopToggle.holdReleaseAction or null);
 
+      # Under the vogix input engine the engine owns the mode statechart and
+      # drives navigation by dispatching concrete actions over Hyprland's IPC
+      # socket — it never asks Hyprland to switch submaps. So the native submap
+      # blocks and their `submap, X` entry binds (F23/F24/F3) are orphaned:
+      # nothing emits their entry keysyms (kanata is disabled under this engine),
+      # and a submap that Hyprland somehow *did* enter would trap the re-emitted
+      # keystream in a catchall — the "stuck in a mode" bug the engine exists to
+      # make unrepresentable. Drop them under this engine — this implements the
+      # promise already in the `inputEngine` option doc ("the Hyprland submap
+      # binds are omitted entirely under this engine"). The plain workspace /
+      # media / Super dispatches are KEPT as a fallback: if the engine fails to
+      # start (it caps its own restart loop), the real keyboard still reaches
+      # Hyprland and those binds keep working.
+      engineOwnsModes = (cfg.inputEngine or "kanata") == "vogix";
+      isSubmapAction = b: lib.hasPrefix "submap" (b.action or "");
+
       # Root mode → settings.bind/binde
       normalMode = modes.${rootMode} or { bindings = { }; };
-      normalBinds = mkNormalBinds modKey (normalMode.bindings or { });
+      normalBindings =
+        if engineOwnsModes
+        then filterAttrs (_: b: !(isSubmapAction b)) (normalMode.bindings or { })
+        else normalMode.bindings or { };
+      normalBinds = mkNormalBinds modKey normalBindings;
 
-      # Generate submaps from mode graph — all non-root modes
+      # Generate submaps from mode graph — all non-root modes. Under the vogix
+      # engine only passthrough submaps (the console) survive; the navigation
+      # submaps are engine-owned (see `engineOwnsModes` above).
       submapList = mapAttrsToList
         (name: graphDef:
           let
@@ -186,6 +208,7 @@ let
             parentSubmap = if parentName == rootMode then "reset" else parentName;
           in
           if name == rootMode || mode == null then ""
+          else if engineOwnsModes && modeType != "passthrough" then ""
           else if modeType == "passthrough" then
             mkPassthroughSubmap modKey name mode
           else

@@ -119,16 +119,30 @@ impl Hypr {
         self.send(&action_to_command(action))
     }
 
-    /// Write a raw command to the control socket and drain the reply.
+    /// Write a raw command to the control socket and check the reply.
     fn send(&self, command: &str) -> std::io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket)?;
         stream.set_read_timeout(Some(Duration::from_millis(200)))?;
         stream.set_write_timeout(Some(Duration::from_millis(200)))?;
         stream.write_all(command.as_bytes())?;
-        // Hyprland replies "ok" (or an error message); read and ignore it so the
-        // connection closes cleanly.
+        // Hyprland replies "ok" on success, or an error string. Treat a
+        // non-empty, non-"ok" reply as a failure: a stale socket left by a
+        // *restarted* compositor frequently still `connect()`s and accepts the
+        // write but rejects the dispatch — and without inspecting the reply that
+        // silent drop looks like success. That is the "keybindings stopped
+        // working after Hyprland restarted" symptom: the engine keeps dispatching
+        // into a dead instance. Returning Err here lets the caller drop the stale
+        // handle and re-discover the live socket. An empty / timed-out read is
+        // tolerated as ok so a merely slow reply doesn't churn re-discovery.
         let mut buf = Vec::new();
         let _ = stream.read_to_end(&mut buf);
+        let reply = String::from_utf8_lossy(&buf);
+        let reply = reply.trim();
+        if !reply.is_empty() && reply != "ok" {
+            return Err(std::io::Error::other(format!(
+                "hyprland rejected '{command}': {reply}"
+            )));
+        }
         Ok(())
     }
 }

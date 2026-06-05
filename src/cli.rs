@@ -7,8 +7,38 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = env!("CARGO_PKG_DESCRIPTION"), long_about = None)]
 pub struct Cli {
+    /// Log verbosity. Overrides the `RUST_LOG` env var when set; otherwise
+    /// `RUST_LOG` (or the built-in `info` default) applies. The systemd units
+    /// set `RUST_LOG=vogix=<level>`; this flag is the ad-hoc equivalent for a
+    /// one-off `vogix input run` / `vogix daemon` from a shell.
+    #[arg(long, value_enum, global = true)]
+    pub log_level: Option<LogLevel>,
+
     #[command(subcommand)]
     pub command: Commands,
+}
+
+/// Log verbosity levels, mapped 1:1 onto `env_logger`/`log` filter strings.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    /// The `env_logger` filter string for this level.
+    pub fn as_filter(self) -> &'static str {
+        match self {
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+        }
+    }
 }
 
 #[derive(Subcommand)]

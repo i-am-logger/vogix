@@ -133,6 +133,20 @@ impl Router {
         self.engine = Some(drive(e, action));
     }
 
+    /// Apply a transition and push `ModeChanged` ONLY when the mode actually
+    /// changed. Without this guard a no-op transition (e.g. `ReleaseHold` while
+    /// already at root, or a tap that exits a mode the engine has already left)
+    /// still emitted a `ModeChanged` — which is what produced the spurious
+    /// double `mode → app` lines seen in the journal.
+    fn apply_and_note(&mut self, action: ModeTransition, fx: &mut Vec<Effect>) {
+        let from = self.mode();
+        self.apply(action);
+        let to = self.mode();
+        if from != to {
+            fx.push(Effect::ModeChanged(to));
+        }
+    }
+
     /// Poll deadline elapsed — let a pure caps-hold resolve.
     pub fn on_timeout(&mut self, now: u64) -> Vec<Effect> {
         let mut fx = Vec::new();
@@ -186,10 +200,23 @@ impl Router {
             code,
         };
 
+        log::trace!(
+            "key {:?} val={value} mode={mode} mods={:?}",
+            KeyCode(code),
+            self.mods
+        );
+
         // Bound in the current mode?
         if let Some(res) = self.bindings.get(&mode).and_then(|m| m.get(&chord)) {
             let res = res.clone();
             if is_press || (is_repeat && res.repeat) {
+                log::debug!(
+                    "bound {:?} mode={mode} → {:?} (exit_after={}, repeat={})",
+                    KeyCode(code),
+                    res.action,
+                    res.exit_after,
+                    res.repeat
+                );
                 self.run_binding(&res, is_repeat, &mut fx);
             }
             return fx; // a bound key is always swallowed
@@ -199,6 +226,7 @@ impl Router {
         if self.mods.sup && self.remaps.contains_key(&code) {
             if is_press {
                 let to = self.remaps[&code];
+                log::debug!("remap super+{:?} → {:?}", KeyCode(code), KeyCode(to.code));
                 self.emit_chord_tap(&to, &mut fx);
             }
             return fx; // swallow the original super-combo (incl. release/repeat)
@@ -206,8 +234,17 @@ impl Router {
 
         // Unbound: catchall swallows; passthrough re-emits.
         if *self.catchall.get(&mode).unwrap_or(&false) {
-            // swallow
+            if is_press {
+                log::debug!(
+                    "unbound {:?} mode={mode} — swallowed (catchall)",
+                    KeyCode(code)
+                );
+            }
         } else {
+            log::trace!(
+                "unbound {:?} mode={mode} — re-emitted (passthrough)",
+                KeyCode(code)
+            );
             fx.push(Effect::Emit { code, value });
         }
         fx
@@ -217,19 +254,18 @@ impl Router {
         match &res.action {
             // Mode switches don't repeat.
             ActionKind::Submap(target) if !is_repeat => {
-                if target == "reset" {
-                    self.apply(ModeTransition::ExitToRoot);
+                let action = if target == "reset" {
+                    ModeTransition::ExitToRoot
                 } else {
-                    self.apply(ModeTransition::Switch(ModeId::new(target)));
-                }
-                fx.push(Effect::ModeChanged(self.mode()));
+                    ModeTransition::Switch(ModeId::new(target))
+                };
+                self.apply_and_note(action, fx);
             }
             ActionKind::Submap(_) => {}
             ActionKind::Dispatch(s) => {
                 fx.push(Effect::Dispatch(s.clone()));
                 if res.exit_after && !is_repeat {
-                    self.apply(ModeTransition::ExitToRoot);
-                    fx.push(Effect::ModeChanged(self.mode()));
+                    self.apply_and_note(ModeTransition::ExitToRoot, fx);
                 }
             }
         }
@@ -238,19 +274,15 @@ impl Router {
     fn handle_caps_intent(&mut self, intent: CapsIntent, fx: &mut Vec<Effect>) {
         match intent {
             CapsIntent::HoldStart => self.enter_momentary(fx),
-            CapsIntent::HoldEnd => {
-                self.apply(ModeTransition::ReleaseHold);
-                fx.push(Effect::ModeChanged(self.mode()));
-            }
+            CapsIntent::HoldEnd => self.apply_and_note(ModeTransition::ReleaseHold, fx),
             CapsIntent::Tap => {
                 if self.at_root() {
                     if let Some(t) = self.caps_target.clone() {
-                        self.apply(ModeTransition::EnterSticky(t));
+                        self.apply_and_note(ModeTransition::EnterSticky(t), fx);
                     }
                 } else {
-                    self.apply(ModeTransition::ExitToRoot);
+                    self.apply_and_note(ModeTransition::ExitToRoot, fx);
                 }
-                fx.push(Effect::ModeChanged(self.mode()));
             }
         }
     }
@@ -260,8 +292,7 @@ impl Router {
         if self.at_root()
             && let Some(t) = self.caps_target.clone()
         {
-            self.apply(ModeTransition::EnterMomentary(t));
-            fx.push(Effect::ModeChanged(self.mode()));
+            self.apply_and_note(ModeTransition::EnterMomentary(t), fx);
         }
     }
 
@@ -450,7 +481,11 @@ fn execute(
     for e in fx {
         match e {
             Effect::Emit { code, value } => {
-                let _ = vdev.emit(&[InputEvent::new(EventType::KEY.0, code, value)]);
+                // A wedged virtual device would otherwise silently eat all
+                // typing — surface it instead of dropping the error.
+                if let Err(e) = vdev.emit(&[InputEvent::new(EventType::KEY.0, code, value)]) {
+                    log::warn!("uinput emit failed (code={code} value={value}): {e}");
+                }
             }
             Effect::Dispatch(action) => {
                 // Best-effort + self-healing: if we have no socket yet (no
@@ -462,11 +497,17 @@ fn execute(
                 if hypr.is_none() {
                     *hypr = super::hypr::Hypr::discover();
                 }
-                if let Some(h) = hypr.as_ref()
-                    && let Err(e) = h.dispatch(&action)
-                {
-                    log::warn!("dispatch '{action}' failed: {e}; will re-discover compositor");
-                    *hypr = None;
+                match hypr.as_ref() {
+                    Some(h) => match h.dispatch(&action) {
+                        Ok(()) => log::debug!("dispatch ok: '{action}'"),
+                        Err(e) => {
+                            log::warn!(
+                                "dispatch '{action}' failed: {e}; will re-discover compositor"
+                            );
+                            *hypr = None;
+                        }
+                    },
+                    None => log::warn!("dispatch '{action}' dropped: no compositor socket"),
                 }
             }
             Effect::ModeChanged(mode) => log::info!("mode → {mode}"),

@@ -28,6 +28,11 @@ let
     in
     {
       modKey = kb.modKey or defaults.keybindings.modKey;
+      # Thread the engine selection through to the generators. The Hyprland
+      # generator uses it to omit the native navigation submaps + their entry
+      # binds under the vogix engine (the engine owns mode). Without this the
+      # generator only ever saw the default ("kanata") and the gate never fired.
+      inputEngine = behaviorCfg.inputEngine or "kanata";
       inherit modeGraph;
       modes = lib.mapAttrs
         (name: _:

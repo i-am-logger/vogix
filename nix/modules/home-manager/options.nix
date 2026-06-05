@@ -129,6 +129,21 @@ in
       description = "Enable the vogix daemon for auto-regeneration.";
     };
 
+    logLevel = mkOption {
+      type = types.enum [ "error" "warn" "info" "debug" "trace" ];
+      default = "info";
+      description = ''
+        Log verbosity for the vogix systemd user services (the theme daemon and
+        the input engine). Rendered as `RUST_LOG=vogix=<level>` on each unit so
+        the output lands in journald — systemd user services do not inherit a
+        shell's `RUST_LOG`, so it must be set on the unit. Raise to `debug` to
+        make every keybinding decision (key in → mode → binding match/miss →
+        dispatch result/uinput emit) and the daemon's startup environment
+        observable via `journalctl --user -u vogix-input -u vogix-daemon`.
+        `trace` additionally logs every key (including passthrough typing).
+      '';
+    };
+
     colors = mkOption {
       type = types.attrsOf types.str;
       internal = true;

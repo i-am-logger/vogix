@@ -15,8 +15,8 @@ mod template;
 mod theme;
 
 use cli::{
-    CacheCommands, Cli, Commands, InputCommands, ModesCommands, SessionCommands, ShaderCommands,
-    ThemeCommands,
+    CacheCommands, Cli, Commands, InputCommands, LogLevel, ModesCommands, SessionCommands,
+    ShaderCommands, ThemeCommands,
 };
 use commands::{
     handle_cache_clean, handle_completions, handle_daemon, handle_input_check, handle_input_run,
@@ -29,20 +29,29 @@ use errors::Result;
 use log::{debug, error, info, warn};
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp(None)
-        .format_target(false)
-        .init();
+    let cli = Cli::parse_args();
+    init_logging(cli.log_level);
 
-    if let Err(e) = run() {
+    if let Err(e) = run(&cli) {
         error!("{}", e);
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<()> {
-    let cli = Cli::parse_args();
+/// Initialise `env_logger`. A `--log-level` flag (if given) overrides `RUST_LOG`;
+/// otherwise `RUST_LOG` — or the built-in `info` default — applies. Either way
+/// the level flows to stderr/journald, so `journalctl --user -u vogix-input`
+/// shows whatever the unit's `RUST_LOG=vogix=<level>` (or this flag) selects.
+fn init_logging(level: Option<LogLevel>) {
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    if let Some(level) = level {
+        builder.parse_filters(level.as_filter());
+    }
+    builder.format_timestamp(None).format_target(false).init();
+}
 
+fn run(cli: &Cli) -> Result<()> {
     match &cli.command {
         // ── Read-only commands — no engine needed ──
         Commands::Theme {

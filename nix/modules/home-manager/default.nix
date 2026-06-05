@@ -474,7 +474,18 @@ in
       systemd.user.services.vogix-daemon = {
         Unit = {
           Description = "Vogix Theme Management Daemon";
+          # Member of the graphical session (NOT default.target). The daemon
+          # restores the session and monitors Hyprland events — both need
+          # WAYLAND_DISPLAY + HYPRLAND_INSTANCE_SIGNATURE, which are only
+          # exported into the systemd-user environment by Hyprland's startup
+          # (dbus-update-activation-environment + the hyprland-session.target
+          # restart). default.target is reached at *login*, BEFORE that import,
+          # so a default.target-wanted daemon captured an empty env, mis-detected
+          # an "empty desktop", and auto-restored apps that died with no Wayland
+          # display. graphical-session.target is (re)started by Hyprland AFTER
+          # the import, so members inherit the full env — like the input engine.
           After = [ "graphical-session.target" ];
+          PartOf = [ "graphical-session.target" ];
         };
 
         Service = {
@@ -482,14 +493,12 @@ in
           ExecStart = "${cfg.package}/bin/vogix daemon";
           Restart = "on-failure";
           RestartSec = 5;
-          # When the input engine is "vogix", make sure that service has
-          # finished initializing before the theme daemon runs (the input
-          # daemon's startup gate also validates the loaded schema, so a
-          # failure surfaces there first rather than mid-daemon).
+          # Verbosity flows to journald; see programs.vogix.logLevel.
+          Environment = [ "RUST_LOG=vogix=${cfg.logLevel}" ];
         };
 
         Install = {
-          WantedBy = [ "default.target" ];
+          WantedBy = [ "graphical-session.target" ];
         };
       };
     })
@@ -533,6 +542,10 @@ in
           Restart = "on-failure";
           # 2s back-off between attempts within the burst window.
           RestartSec = 2;
+          # Verbosity flows to journald; see programs.vogix.logLevel. Raise to
+          # `debug` to see every keybinding decision in
+          # `journalctl --user -u vogix-input`.
+          Environment = [ "RUST_LOG=vogix=${cfg.logLevel}" ];
         };
 
         Install = {

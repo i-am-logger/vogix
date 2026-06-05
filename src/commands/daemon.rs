@@ -30,25 +30,59 @@ fn hyprland_event_socket() -> Option<String> {
 
 /// Does Hyprland currently have any client windows open?
 ///
-/// Returns false if hyprctl is unavailable or returns garbage — we err on the
-/// side of NOT restoring when uncertain, since a destructive restore is worse
-/// than a missed one. The user can always invoke `vogix session restore`
-/// manually if auto-restore declined.
-fn hyprland_has_clients() -> bool {
+/// Tri-state: `Some(true)`/`Some(false)` only when `hyprctl` actually answered;
+/// `None` when the compositor was unreachable (hyprctl missing, non-zero exit,
+/// or unparseable output — typically because `HYPRLAND_INSTANCE_SIGNATURE` is
+/// absent from the daemon's environment).
+///
+/// The caller MUST NOT treat `None` as "empty desktop". The previous `bool`
+/// form collapsed "no windows" and "couldn't ask" into the same `false`, so a
+/// daemon that started before the compositor exported its env would conclude
+/// the desktop was empty and auto-restore *over* a live session — the
+/// destructive clobber this guard exists to prevent.
+fn hyprland_has_clients() -> Option<bool> {
     let output = match std::process::Command::new("hyprctl")
         .args(["clients", "-j"])
         .output()
     {
         Ok(o) if o.status.success() => o,
-        _ => return false,
+        Ok(o) => {
+            warn!(
+                "hyprctl clients failed (exit {}): {}",
+                o.status,
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            return None;
+        }
+        Err(e) => {
+            warn!("hyprctl unavailable ({e}); cannot determine desktop state");
+            return None;
+        }
     };
-    serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout)
-        .map(|v| !v.is_empty())
-        .unwrap_or(false)
+    match serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) {
+        Ok(v) => Some(!v.is_empty()),
+        Err(e) => {
+            warn!("hyprctl clients: unparseable output ({e})");
+            None
+        }
+    }
 }
 
 pub fn handle_daemon() -> Result<()> {
     info!("vogix daemon starting");
+    // Surface the daemon's view of the session env up front. If the Wayland /
+    // Hyprland vars are absent here, the daemon started before the compositor
+    // exported them (the systemd-user ordering race) — which is the upstream
+    // cause of "restored apps die" and "modes.log is frozen". Logging it makes
+    // that diagnosable from `journalctl --user -u vogix-daemon` without a repro.
+    info!(
+        "daemon env: WAYLAND_DISPLAY={:?} HYPRLAND_INSTANCE_SIGNATURE={:?} DISPLAY={:?} SSH_AUTH_SOCK={:?} XDG_RUNTIME_DIR={:?}",
+        std::env::var("WAYLAND_DISPLAY").ok(),
+        std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok(),
+        std::env::var("DISPLAY").ok(),
+        std::env::var("SSH_AUTH_SOCK").ok(),
+        std::env::var("XDG_RUNTIME_DIR").ok(),
+    );
 
     // Set up SIGTERM handler for clean shutdown (reboot/poweroff)
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -70,21 +104,32 @@ pub fn handle_daemon() -> Result<()> {
     // and a restore would clobber. Restore only when the desktop is truly
     // empty — which is the post-reboot/post-login case auto-restore was meant
     // to serve in the first place.
-    if hyprland_has_clients() {
-        info!("Hyprland has open clients; skipping auto-restore (user is working).");
-    } else {
-        let restore_name = if session_path("last").map(|p| p.exists()).unwrap_or(false) {
-            "last"
-        } else {
-            "autosave"
-        };
-        info!(
-            "Empty desktop detected — restoring session '{}'...",
-            restore_name
-        );
-        match handle_session_restore(restore_name, false) {
-            Ok(()) => info!("Session '{}' restored", restore_name),
-            Err(e) => warn!("No session to restore: {}", e),
+    match hyprland_has_clients() {
+        Some(true) => {
+            info!("Hyprland has open clients; skipping auto-restore (user is working).");
+        }
+        None => {
+            warn!(
+                "Cannot confirm desktop state (compositor unreachable — is \
+                 HYPRLAND_INSTANCE_SIGNATURE set in the daemon's env?); skipping \
+                 auto-restore to avoid clobbering a live session. Run \
+                 `vogix session restore` manually if this was a fresh login."
+            );
+        }
+        Some(false) => {
+            let restore_name = if session_path("last").map(|p| p.exists()).unwrap_or(false) {
+                "last"
+            } else {
+                "autosave"
+            };
+            info!(
+                "Empty desktop detected — restoring session '{}'...",
+                restore_name
+            );
+            match handle_session_restore(restore_name, false) {
+                Ok(()) => info!("Session '{}' restored", restore_name),
+                Err(e) => warn!("No session to restore: {}", e),
+            }
         }
     }
 
@@ -92,7 +137,12 @@ pub fn handle_daemon() -> Result<()> {
     let socket_path = match hyprland_event_socket() {
         Some(path) => path,
         None => {
-            warn!("HYPRLAND_INSTANCE_SIGNATURE not set, running without event monitoring");
+            warn!(
+                "HYPRLAND_INSTANCE_SIGNATURE not set — running WITHOUT event monitoring: \
+                 auto-save on window changes AND submap modes.log telemetry are DISABLED \
+                 for this daemon's lifetime (`vogix modes recent` will go stale). Usually \
+                 means the daemon started before the compositor exported its env."
+            );
             loop {
                 if shutdown.load(Ordering::SeqCst) {
                     save_on_shutdown();
