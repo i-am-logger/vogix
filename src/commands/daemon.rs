@@ -104,31 +104,42 @@ pub fn handle_daemon() -> Result<()> {
     // and a restore would clobber. Restore only when the desktop is truly
     // empty — which is the post-reboot/post-login case auto-restore was meant
     // to serve in the first place.
-    match hyprland_has_clients() {
-        Some(true) => {
-            info!("Hyprland has open clients; skipping auto-restore (user is working).");
-        }
-        None => {
-            warn!(
-                "Cannot confirm desktop state (compositor unreachable — is \
-                 HYPRLAND_INSTANCE_SIGNATURE set in the daemon's env?); skipping \
-                 auto-restore to avoid clobbering a live session. Run \
-                 `vogix session restore` manually if this was a fresh login."
-            );
-        }
-        Some(false) => {
-            let restore_name = if session_path("last").map(|p| p.exists()).unwrap_or(false) {
-                "last"
-            } else {
-                "autosave"
-            };
-            info!(
-                "Empty desktop detected — restoring session '{}'...",
-                restore_name
-            );
-            match handle_session_restore(restore_name, false) {
-                Ok(()) => info!("Session '{}' restored", restore_name),
-                Err(e) => warn!("No session to restore: {}", e),
+    //
+    // Opt-out: `VOGIX_AUTO_RESTORE=0` (set by the NixOS option
+    // `programs.vogix.autoRestoreSession = false`) disables boot-time restore
+    // entirely. Auto-SAVE is unaffected — the session keeps being written to
+    // 'autosave'; only the re-spawn-on-boot is skipped. Re-spawning a whole
+    // saved layout surprised the user with a stale snapshot AND re-launched
+    // ~14 apps on boot, which fed an OOM. `vogix session restore` stays manual.
+    if std::env::var("VOGIX_AUTO_RESTORE").as_deref() == Ok("0") {
+        info!("Auto-restore disabled (VOGIX_AUTO_RESTORE=0); session is still auto-saved.");
+    } else {
+        match hyprland_has_clients() {
+            Some(true) => {
+                info!("Hyprland has open clients; skipping auto-restore (user is working).");
+            }
+            None => {
+                warn!(
+                    "Cannot confirm desktop state (compositor unreachable — is \
+                     HYPRLAND_INSTANCE_SIGNATURE set in the daemon's env?); skipping \
+                     auto-restore to avoid clobbering a live session. Run \
+                     `vogix session restore` manually if this was a fresh login."
+                );
+            }
+            Some(false) => {
+                let restore_name = if session_path("last").map(|p| p.exists()).unwrap_or(false) {
+                    "last"
+                } else {
+                    "autosave"
+                };
+                info!(
+                    "Empty desktop detected — restoring session '{}'...",
+                    restore_name
+                );
+                match handle_session_restore(restore_name, false) {
+                    Ok(()) => info!("Session '{}' restored", restore_name),
+                    Err(e) => warn!("No session to restore: {}", e),
+                }
             }
         }
     }

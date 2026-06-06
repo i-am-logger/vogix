@@ -129,6 +129,20 @@ in
       description = "Enable the vogix daemon for auto-regeneration.";
     };
 
+    autoRestoreSession = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether the daemon re-spawns the saved desktop session on boot/login
+        into an empty desktop. Auto-SAVE is unaffected by this — the session is
+        always written to 'autosave'; this only controls the boot-time re-spawn.
+        Set to false (renders VOGIX_AUTO_RESTORE=0 on the daemon unit) to start
+        with a clean desktop each boot; `vogix session restore` stays available
+        manually. Re-spawning a whole layout can surprise you with a stale
+        snapshot and re-launch many apps at once.
+      '';
+    };
+
     logLevel = mkOption {
       type = types.enum [ "error" "warn" "info" "debug" "trace" ];
       default = "info";

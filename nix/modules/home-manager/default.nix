@@ -494,7 +494,12 @@ in
           Restart = "on-failure";
           RestartSec = 5;
           # Verbosity flows to journald; see programs.vogix.logLevel.
-          Environment = [ "RUST_LOG=vogix=${cfg.logLevel}" ];
+          # VOGIX_AUTO_RESTORE gates boot-time session re-spawn (auto-save is
+          # unaffected); see programs.vogix.autoRestoreSession.
+          Environment = [
+            "RUST_LOG=vogix=${cfg.logLevel}"
+            "VOGIX_AUTO_RESTORE=${if cfg.autoRestoreSession then "1" else "0"}"
+          ];
         };
 
         Install = {
