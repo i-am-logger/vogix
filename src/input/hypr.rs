@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Translate a schema action (`"dispatcher, args"`) into a socket command
@@ -38,29 +38,65 @@ pub struct Hypr {
 }
 
 impl Hypr {
-    /// Locate Hyprland's control socket.
+    /// Locate a **live** Hyprland control socket.
     ///
-    /// Preferred path: `$XDG_RUNTIME_DIR/hypr/$HIS/.socket.sock` (then the
-    /// legacy `/tmp/hypr/...`), where `$HIS` is `HYPRLAND_INSTANCE_SIGNATURE`.
-    ///
-    /// Fallback when `$HIS` is absent — which is the normal case for a systemd
-    /// *user* service, since it does not inherit the compositor's session
-    /// environment: scan the per-instance socket directories under
-    /// `$XDG_RUNTIME_DIR/hypr` (and `/tmp/hypr`) and pick the most recently
-    /// modified live `.socket.sock`. `XDG_RUNTIME_DIR` is always set by systemd
-    /// for user units, so this works without any env propagation into the
-    /// unit. The daemon discovers its environment rather than depending on it
-    /// being injected.
+    /// Candidates, in priority order: the instance named by
+    /// `$HYPRLAND_INSTANCE_SIGNATURE` (the compositor that launched us), then
+    /// every other instance socket newest-modified first. Each candidate is
+    /// connection-tested ([`is_live`]) and dead ones are skipped — `$HIS` is
+    /// NOT trusted blindly. After a Hyprland crash/restart the dead instance's
+    /// `.socket.sock` lingers on disk and the stale signature still in our
+    /// environment would otherwise pin the engine to that dead compositor
+    /// forever (the "keybindings stop after Hyprland restarts" bug); falling
+    /// through to the newest *live* socket re-attaches to the restarted
+    /// compositor with no service restart. `$HIS` is also commonly absent for a
+    /// systemd *user* unit, where the newest-live scan is the only path —
+    /// `XDG_RUNTIME_DIR` is always set, so this needs no env propagation.
     pub fn discover() -> Option<Self> {
+        Self::candidate_sockets()
+            .into_iter()
+            .find(|sock| Self::is_live(sock))
+            .map(|socket| Self { socket })
+    }
+
+    /// Candidate control-socket paths in priority order (see [`Self::discover`]).
+    fn candidate_sockets() -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
         if let Ok(his) = std::env::var("HYPRLAND_INSTANCE_SIGNATURE") {
             for base in Self::socket_bases() {
-                let p = base.join(&his).join(".socket.sock");
-                if p.exists() {
-                    return Some(Self { socket: p });
-                }
+                out.push(base.join(&his).join(".socket.sock"));
             }
         }
-        Self::scan_latest_socket()
+        // Every instance socket, newest-modified first — covers a restarted
+        // compositor whose new signature isn't in our environment yet.
+        let mut dated: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+        for base in Self::socket_bases() {
+            let Ok(entries) = std::fs::read_dir(&base) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let sock = entry.path().join(".socket.sock");
+                if !sock.exists() || out.contains(&sock) {
+                    continue;
+                }
+                let mtime = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                dated.push((mtime, sock));
+            }
+        }
+        dated.sort_by(|a, b| b.0.cmp(&a.0));
+        out.extend(dated.into_iter().map(|(_, sock)| sock));
+        out
+    }
+
+    /// True when a Hyprland is actually listening on `socket`. A lingering
+    /// socket file left by a crashed instance still `exists()` but refuses the
+    /// connection (`ECONNREFUSED`), so this is what distinguishes a live
+    /// compositor from a dead one's leftover node.
+    fn is_live(socket: &Path) -> bool {
+        UnixStream::connect(socket).is_ok()
     }
 
     /// Directories that hold per-instance Hyprland socket folders, preferred
@@ -72,36 +108,6 @@ impl Hypr {
         }
         bases.push(PathBuf::from("/tmp/hypr"));
         bases
-    }
-
-    /// Scan all instance directories and return the most recently modified
-    /// live control socket — the best guess at the active Hyprland when the
-    /// instance signature isn't available to name it directly.
-    fn scan_latest_socket() -> Option<Self> {
-        let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
-        for base in Self::socket_bases() {
-            let Ok(entries) = std::fs::read_dir(&base) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let sock = entry.path().join(".socket.sock");
-                if !sock.exists() {
-                    continue;
-                }
-                let mtime = entry
-                    .metadata()
-                    .and_then(|m| m.modified())
-                    .unwrap_or(std::time::UNIX_EPOCH);
-                let is_newer = match &best {
-                    Some((t, _)) => mtime > *t,
-                    None => true,
-                };
-                if is_newer {
-                    best = Some((mtime, sock));
-                }
-            }
-        }
-        best.map(|(_, socket)| Self { socket })
     }
 
     /// The resolved socket path.
@@ -176,5 +182,32 @@ mod tests {
             action_to_command("  movewindow ,  l "),
             "dispatch movewindow l"
         );
+    }
+
+    // Regression: a Hyprland crash/restart leaves the dead instance's
+    // `.socket.sock` file on disk. `discover()` must treat that lingering node
+    // as NOT live, otherwise a stale $HYPRLAND_INSTANCE_SIGNATURE pins the
+    // engine to the dead compositor and keybindings stay dead until the service
+    // is restarted by hand.
+    #[test]
+    fn is_live_rejects_lingering_dead_socket() {
+        use std::os::unix::net::UnixListener;
+        let sock =
+            std::env::temp_dir().join(format!(".vogix-hypr-islive-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&sock);
+
+        // No socket node at all → not live.
+        assert!(!Hypr::is_live(&sock));
+
+        // A listening (live) compositor → live.
+        let listener = UnixListener::bind(&sock).expect("bind test socket");
+        assert!(Hypr::is_live(&sock));
+
+        // Listener gone but the file lingers (the crashed-instance case) → the
+        // connection is refused, so it must read as not live.
+        drop(listener);
+        assert!(!Hypr::is_live(&sock));
+
+        let _ = std::fs::remove_file(&sock);
     }
 }
