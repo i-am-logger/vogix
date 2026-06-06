@@ -104,11 +104,6 @@ impl Hypr {
         best.map(|(_, socket)| Self { socket })
     }
 
-    /// Use an explicit socket path (for tests / non-standard setups).
-    pub fn with_socket(socket: PathBuf) -> Self {
-        Self { socket }
-    }
-
     /// The resolved socket path.
     pub fn socket_path(&self) -> &PathBuf {
         &self.socket

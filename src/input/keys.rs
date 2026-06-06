@@ -42,6 +42,9 @@ impl Mods {
     }
 
     /// True when exactly one of `m` is the only modifier held.
+    /// Test-only predicate (the engine matches `Mods` by value); gated so the
+    /// binary doesn't carry it as dead code under `clippy -D warnings`.
+    #[cfg(test)]
     pub fn only(&self, m: Modifier) -> bool {
         *self == {
             let mut x = Mods::default();
@@ -50,7 +53,8 @@ impl Mods {
         }
     }
 
-    /// True when no modifiers are held.
+    /// True when no modifiers are held. Test-only predicate (see `only`).
+    #[cfg(test)]
     pub fn none(&self) -> bool {
         *self == Mods::default()
     }
