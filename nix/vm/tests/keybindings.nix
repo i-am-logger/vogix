@@ -20,7 +20,7 @@
 # nix/modules/behavior/tests.nix.
 { pkgs
 , self
-,
+, ...
 }:
 
 let

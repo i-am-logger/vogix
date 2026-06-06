@@ -19,7 +19,7 @@
 # binds). The keypress side is covered by the kanata VM test (kanata emits F22
 # on caps release) + the config property test (exit is a press-bind, no bindr).
 { pkgs
-,
+, ...
 }:
 
 let
