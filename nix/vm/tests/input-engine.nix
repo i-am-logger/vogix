@@ -32,6 +32,12 @@ let
   # the suite instead of vanishing.
   behaviorReal = import ../../modules/behavior { inherit (pkgs) lib; inherit pkgs; };
   realDefaultsJson = behaviorReal.mkSchemaJSON { };
+  # Each shipped interaction paradigm rendered from the REAL module, so every
+  # paradigm is proven end-to-end in the VM (not just at eval): the schema loads,
+  # all bindings parse + axioms hold (`vogix input check`), and the paradigm's
+  # signature gesture actually dispatches (the behavioural section in the driver).
+  paradigmWindowsJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "windows"; }; };
+  paradigmMacJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "mac"; }; };
 
   # A fixed ENGINE-NATIVE schema so the behavioural assertions are deterministic.
   # Mirrors the shape `defaults.nix` renders (real-config parsing is covered by
@@ -186,8 +192,8 @@ let
     #    key the UX assertions inject.
     caps = { e.EV_KEY: [
         e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_Q, e.KEY_R, e.KEY_Y,
-        e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_C, e.KEY_V, e.KEY_1,
-        e.KEY_LEFT, e.KEY_ESC, e.KEY_VOLUMEUP,
+        e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_C, e.KEY_V, e.KEY_1,
+        e.KEY_LEFT, e.KEY_TAB, e.KEY_ESC, e.KEY_VOLUMEUP,
     ] }
     ui = UInput(caps, name="vogix-test-kbd")
     time.sleep(1)
@@ -540,6 +546,70 @@ let
         fail("first engine must keep working after a second instance is rejected")
     print("PASS: single-instance guard — 2nd engine refused, 1st intact + typing works")
 
+    # ── Paradigm behavioural coverage: every shipped paradigm proven end-to-end ──
+    # The tests above ran the engine on the default (modal) schema. Now restart it
+    # on each REAL rendered paradigm schema and prove its signature gesture fires
+    # the right WM dispatch — chorded nav that bypasses the CapsLock layer.
+    def vogix_dev():
+        for path in list_devices():
+            try:
+                if InputDevice(path).name == "vogix-input":
+                    return path
+            except OSError:
+                continue
+        return None
+
+    def paradigm_dispatch(label, config, inject, expect):
+        global proc
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        # The uinput device is created BEFORE the grab, so "device present" alone
+        # doesn't mean ready. Wait for the OLD engine's device to disappear first,
+        # so we don't mistake the stale device for the new engine and inject early.
+        for _ in range(50):
+            if vogix_dev() is None:
+                break
+            time.sleep(0.1)
+        proc = subprocess.Popen(
+            ["vogix", "input", "run", "--config", config],
+            env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        for _ in range(60):
+            if vogix_dev() is not None:
+                break
+            if proc.poll() is not None:
+                fail(label + ": engine exited early:\n" + (proc.stdout.read() if proc.stdout else ""))
+            time.sleep(0.25)
+        if vogix_dev() is None:
+            fail(label + ": vogix-input device not found (engine didn't grab)")
+        time.sleep(1.0)  # let the keyboard grab settle before injecting
+        # After Test 18 the live compositor mock is testsig2 (received2); the
+        # restarted engine re-discovers the newest-live socket, so assert there.
+        received2.clear()
+        inject()
+        time.sleep(0.4)
+        if expect not in " ".join(received2):
+            fail(label + ": expected dispatch " + repr(expect) + ", got " + repr(received2))
+        print("PASS: paradigm " + label)
+
+    # windows: chorded Super+Left → focus left (no CapsLock; remap = none).
+    paradigm_dispatch(
+        "windows — Super+Left dispatches movefocus",
+        "/etc/vogix-paradigm-windows.json",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_LEFT, hold=0.03), up(e.KEY_LEFTMETA)),
+        "dispatch movefocus l",
+    )
+    # mac: chorded Super+Tab → cycle windows (remap = macos kept for letters).
+    paradigm_dispatch(
+        "mac — Super+Tab dispatches cyclenext",
+        "/etc/vogix-paradigm-mac.json",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_TAB, hold=0.03), up(e.KEY_LEFTMETA)),
+        "dispatch cyclenext",
+    )
+
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';
 
@@ -550,6 +620,8 @@ pkgs.testers.nixosTest {
   nodes.machine = _: {
     environment.etc."vogix-test-schema.json".text = testSchema;
     environment.etc."vogix-real-defaults.json".text = realDefaultsJson;
+    environment.etc."vogix-paradigm-windows.json".text = paradigmWindowsJson;
+    environment.etc."vogix-paradigm-mac.json".text = paradigmMacJson;
     # Reference the flake's vogix build directly (the `pkgs` in scope here is the
     # outer test pkgs, which carries no vogix overlay; an overlay would only land
     # on the machine's own pkgs arg). pyenv/evtest come from the plain pkgs.
@@ -570,9 +642,11 @@ pkgs.testers.nixosTest {
     machine.succeed("modprobe uinput || true")
     machine.wait_until_succeeds("test -e /dev/uinput")
 
-    # The shipped defaults.nix schema must load and every binding must parse
-    # (an unknown key would otherwise be silently dropped by the router).
+    # Every shipped paradigm's schema must load + parse + pass the graph/remap
+    # axioms (an unknown key would otherwise be silently dropped by the router).
     print(machine.succeed("vogix input check --config /etc/vogix-real-defaults.json"))
+    print(machine.succeed("vogix input check --config /etc/vogix-paradigm-windows.json"))
+    print(machine.succeed("vogix input check --config /etc/vogix-paradigm-mac.json"))
 
     print(machine.succeed("${pyenv}/bin/python3 ${driver}"))
   '';

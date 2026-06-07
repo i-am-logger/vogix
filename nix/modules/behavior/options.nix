@@ -143,8 +143,8 @@ in
 
               paradigm = mkOption {
                 type = types.str;
-                default = "vim";
-                description = "Selected interaction paradigm (whole-WM flavour) — a key in `paradigms`. Resolves to that paradigm's per-mode bindings + Super remap. Default \"vim\" = the native modal CapsLock→desktop style.";
+                default = "default";
+                description = "Selected interaction paradigm (whole-WM flavour) — a key in `paradigms`. Resolves to that paradigm's per-mode bindings + Super remap. Default \"default\" = the user's own modal CapsLock→desktop config.";
               };
 
               paradigms = mkOption {

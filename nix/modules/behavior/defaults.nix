@@ -87,18 +87,18 @@ rec {
     # Interaction PARADIGM (whole-WM flavour) the user selects. Each paradigm in
     # `paradigms` below pairs a Super-modifier remap (a praxis RemapSet preset)
     # with a per-mode WM-navigation binding set. `mkSchemaJSON` resolves the
-    # chosen paradigm into the engine's `modes` + remap. Default `vim` = the
-    # modal CapsLock→desktop bare-key style (the current/native vogix model).
-    paradigm = "vim";
+    # chosen paradigm into the engine's `modes` + remap. Default `default` = the
+    # user's own preferred config (modal CapsLock→desktop bare-key style).
+    paradigm = "default";
 
     # WM interaction paradigms. A paradigm = { remap = <praxis RemapSet name>;
     # modes = <per-mode bindings over vogix's own app/desktop/move/resize>; }.
     # The user picks one via `paradigm` above and overlays their own bindings via
     # `programs.vogix.behavior.modes` (recursiveUpdate, per binding name).
     paradigms = {
-      # vim: the native modal model — CapsLock→desktop, bare hjkl/arrows. Its
-      # bindings ARE the shared `modes` below, so selecting vim is the identity.
-      vim = {
+      # default: the user's own preferred model — modal CapsLock→desktop, bare
+      # hjkl/arrows. Its bindings ARE the shared `modes` below, so it is the identity.
+      default = {
         remap = "macos";
         inherit modes;
       };

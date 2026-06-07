@@ -80,12 +80,12 @@ let
     (check "defaults.keybindings.layers has desktopToggle"
       (defaults.keybindings.layers ? desktopToggle))
 
-    (check "defaults.keybindings.paradigm is the vim flavour (native modal)"
-      (defaults.keybindings.paradigm == "vim"))
+    (check "defaults.keybindings.paradigm is the user's own (default) flavour"
+      (defaults.keybindings.paradigm == "default"))
 
-    (check "vim paradigm pairs the macOS remap with the shared modes"
-      (defaults.keybindings.paradigms.vim.remap == "macos"
-        && defaults.keybindings.paradigms.vim.modes == defaults.modes))
+    (check "default paradigm pairs the macOS remap with the shared modes"
+      (defaults.keybindings.paradigms.default.remap == "macos"
+        && defaults.keybindings.paradigms.default.modes == defaults.modes))
 
     (check "windows paradigm uses no Super remap (Ctrl is native)"
       (defaults.keybindings.paradigms.windows.remap == "none"))
@@ -99,7 +99,7 @@ let
         keybindings = defaults.keybindings // { paradigm = "windows"; };
       })))
 
-    (check "the default (vim) render is modal — no chorded Super+arrow nav"
+    (check "the default paradigm render is modal — no chorded Super+arrow nav"
       (!(lib.hasInfix "super + left" (kbModule.mkSchemaJSON defaults))))
 
     (check "defaults.keybindings has terminalClasses (context-aware remap)"
