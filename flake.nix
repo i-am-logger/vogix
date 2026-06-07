@@ -211,19 +211,11 @@
           # Template architecture tests
           templates = import ./nix/vm/tests/templates.nix testArgs;
 
-          # Keybinding behavior: real kanata config on a virtual keyboard,
-          # asserts tap-hold output (caps click→F24, caps+key→F23 enter+F22 exit).
-          keybindings = import ./nix/vm/tests/keybindings.nix testArgs;
-
-          # Hyprland RUNTIME: boots Hyprland headless, injects the internal
-          # keysyms, asserts the submap actually enters AND exits (F22 press) —
-          # the test that catches the "it stays in the mode" bug.
-          keybindings-hyprland = import ./nix/vm/tests/keybindings-hyprland.nix testArgs;
-
-          # Input ENGINE end-to-end (the kanata-free path): runs the real
-          # `vogix input run` against a virtual keyboard + a mock compositor
-          # socket, asserts re-emit (typing works, compositor-agnostic), IPC
-          # dispatch of a bound key, and no keyboard lockout after mode use.
+          # Input ENGINE end-to-end (vogix is the sole input engine): runs the
+          # real `vogix input run` against a virtual keyboard + a mock compositor
+          # socket and asserts the full daily-driver UX — re-emit/typing, the
+          # Super→Ctrl remap, caps tap-sticky / hold-momentary, sub-mode routing,
+          # exitAfter, the Esc safety-net, repeat, and the single-instance guard.
           input-engine = import ./nix/vm/tests/input-engine.nix testArgs;
         }
       );

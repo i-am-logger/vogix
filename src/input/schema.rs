@@ -34,6 +34,26 @@ pub struct Schema {
     // `defaults.nix` names this `_superCtrlRemaps`; accept both.
     #[serde(default, rename = "superCtrlRemaps", alias = "_superCtrlRemaps")]
     pub super_ctrl_remaps: HashMap<String, RemapSpec>,
+    /// Hyprland window classes that are terminals. When one is focused, the
+    /// Super→Ctrl remap is context-adjusted (copy/paste → Ctrl+Shift+C/V; other
+    /// remaps suppressed) so Super+C can't fire Ctrl+C=SIGINT into the shell.
+    #[serde(default, rename = "terminalClasses")]
+    pub terminal_classes: Vec<String>,
+    /// Per-mode border colours (theme-derived, Hyprland `rgb(...)` form). Drive
+    /// the mode-visibility surface: on a mode change the engine paints the active
+    /// window border so the user can always SEE which mode is active (the cure
+    /// for mode error — Norman 1981).
+    #[serde(default, rename = "modeColors")]
+    pub mode_colors: HashMap<String, ModeColor>,
+}
+
+/// A mode's border colours (Hyprland `rgb(RRGGBB)` strings).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ModeColor {
+    #[serde(default)]
+    pub active: String,
+    #[serde(default)]
+    pub inactive: String,
 }
 
 /// The mode topology: which modes exist and their parent/kind.
@@ -92,15 +112,21 @@ pub struct Keybindings {
     pub layers: HashMap<String, Layer>,
 }
 
-/// A CapsLock-style dual-role layer (we read its tap/hold timing + hold action).
+/// A CapsLock-style dual-role layer (we read its tap/hold timing + target mode).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Layer {
     #[serde(default)]
     pub hold: Option<String>,
     #[serde(default, rename = "tapHoldMs")]
     pub tap_hold_ms: Option<u64>,
-    /// The keysym the hold emits (e.g. `"f23"`); a root-mode binding for this
-    /// key declares which mode the hold enters.
+    /// Engine-native: the mode this layer's trigger enters, named directly
+    /// (e.g. `"desktop"`). This is how the vogix engine learns which mode
+    /// CapsLock activates — no synthetic keysym indirection.
+    #[serde(default, rename = "entersMode")]
+    pub enters_mode: Option<String>,
+    /// Legacy (kanata-era): the keysym the hold emitted (e.g. `"f23"`), bound in
+    /// the root mode to a `submap, X` action whose `X` was the target. Superseded
+    /// by `entersMode`; still read as a fallback for old schemas.
     #[serde(default, rename = "holdAction")]
     pub hold_action: Option<String>,
 }
@@ -175,16 +201,23 @@ impl Schema {
 
     /// The mode CapsLock enters.
     ///
-    /// Derived through the actual config linkage: the `capslock` layer's
-    /// `holdAction` keysym (e.g. `"f23"`) is bound in the root mode to a
-    /// `submap, X` action, and `X` is the target. This is unambiguous even when
-    /// several modes are `submap` children of root (`move`/`resize` are too).
+    /// Engine-native: the `capslock` layer names the target mode directly via
+    /// `entersMode`. For old (kanata-era) schemas that predate that field, fall
+    /// back to the keysym indirection: the layer's `holdAction` keysym (e.g.
+    /// `"f23"`) is bound in the root mode to a `submap, X` action, and `X` is the
+    /// target. The fallback is unambiguous even when several modes are `submap`
+    /// children of root (`move`/`resize` are too).
     pub fn caps_target(&self) -> Option<String> {
         let layer = self
             .keybindings
             .layers
             .values()
             .find(|l| l.hold.as_deref() == Some("capslock"))?;
+        // Engine-native: the layer names its target mode.
+        if let Some(target) = layer.enters_mode.as_ref() {
+            return Some(target.clone());
+        }
+        // Legacy fallback: derive via the holdAction keysym → root-mode binding.
         let hold_key = layer.hold_action.as_ref()?;
         let root_mode = self.modes.get(&self.mode_graph.root)?;
         root_mode
@@ -195,6 +228,32 @@ impl Schema {
                 ActionKind::Submap(target) => Some(target),
                 ActionKind::Dispatch(_) => None,
             })
+    }
+
+    /// Bindings (and remaps) whose key chord can't be parsed — a typo, or a key
+    /// name the engine doesn't know. These would be SILENTLY DROPPED when the
+    /// router is built (`parse_chord` → `None`), so a mistyped binding would just
+    /// vanish with no error. Surfacing them lets `check` fail and `run` warn.
+    /// Returns sorted human-readable `"<where>: <reason>"` descriptors.
+    pub fn unparseable_bindings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (mode, spec) in &self.modes {
+            for (name, b) in &spec.bindings {
+                if super::keys::parse_chord(&b.key).is_none() {
+                    out.push(format!("{mode}.{name}: unparseable key {:?}", b.key));
+                }
+            }
+        }
+        for (name, r) in &self.super_ctrl_remaps {
+            if super::keys::parse_chord(&r.from).is_none() {
+                out.push(format!("remap.{name}: unparseable from {:?}", r.from));
+            }
+            if super::keys::parse_chord(&r.to).is_none() {
+                out.push(format!("remap.{name}: unparseable to {:?}", r.to));
+            }
+        }
+        out.sort();
+        out
     }
 
     /// Derive the praxis [`ModeGraph`] from the loaded topology and bindings.
@@ -332,6 +391,49 @@ mod tests {
         assert_eq!(s.tap_hold_ms(), 250);
         assert_eq!(s.caps_target().as_deref(), Some("desktop"));
         assert_eq!(s.super_ctrl_remaps.len(), 1);
+    }
+
+    #[test]
+    fn unparseable_bindings_are_surfaced_not_silently_dropped() {
+        // The fixture's bindings all parse.
+        assert!(schema().unparseable_bindings().is_empty());
+        // A typo'd key name is surfaced — it would otherwise vanish silently when
+        // the router is built (parse_chord → None → binding dropped).
+        let bad = Schema::from_json(
+            &FIXTURE.replace("\"key\": \"h\"", "\"key\": \"definitely-not-a-key\""),
+        )
+        .expect("still valid JSON");
+        let probs = bad.unparseable_bindings();
+        assert!(
+            probs.iter().any(|s| s.contains("definitely-not-a-key")),
+            "a mistyped key must be surfaced, got {probs:?}"
+        );
+    }
+
+    #[test]
+    fn caps_target_reads_enters_mode_engine_native() {
+        // Engine-native schema: the caps layer names the mode directly via
+        // `entersMode`, with NO synthetic `f23` keysym and NO `enterDesktopHold`
+        // root binding. caps_target must resolve from the field alone.
+        let json = r#"{
+          "modeGraph": { "root": "app", "modes": {
+            "app":     { "parent": null,  "type": "normal" },
+            "desktop": { "parent": "app", "type": "submap" }
+          }},
+          "keybindings": { "modKey": "super", "layers": {
+            "desktopToggle": { "hold": "capslock", "tapHoldMs": 250, "entersMode": "desktop" }
+          }},
+          "modes": {
+            "app": { "exit": "escape", "bindings": {} },
+            "desktop": { "exit": "escape", "bindings": {
+              "focusLeft": { "key": "h", "action": "movefocus, l" }
+            }}
+          }
+        }"#;
+        let s = Schema::from_json(json).expect("engine-native fixture parses");
+        assert_eq!(s.caps_target().as_deref(), Some("desktop"));
+        // root -> desktop still derives from the parent topology (no f23 needed).
+        assert!(s.build_mode_graph().validate().is_empty());
     }
 
     #[test]

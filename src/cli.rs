@@ -105,9 +105,8 @@ pub enum InputCommands {
     },
     /// Run the input engine: grab evdev, drive the mode statechart, dispatch
     /// window actions to Hyprland's IPC socket, and re-emit normal keys via
-    /// uinput. This replaces kanata + Hyprland submaps; only one of the two
-    /// should be active at a time (gate via the NixOS option
-    /// `programs.vogix.input.engine`).
+    /// uinput. vogix is the sole input engine (it took over from the older
+    /// kanata + Hyprland-submaps split).
     Run {
         /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
         #[arg(long)]

@@ -665,7 +665,7 @@ mod tests {
         assert!(restored.windows[0].floating);
         assert_eq!(restored.windows[0].size, [1920, 1080]);
         assert_eq!(restored.windows[0].fullscreen, 1);
-        assert_eq!(restored.windows[1].floating, false);
+        assert!(!restored.windows[1].floating);
         assert_eq!(restored.terminals[0].pane_id, 42);
         assert_eq!(restored.terminals[1].title, "✳ lumen");
     }
@@ -673,8 +673,8 @@ mod tests {
     // Property: MAX_AUTOSAVE_STACK is reasonable
     #[test]
     fn test_max_autosave_stack_bounds() {
-        assert!(MAX_AUTOSAVE_STACK > 0);
-        assert!(MAX_AUTOSAVE_STACK <= 100); // Don't keep too many
+        // Compile-time bound check (the value is a const): keep some, not too many.
+        const _: () = assert!(MAX_AUTOSAVE_STACK > 0 && MAX_AUTOSAVE_STACK <= 100);
     }
 
     // Property: pane_launch_command always returns wezterm with --cwd

@@ -26,11 +26,20 @@
 let
   pyenv = pkgs.python3.withPackages (ps: [ ps.evdev ]);
 
-  # A fixed schema so the behavioural assertions are deterministic. Mirrors the
-  # shape `defaults.nix` renders (the real-config parsing is covered by the
-  # `parses_the_nix_shape` unit test); here we pin the bindings we assert on:
-  #   desktop mode: h → "movefocus, l"   (a bound key → IPC dispatch + swallow)
-  #   caps hold    → enter desktop       (via the F23 root binding, like defaults)
+  # The REAL shipped schema rendered from defaults.nix (not the hand-written
+  # testSchema above). `vogix input check` validates it loads + every binding
+  # parses, so a mistyped/unknown key that the router would silently drop fails
+  # the suite instead of vanishing.
+  behaviorReal = import ../../modules/behavior { inherit (pkgs) lib; inherit pkgs; };
+  realDefaultsJson = behaviorReal.mkSchemaJSON { };
+
+  # A fixed ENGINE-NATIVE schema so the behavioural assertions are deterministic.
+  # Mirrors the shape `defaults.nix` renders (real-config parsing is covered by
+  # the `parses_the_nix_shape` unit test); here we pin the daily-driver bindings
+  # the UX assertions exercise. The caps layer names its target mode DIRECTLY
+  # (`entersMode = "desktop"`) — no synthetic f23 keysym, no `enterDesktopHold`
+  # root binding. Every mode carries `exit = "escape"` so the Esc safety-net is
+  # exercised; in catchall modes it returns to root, in `app` it passes through.
   testSchema = builtins.toJSON {
     modeGraph = {
       root = "app";
@@ -45,28 +54,56 @@ let
     keybindings = {
       modKey = "super";
       layers = {
-        desktopToggle = { hold = "capslock"; tapHoldMs = 250; holdAction = "f23"; };
+        desktopToggle = { hold = "capslock"; tapHoldMs = 250; entersMode = "desktop"; };
       };
     };
+    # Two remaps prove the table is data-driven, not hardcoded to one letter.
     _superCtrlRemaps = {
       copy = { from = "super + c"; to = "ctrl + c"; };
+      paste = { from = "super + v"; to = "ctrl + v"; };
+    };
+    # kitty is a terminal: the context-aware remap retargets copy/paste there.
+    terminalClasses = [ "kitty" ];
+    # Per-mode border colours for the mode-visibility surface.
+    modeColors = {
+      desktop = { active = "rgb(89b4fa)"; inactive = "rgb(313244)"; };
     };
     modes = {
       app = {
+        exit = "escape";
         bindings = {
           ws1 = { key = "super + 1"; action = "workspace, 1"; };
-          enterDesktopHold = { key = "F23"; action = "submap, desktop"; };
+          volumeUp = { key = "XF86AudioRaiseVolume"; action = "exec, pamixer -i 5"; };
         };
       };
       desktop = {
+        exit = "escape";
         bindings = {
           focusLeft = { key = "h"; action = "movefocus, l"; repeat = true; };
+          focusLeftArrow = { key = "left"; action = "movefocus, l"; repeat = true; };
           enterMove = { key = "m"; action = "submap, move"; };
+          enterResize = { key = "r"; action = "submap, resize"; };
+          enterConsole = { key = "c"; action = "submap, console"; };
+          ws1 = { key = "1"; action = "workspace, 1"; };
+          sendToWs1 = { key = "shift + 1"; action = "movetoworkspace, 1"; };
+          toggleFloat = { key = "y"; action = "togglefloating,"; }; # stay (no exitAfter)
           close = { key = "q"; action = "killactive,"; exitAfter = true; };
         };
       };
-      move = { bindings = { moveLeft = { key = "h"; action = "movewindow, l"; repeat = true; }; }; };
-      resize = { bindings = { }; };
+      move = {
+        exit = "escape";
+        bindings = {
+          moveLeft = { key = "h"; action = "movewindow, l"; repeat = true; };
+          toResize = { key = "r"; action = "submap, resize"; };
+        };
+      };
+      resize = {
+        exit = "escape";
+        bindings = {
+          resizeLeft = { key = "h"; action = "resizeactive, -40 0"; repeat = true; };
+          toMove = { key = "m"; action = "submap, move"; };
+        };
+      };
       console = { bindings = { }; };
     };
   };
@@ -88,33 +125,73 @@ let
 
     # 1) Mock compositor: a Unix socket that records the dispatch commands the
     #    engine sends. It replies "ok" so the engine's read drains cleanly.
-    received = []
-    def mock_compositor():
+    # A controllable mock compositor: binds a recording socket and returns its
+    # server handle (so a test can CLOSE it to simulate a compositor crash) plus
+    # its received-commands list. `received` below is mock #1 — existing tests use it.
+    def make_mock(sock_path):
+        recv = []
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            os.unlink(SOCK)
+            os.unlink(sock_path)
         except FileNotFoundError:
             pass
-        srv.bind(SOCK)
+        srv.bind(sock_path)
         srv.listen(16)
-        while True:
-            conn, _ = srv.accept()
-            data = conn.recv(4096)
-            if data:
-                received.append(data.decode(errors="replace"))
-            try:
-                conn.sendall(b"ok")
-            except OSError:
-                pass
-            conn.close()
-    threading.Thread(target=mock_compositor, daemon=True).start()
+        def loop():
+            while True:
+                try:
+                    conn, _ = srv.accept()
+                except OSError:
+                    return  # server closed → stop (compositor 'crashed')
+                data = conn.recv(4096)
+                if data:
+                    recv.append(data.decode(errors="replace"))
+                try:
+                    conn.sendall(b"ok")
+                except OSError:
+                    pass
+                conn.close()
+        threading.Thread(target=loop, daemon=True).start()
+        return srv, recv
+    srv1, received = make_mock(SOCK)
     time.sleep(0.5)
 
+    # Mock Hyprland EVENT socket (.socket2.sock): streams `activewindow` events so
+    # the engine can track the focused window class for the context-aware
+    # Super→Ctrl remap. set_active_window() pushes a focus change to the engine.
+    SOCK2EV = SOCKDIR + "/.socket2.sock"
+    win_conns = []
+    def mock_events():
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            os.unlink(SOCK2EV)
+        except FileNotFoundError:
+            pass
+        srv.bind(SOCK2EV)
+        srv.listen(16)
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            win_conns.append(conn)
+    threading.Thread(target=mock_events, daemon=True).start()
+    def set_active_window(cls):
+        line = ("activewindow>>" + cls + ",title\n").encode()
+        for c in list(win_conns):
+            try:
+                c.sendall(line)
+            except OSError:
+                pass
+    time.sleep(0.3)
+
     # 2) Virtual keyboard the engine will grab (must advertise KEY_A so the
-    #    engine recognises it as a keyboard).
+    #    engine recognises it as a keyboard). The full set below covers every
+    #    key the UX assertions inject.
     caps = { e.EV_KEY: [
-        e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_Q,
-        e.KEY_LEFTMETA, e.KEY_C, e.KEY_1,
+        e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_Q, e.KEY_R, e.KEY_Y,
+        e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_C, e.KEY_V, e.KEY_1,
+        e.KEY_LEFT, e.KEY_ESC, e.KEY_VOLUMEUP,
     ] }
     ui = UInput(caps, name="vogix-test-kbd")
     time.sleep(1)
@@ -167,6 +244,16 @@ let
     def emitted_codes():
         return [c for (c, v) in emitted]
 
+    # Seed a NON-terminal focused window so the Super→Ctrl remap behaves normally
+    # (plain Ctrl+C) for the tests below. Wait for the engine's event-stream
+    # connection first so the focus event isn't sent into the void.
+    for _ in range(40):
+        if win_conns:
+            break
+        time.sleep(0.1)
+    set_active_window("firefox")
+    time.sleep(0.4)
+
     # --- Test 1: a plain key is re-emitted (typing works, compositor-agnostic) ---
     emitted.clear()
     tap(e.KEY_A)
@@ -200,6 +287,242 @@ let
         fail("keyboard wedged after mode use — typing stopped re-emitting")
     print("PASS: no lockout — typing still works after mode use")
 
+    # ── Full daily-driver UX (engine-native model; the kanata-free path) ──
+    # Every gesture class the engine now owns, proven end-to-end through the real
+    # evdev grab → uinput re-emit / mock-compositor dispatch path.
+    def dispatched():
+        return " ".join(received)
+
+    # --- Test 5: Super→Ctrl remap at evdev (data-driven: c AND v), no Super leak ---
+    for letter, name in [(e.KEY_C, "c"), (e.KEY_V, "v")]:
+        emitted.clear()
+        down(e.KEY_LEFTMETA); tap(letter, hold=0.03); up(e.KEY_LEFTMETA)
+        time.sleep(0.3)
+        codes = emitted_codes()
+        if e.KEY_LEFTCTRL not in codes or letter not in codes:
+            fail(f"super+{name} must emit Ctrl+{name}, got {emitted}")
+        if e.KEY_LEFTMETA in codes:
+            fail(f"super+{name} must NOT leak LEFTMETA to apps, got {emitted}")
+    print("PASS: Super→Ctrl remap (c, v) at evdev; Super never leaks")
+
+    # --- Test 6: Super+number → workspace dispatch (NOT remapped, NOT typed) ---
+    received.clear(); emitted.clear()
+    down(e.KEY_LEFTMETA); tap(e.KEY_1, hold=0.03); up(e.KEY_LEFTMETA)
+    time.sleep(0.4)
+    if "dispatch workspace 1" not in dispatched():
+        fail(f"super+1 must dispatch 'workspace 1', got {received}")
+    if e.KEY_LEFTCTRL in emitted_codes() or e.KEY_1 in emitted_codes():
+        fail(f"super+number must not be remapped or typed, got {emitted}")
+    print("PASS: Super+1 → workspace dispatch (excluded from the remap set)")
+
+    # --- Test 7: caps TAP → sticky desktop; chain ws+focus; catchall swallow; tap → exit ---
+    received.clear(); emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05)                       # < 250ms → sticky desktop
+    time.sleep(0.1)
+    tap(e.KEY_1, hold=0.03); time.sleep(0.1)             # bare 1 in desktop → workspace
+    tap(e.KEY_H, hold=0.03); time.sleep(0.1)             # focus
+    tap(e.KEY_A, hold=0.03); time.sleep(0.1)             # unbound → catchall swallow
+    d = dispatched()
+    if "dispatch workspace 1" not in d or "dispatch movefocus l" not in d:
+        fail(f"sticky desktop must chain ws+focus, got {received}")
+    if e.KEY_A in emitted_codes():
+        fail(f"unbound 'a' in desktop must be swallowed (catchall), got {emitted}")
+    emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # tap again → exit
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("after caps-tap exit, typing must resume in app")
+    print("PASS: caps-tap sticky → chain (ws/focus) → catchall swallow → tap exit")
+
+    # --- Test 8: caps-HOLD → m (move) → release caps → back to APP (no stuck) ---
+    received.clear(); emitted.clear()
+    down(e.KEY_CAPSLOCK); time.sleep(0.03)               # hold
+    tap(e.KEY_M, hold=0.03); time.sleep(0.05)            # resolves hold → momentary desktop, m → move
+    tap(e.KEY_H, hold=0.03); time.sleep(0.1)             # h in move → movewindow
+    up(e.KEY_CAPSLOCK); time.sleep(0.3)                  # release → revert to root (app)
+    if "dispatch movewindow l" not in dispatched():
+        fail(f"caps-hold→m→h must dispatch 'movewindow l', got {received}")
+    emitted.clear()
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("caps release from a SWITCHED sub-mode must return to app (typing works)")
+    print("PASS: caps-hold → move sub-mode → release returns to app (no stuck)")
+
+    # --- Test 9: resize route + move↔resize switch ---
+    received.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    tap(e.KEY_R, hold=0.03); time.sleep(0.05)            # → resize
+    tap(e.KEY_H, hold=0.03); time.sleep(0.1)             # resizeactive
+    tap(e.KEY_M, hold=0.03); time.sleep(0.05)            # resize → move (toMove)
+    tap(e.KEY_H, hold=0.03); time.sleep(0.1)             # movewindow
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # exit
+    d = dispatched()
+    if "dispatch resizeactive -40 0" not in d or "dispatch movewindow l" not in d:
+        fail(f"resize then switch-to-move must dispatch both, got {received}")
+    print("PASS: resize sub-mode + move↔resize switch")
+
+    # --- Test 10: exitAfter returns to app WITHOUT a second caps tap ---
+    received.clear(); emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    tap(e.KEY_Q, hold=0.03); time.sleep(0.2)             # killactive, exitAfter
+    if "dispatch killactive" not in dispatched():
+        fail(f"q must dispatch 'killactive', got {received}")
+    emitted.clear()
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("exitAfter must return to app (typing works without a 2nd caps tap)")
+    print("PASS: exitAfter (q) returns to app")
+
+    # --- Test 11: stay/chainable binding (y) does NOT exit ---
+    received.clear(); emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    tap(e.KEY_Y, hold=0.03); time.sleep(0.1)             # togglefloating, stay
+    tap(e.KEY_H, hold=0.03); time.sleep(0.1)             # still in desktop → movefocus
+    d = dispatched()
+    if "dispatch togglefloating" not in d or "dispatch movefocus l" not in d:
+        fail(f"stay binding must keep desktop active for the next key, got {received}")
+    if e.KEY_A in emitted_codes():
+        fail("still in desktop after a stay binding → 'a' must be swallowed")
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # exit
+    print("PASS: stay binding (y) is chainable, doesn't exit")
+
+    # --- Test 12: Esc safety-net exits a catchall mode → app ---
+    emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    tap(e.KEY_M, hold=0.03); time.sleep(0.05)            # → move
+    tap(e.KEY_ESC, hold=0.03); time.sleep(0.2)           # Esc → ExitToRoot
+    if e.KEY_ESC in emitted_codes():
+        fail("Esc inside a catchall mode must be swallowed (consumed as the exit)")
+    emitted.clear()
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("Esc safety-net must return to app (typing works)")
+    print("PASS: Esc safety-net exits a catchall mode to app")
+
+    # --- Test 13: arrow-key focus + auto-repeat refire ---
+    received.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    down(e.KEY_LEFT); time.sleep(0.03)
+    ui.write(e.EV_KEY, e.KEY_LEFT, 2); ui.syn()          # auto-repeat
+    time.sleep(0.03)
+    up(e.KEY_LEFT); time.sleep(0.2)
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # exit
+    n = dispatched().count("dispatch movefocus l")
+    if n < 2:
+        fail(f"arrow press + repeat must dispatch movefocus l >=2x, got {n}: {received}")
+    print("PASS: arrow-key focus + auto-repeat refire")
+
+    # --- Test 14: app-mode exec/media dispatch (XF86 key) ---
+    received.clear()
+    tap(e.KEY_VOLUMEUP, hold=0.03); time.sleep(0.2)
+    if "dispatch exec pamixer -i 5" not in dispatched():
+        fail(f"XF86AudioRaiseVolume must dispatch its exec, got {received}")
+    print("PASS: media key → exec dispatch")
+
+    # --- Test 15: Shift+number send-to-workspace (modifier chord) ---
+    received.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    down(e.KEY_LEFTSHIFT); tap(e.KEY_1, hold=0.03); up(e.KEY_LEFTSHIFT)
+    time.sleep(0.2)
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # exit
+    if "dispatch movetoworkspace 1" not in dispatched():
+        fail(f"shift+1 must dispatch 'movetoworkspace 1', got {received}")
+    print("PASS: Shift+number send-to-workspace chord")
+
+    # --- Test 16: fast-typing burst in app — every key re-emitted, none dropped ---
+    emitted.clear()
+    burst = [e.KEY_A, e.KEY_H, e.KEY_M, e.KEY_Q, e.KEY_R, e.KEY_Y, e.KEY_C, e.KEY_V]
+    for c in burst:
+        down(c); up(c)
+    down(e.KEY_A); ui.write(e.EV_KEY, e.KEY_A, 2); ui.syn(); up(e.KEY_A)  # auto-repeat
+    time.sleep(0.5)
+    codes = emitted_codes()
+    missing = [c for c in burst if c not in codes]
+    if missing:
+        fail(f"fast-typing burst dropped keys {missing}; got {emitted}")
+    print("PASS: fast-typing burst in app — all keys re-emitted, none dropped")
+
+    # --- Test 17: console passthrough — unbound keys + Esc re-emit; caps-tap exits ---
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)   # sticky desktop
+    tap(e.KEY_C, hold=0.03); time.sleep(0.1)          # c -> submap console (passthrough)
+    emitted.clear()
+    tap(e.KEY_A, hold=0.03); time.sleep(0.1)          # unbound in passthrough -> re-emitted
+    if e.KEY_A not in emitted_codes():
+        fail("console is passthrough: unbound 'a' must re-emit, not be swallowed")
+    emitted.clear()
+    tap(e.KEY_ESC, hold=0.03); time.sleep(0.1)        # Esc must pass through (console not catchall)
+    if e.KEY_ESC not in emitted_codes():
+        fail("console is passthrough: Esc must pass through (not consumed as an exit)")
+    emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)   # caps-tap exits console -> app
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("caps-tap must exit console back to app (typing resumes)")
+    print("PASS: console passthrough — unbound + Esc re-emit; caps-tap exits")
+
+    # --- Test 19: context-aware Super→Ctrl — terminal vs GUI (from window class) ---
+    # In a GUI app the macOS-Command remap applies: Super+C → Ctrl+C.
+    set_active_window("firefox"); time.sleep(0.3)
+    emitted.clear()
+    down(e.KEY_LEFTMETA); tap(e.KEY_C, hold=0.03); up(e.KEY_LEFTMETA); time.sleep(0.3)
+    codes = emitted_codes()
+    if e.KEY_LEFTCTRL not in codes or e.KEY_C not in codes:
+        fail(f"Super+C in a GUI app must emit Ctrl+C, got {emitted}")
+    if e.KEY_LEFTSHIFT in codes:
+        fail(f"Super+C in a GUI app must NOT add Shift, got {emitted}")
+    # Focus a terminal (kitty ∈ terminalClasses): Super+C must become Ctrl+Shift+C,
+    # never bare Ctrl+C — which (POSIX termios) would SIGINT the foreground job.
+    set_active_window("kitty"); time.sleep(0.3)
+    emitted.clear()
+    down(e.KEY_LEFTMETA); tap(e.KEY_C, hold=0.03); up(e.KEY_LEFTMETA); time.sleep(0.3)
+    codes = emitted_codes()
+    if not (e.KEY_LEFTCTRL in codes and e.KEY_LEFTSHIFT in codes and e.KEY_C in codes):
+        fail(f"Super+C in a terminal must emit Ctrl+Shift+C, got {emitted}")
+    print("PASS: context-aware Super→Ctrl — GUI=Ctrl+C, terminal=Ctrl+Shift+C")
+    set_active_window("firefox"); time.sleep(0.2)  # restore non-terminal for later tests
+
+    # --- Test 20: mode-visibility surface — entering a mode paints the border ---
+    set_active_window("firefox"); time.sleep(0.2)
+    received.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.2)   # tap → sticky desktop (coloured)
+    if "keyword general:col.active_border rgb(89b4fa)" not in " ".join(received):
+        fail(f"entering desktop must paint the active-window border, got {received}")
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)   # exit back to app
+    print("PASS: mode-visibility surface — entering desktop paints the border")
+
+    # --- Test 18: no-compositor tolerance + self-heal re-discovery after restart ---
+    # The headline "typing works with no compositor; re-attaches when one appears"
+    # — the stale-socket "keybindings stop after Hyprland restarts" regression.
+    srv1.close()                                   # compositor 'crash'
+    try:
+        os.unlink(SOCK)
+    except OSError:
+        pass
+    time.sleep(0.3)
+    # A dispatch into the now-dead socket must be dropped (no crash) + clear the
+    # cached handle; typing (re-emit) must keep working with no compositor.
+    emitted.clear()
+    down(e.KEY_CAPSLOCK); time.sleep(0.03); tap(e.KEY_H, hold=0.03); up(e.KEY_CAPSLOCK)
+    time.sleep(0.3)
+    if proc.poll() is not None:
+        fail("engine crashed when the compositor socket went away")
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("typing must still work with no compositor (re-emit is compositor-agnostic)")
+    # Compositor 'restarts' at a NEW instance dir; the engine must re-discover it
+    # on the next dispatch (lazy, self-healing — no service restart).
+    SOCKDIR2 = XDG + "/hypr/testsig2"
+    SOCK2 = SOCKDIR2 + "/.socket.sock"
+    os.makedirs(SOCKDIR2, exist_ok=True)
+    _srv2, received2 = make_mock(SOCK2)
+    time.sleep(0.3)
+    received2.clear()
+    down(e.KEY_CAPSLOCK); time.sleep(0.03); tap(e.KEY_H, hold=0.03); up(e.KEY_CAPSLOCK)
+    time.sleep(0.6)
+    if "dispatch movefocus l" not in " ".join(received2):
+        fail(f"engine must re-discover the restarted compositor, got {received2}")
+    print("PASS: no-compositor tolerated + self-heal re-discovery after restart")
+
     # --- Test 4: single-instance guard — a 2nd engine refuses, never double-grabs ---
     # Two engines grabbing the same keyboards at once collide and drop keystrokes
     # (the "can't type the first letter" failure after an overlapping restart).
@@ -230,6 +553,7 @@ pkgs.testers.nixosTest {
 
   nodes.machine = _: {
     environment.etc."vogix-test-schema.json".text = testSchema;
+    environment.etc."vogix-real-defaults.json".text = realDefaultsJson;
     # Reference the flake's vogix build directly (the `pkgs` in scope here is the
     # outer test pkgs, which carries no vogix overlay; an overlay would only land
     # on the machine's own pkgs arg). pyenv/evtest come from the plain pkgs.
@@ -249,6 +573,10 @@ pkgs.testers.nixosTest {
     machine.wait_for_unit("multi-user.target")
     machine.succeed("modprobe uinput || true")
     machine.wait_until_succeeds("test -e /dev/uinput")
+
+    # The shipped defaults.nix schema must load and every binding must parse
+    # (an unknown key would otherwise be silently dropped by the router).
+    print(machine.succeed("vogix input check --config /etc/vogix-real-defaults.json"))
 
     print(machine.succeed("${pyenv}/bin/python3 ${driver}"))
   '';

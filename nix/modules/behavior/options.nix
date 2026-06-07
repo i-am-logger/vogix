@@ -70,53 +70,30 @@ let
     };
   };
 
-  # Kanata layer type
+  # Dual-role layer type (engine-native): a trigger key that activates a mode.
   layerType = types.submodule {
     options = {
-      toggle = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = "Key that toggles this layer on/off";
-      };
       hold = mkOption {
         type = types.nullOr types.str;
         default = null;
-        description = "Key that activates this layer while held";
-      };
-      tapAction = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = "What the toggle/hold key does on tap";
-      };
-      holdAction = mkOption {
-        type = types.nullOr types.str;
-        default = null;
         description = ''
-          What the hold key emits on hold — a single key, not a layer.
-          When set alongside tapAction (and no layer bindings), the source key
-          becomes a dual-role tap-hold remap: tap → tapAction, hold → holdAction.
-          Used for caps = tap (toggle submap) / hold (spring submap).
+          The dual-role trigger key (e.g. "capslock"). Tapping it enters the
+          target mode sticky; holding it enters the mode momentary.
         '';
       };
-      holdReleaseAction = mkOption {
+      entersMode = mkOption {
         type = types.nullOr types.str;
         default = null;
         description = ''
-          Key tapped (via a kanata fake key) when the HOLD is RELEASED. Used to
-          exit a Hyprland submap on caps-release via a reliable press-`bind`
-          instead of `bindr` — Hyprland's release-binds don't fire when the
-          press entered the submap (the momentary mode never exited otherwise).
+          The mode this trigger activates. The vogix input engine reads this
+          directly to drive its mode statechart — tap = sticky (toggle), hold =
+          momentary (left on release). No synthetic keysyms are involved.
         '';
       };
       tapHoldMs = mkOption {
         type = types.int;
-        default = 200;
-        description = "Tap-hold threshold in milliseconds";
-      };
-      bindings = mkOption {
-        type = types.attrsOf types.str;
-        default = { };
-        description = "Key remappings in this layer (source = target)";
+        default = 250;
+        description = "Tap↔hold threshold in milliseconds (tap = sticky, hold = momentary)";
       };
     };
   };
@@ -168,7 +145,19 @@ in
               layers = mkOption {
                 type = types.attrsOf layerType;
                 default = { };
-                description = "System-wide key layers via kanata (evdev level)";
+                description = "Dual-role trigger layers (e.g. CapsLock → desktop), driven by the vogix input engine at the evdev level";
+              };
+
+              terminalClasses = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = ''
+                  Hyprland window classes treated as terminals. When one is
+                  focused, the Super→Ctrl remap is context-adjusted: copy/paste
+                  retarget to Ctrl+Shift+C/V and the other remaps are suppressed,
+                  so the macOS-style Super+C can't fire Ctrl+C = SIGINT into the
+                  foreground job. Real Ctrl+C (no Super) still interrupts.
+                '';
               };
             };
           };
@@ -209,48 +198,12 @@ in
           };
         };
 
-        # ── Input engine selection ──
-        # Two implementations of the keystroke/mode-switch pipeline can be
-        # selected from. They are mutually exclusive — running both means two
-        # processes fight for evdev grabs and Hyprland submap state.
-        #
-        # - "kanata" (default, back-compat): the previous setup. `services.kanata`
-        #   handles tap-hold remapping at the evdev layer; Hyprland's submap
-        #   binds handle mode-switch keys. The split between the two systems is
-        #   what produced the recurring "stuck in a mode" bug.
-        # - "vogix": the ontology-driven `vogix input run` engine. One process
-        #   grabs evdev, runs the praxis-validated mode statechart in-process,
-        #   re-emits normal keys via uinput, and dispatches WM actions to the
-        #   Hyprland control socket. Kanata + the Hyprland submap binds are
-        #   omitted entirely under this engine.
-        inputEngine = mkOption {
-          type = types.enum [ "kanata" "vogix" ];
-          default = "kanata";
-          description = ''
-            Which input subsystem activates. "kanata" (default) keeps the
-            legacy kanata + Hyprland-submaps split. "vogix" is the
-            ontology-driven daemon (`vogix input run`); its proven-by-axiom
-            mode graph runs in one process and "stuck in a mode" is
-            unrepresentable. The vogix engine stays opt-in until it is
-            proven end-to-end in the NixOS VM test (uinput keyboard → engine
-            → Hyprland) — running it unproven on a host can take over the
-            keyboard at boot before the compositor is up.
-          '';
-        };
-
         # ── Internal generated outputs ──
         generatedHyprland = mkOption {
           type = types.attrsOf types.anything;
           internal = true;
           default = { };
           description = "Generated Hyprland config";
-        };
-
-        generatedKanata = mkOption {
-          type = types.nullOr types.str;
-          internal = true;
-          default = null;
-          description = "Generated kanata config";
         };
       };
     };

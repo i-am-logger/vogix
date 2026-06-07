@@ -32,7 +32,6 @@ let
   fullConfig = kbModule.mkGeneratorConfig defaults;
 
   hyprConfig = kbModule.mkHyprlandConfig defaults;
-  kanataConfig = kbModule.mkKanataConfig defaults;
   helpScripts = kbModule.mkHelpScripts defaults;
 
   # ── Tests ──
@@ -84,6 +83,13 @@ let
     (check "defaults._superCtrlRemaps has copy"
       (defaults._superCtrlRemaps ? copy))
 
+    (check "defaults.keybindings has terminalClasses (context-aware remap)"
+      ((defaults.keybindings.terminalClasses or [ ]) != [ ]))
+
+    (assertContains "rendered schema JSON carries terminalClasses"
+      "terminalClasses"
+      (kbModule.mkSchemaJSON defaults))
+
     (check "defaults.keybindings.mouse has moveWindow"
       (defaults.keybindings.mouse ? moveWindow))
 
@@ -124,10 +130,18 @@ let
     (check "normal mode has >20 bindings"
       (builtins.length hyprConfig.settings.bind > 20))
 
-    # Single WM submap (desktop). No arrange/theme submaps.
-    (assertContains "extraConfig has desktop submap"
-      "submap = desktop"
-      hyprConfig.extraConfig)
+    # The vogix input engine owns navigation modes — the Hyprland generator emits
+    # NO desktop/move/resize submaps; those modes live in the engine (input.json,
+    # proven end-to-end by nix/vm/tests/input-engine.nix). Only the passthrough
+    # console submap and the plain root binds (the engine-down fallback) survive.
+    (check "extraConfig has no desktop submap (engine-owned)"
+      (!(lib.hasInfix "submap = desktop" hyprConfig.extraConfig)))
+
+    (check "extraConfig has no move submap (engine-owned)"
+      (!(lib.hasInfix "submap = move" hyprConfig.extraConfig)))
+
+    (check "extraConfig has no resize submap (engine-owned)"
+      (!(lib.hasInfix "submap = resize" hyprConfig.extraConfig)))
 
     (check "extraConfig has no arrange submap"
       (!(lib.hasInfix "submap = arrange" hyprConfig.extraConfig)))
@@ -135,56 +149,14 @@ let
     (check "extraConfig has no theme submap"
       (!(lib.hasInfix "submap = theme" hyprConfig.extraConfig)))
 
-    # Escape exits to app via the NATIVE submap dispatcher (synchronous).
-    (assertContains "desktop escape exits natively to reset"
-      ", escape, submap, reset"
+    # The console passthrough submap DOES survive (entered by its own exec).
+    (assertContains "extraConfig keeps the console passthrough submap"
+      "submap = console"
       hyprConfig.extraConfig)
 
-    # Desktop: arrows/hjkl = focus; m/r enter the move/resize sub-modes.
-    (assertContains "desktop focus left (h, no modifier)"
-      ", h, movefocus, l"
-      hyprConfig.extraConfig)
-
-    (assertContains "desktop: m enters move sub-mode (native submap)"
-      ", m, submap, move"
-      hyprConfig.extraConfig)
-
-    (assertContains "desktop: r enters resize sub-mode (native submap)"
-      ", r, submap, resize"
-      hyprConfig.extraConfig)
-
-    (assertContains "desktop send-and-follow (Shift+3)"
-      "SHIFT, 3, movetoworkspace, 3"
-      hyprConfig.extraConfig)
-
-    (assertContains "desktop has Tab = togglesplit"
-      "tab, layoutmsg, togglesplit"
-      hyprConfig.extraConfig)
-
-    # move/resize sub-modes do the actual window ops on bare arrows/hjkl.
-    (assertContains "move sub-mode: h moves window left"
-      ", h, movewindow, l"
-      hyprConfig.extraConfig)
-
-    (assertContains "resize sub-mode: l resizes wider"
-      ", l, resizeactive, 40 0"
-      hyprConfig.extraConfig)
-
-    # === Kanata generator ===
-    (check "kanata config is not null"
-      (kanataConfig != null))
-
-    (assertContains "kanata has defsrc"
-      "defsrc"
-      kanataConfig)
-
-    (assertContains "kanata has deflayer default"
-      "deflayer default"
-      kanataConfig)
-
-    (assertContains "kanata caps tap-hold present"
-      "tap-hold-press"
-      kanataConfig)
+    # No submap-entry binds leak into the root config — the engine owns mode entry.
+    (check "no submap-entry binds leak into normal binds"
+      (!(builtins.any (b: lib.hasInfix "submap" b) hyprConfig.settings.bind)))
 
     # === Help scripts ===
     (check "help scripts generated for desktop"
@@ -233,95 +205,32 @@ let
     (check "desktop mode enter is null (entered via CapsLock)"
       (defaults.modes.desktop.enter == null))
 
-    # === CapsLock dual-role (click = toggle, hold = momentary) ===
-    (check "CapsLock click sends F24 (toggle submap)"
-      (defaults.keybindings.layers.desktopToggle.tapAction == "f24"))
+    # === CapsLock dual-role (engine-native: tap = sticky, hold = momentary) ===
+    (assertEq "CapsLock layer enters the desktop mode"
+      "desktop"
+      defaults.keybindings.layers.desktopToggle.entersMode)
 
-    (check "CapsLock hold enters via F23 (press)"
-      (defaults.keybindings.layers.desktopToggle.holdAction == "f23"))
+    (check "CapsLock layer trigger is capslock"
+      (defaults.keybindings.layers.desktopToggle.hold == "capslock"))
 
-    (check "CapsLock hold-RELEASE exits via F22 (separate press, not bindr)"
-      (defaults.keybindings.layers.desktopToggle.holdReleaseAction == "f22"))
-
-    (check "app mode has F24 toggle entry"
-      (defaults.modes.app.bindings ? enterDesktopToggle))
-
-    (check "app mode has F23 hold entry"
-      (defaults.modes.app.bindings ? enterDesktopHold))
-
-    (check "desktop mode has F24 toggle exit"
-      (defaults.modes.desktop.bindings ? exitDesktopToggle))
-
-    # Entry uses the NATIVE submap dispatcher (synchronous) — both the hold
-    # (F23) and click (F24) paths.
-    (assertContains "hyprland app: F23 (hold) enters desktop natively"
-      "F23, submap, desktop"
-      (lib.concatStringsSep "\n" hyprConfig.settings.bind))
-
-    (assertContains "hyprland app: F24 (click) enters desktop natively"
-      "F24, submap, desktop"
-      (lib.concatStringsSep "\n" hyprConfig.settings.bind))
-
-    # ── THE CRITICAL INVARIANT: hold-release exit is a press-`bind`, NOT bindr ──
-    # Hyprland's `bindr` (release-bind) does NOT fire when the key's press entered
-    # the submap (proven via evtest: F23-up fired but the submap never reset). So
-    # kanata taps a SEPARATE exit key (F22) on release and Hyprland exits with a
-    # normal press-`bind`. This is the fix for "it stays in the mode".
-    (assertContains "submap exits on F22 PRESS (reliable)"
-      "bind = , F22, submap, reset"
-      hyprConfig.extraConfig)
+    # The engine owns mode switching — no synthetic F22/F23/F24 keysyms and no
+    # Hyprland submap-entry/exit binds for it (tap/hold detection + the praxis
+    # statechart are proven in nix/vm/tests/input-engine.nix).
+    (check "no F23/F24 submap-entry binds in the Hyprland root config"
+      (!(lib.hasInfix "F23, submap" (lib.concatStringsSep "\n" hyprConfig.settings.bind))
+        && !(lib.hasInfix "F24, submap" (lib.concatStringsSep "\n" hyprConfig.settings.bind))))
 
     (check "NO bindr anywhere — release-binds across submaps are unreliable"
       (!(lib.hasInfix "bindr" hyprConfig.extraConfig)))
 
-    # kanata must emit the F22 exit key on hold-release (via on-release fakekey).
-    (assertContains "kanata taps exit key on hold-release"
-      "on-release-fakekey"
-      kanataConfig)
-
-    (assertContains "kanata defines the submap-exit fake key as F22"
-      "deffakekeys vogixsubmapexit f22"
-      kanataConfig)
-
-    # ── PROPERTY: submap transitions are native/synchronous, never exec ──
-    # The momentary-mode invariant. A transition via `exec hyprctl dispatch
-    # submap` is async (~6-7ms) and the next key leaks to the app → "fast mode
-    # doesn't work". Every line that binds a transition key (F23 / F24 / escape)
-    # MUST use ", submap, " and MUST NOT contain exec.
-    (
-      let
-        allBinds = hyprConfig.settings.bind
-          ++ (lib.splitString "\n" hyprConfig.extraConfig);
-        transitionLines = builtins.filter
-          (l: lib.hasInfix ", F23, " l
-            || lib.hasInfix ", F24, " l
-            || lib.hasInfix ", F22, " l
-            || lib.hasInfix ", escape, " l)
-          allBinds;
-        native = builtins.all
-          (l: lib.hasInfix ", submap, " l && !(lib.hasInfix "exec" l))
-          transitionLines;
-      in
-      check "PROPERTY: all submap transitions are native (no async exec on F23/F24/escape)"
-        (transitionLines != [ ] && native)
-    )
-
-    # === exitAfter: launch actions auto-return to app ===
-    # (exitAfter is OFF the momentary critical path — async exec reset is fine.)
+    # === exitAfter: one-shot actions return to app ===
+    # Data-level here; the engine applies it as ExitToRoot after the dispatch,
+    # proven end-to-end by the input-engine VM test.
     (check "desktop terminal launch has exitAfter"
       (defaults.modes.desktop.bindings.openTerminal.exitAfter or false))
 
-    (assertContains "desktop terminal resets submap then launches"
-      "dispatch submap reset ; $TERMINAL"
-      hyprConfig.extraConfig)
-
     (check "desktop close window has exitAfter"
       (defaults.modes.desktop.bindings.closeWindow.exitAfter or false))
-
-    # Non-exec exitAfter (close): dispatch the action, then reset to app.
-    (assertContains "desktop close dispatches killactive then resets"
-      "hyprctl dispatch killactive ; hyprctl dispatch submap reset"
-      hyprConfig.extraConfig)
 
     # Navigation / sub-mode entries stay in desktop (NOT exitAfter) so they chain.
     (check "desktop focus does NOT exitAfter (chainable)"
@@ -348,30 +257,11 @@ let
     (check "resize sub-mode has no exitAfter bindings"
       (builtins.all (b: !(b.exitAfter or false)) (builtins.attrValues defaults.modes.resize.bindings)))
 
-    # === Kanata Super→Ctrl ===
-    (assertContains "kanata has defoverrides"
-      "defoverrides"
-      kanataConfig)
-
-    (assertContains "kanata remaps Super+C to Ctrl+C"
-      "(lmet c) (lctl c)"
-      kanataConfig)
-
-    # kanata caps is dual-role: tap-hold-press routing click=f24 / hold=f23
-    (assertContains "kanata caps uses tap-hold-press"
-      "tap-hold-press"
-      kanataConfig)
-
-    (assertContains "kanata caps click routes to f24"
-      "f24"
-      kanataConfig)
-
-    (assertContains "kanata caps hold routes to f23"
-      "f23"
-      kanataConfig)
-
-    (check "kanata caps does NOT use Scroll_Lock (lock-key bindr unreliable)"
-      (!(lib.hasInfix "slck" kanataConfig)))
+    # === Super→Ctrl remap (engine-native data; applied at evdev by the engine,
+    # proven by the input-engine VM test) ===
+    (check "_superCtrlRemaps maps Super+C → Ctrl+C"
+      (defaults._superCtrlRemaps.copy.from == "super + c"
+        && defaults._superCtrlRemaps.copy.to == "ctrl + c"))
 
     # === Help in every mode ===
     (check "desktop mode has help binding"
@@ -527,23 +417,6 @@ let
         (from != null && to != null && from.mod == "super" && to.mod == "ctrl")
     )
     defaults._superCtrlRemaps)
-
-  # ── P9: Kanata layer bindings all map to valid keys ──
-  # No empty or null values in layer bindings
-  ++ (lib.concatMap
-    (layerName:
-      let
-        layer = defaults.keybindings.layers.${layerName};
-        bindings = layer.bindings or { };
-      in
-      mapAttrsToList
-        (src: dst:
-          check "P9: kanata layer '${layerName}' key '${src}' maps to non-empty value"
-            (dst != "" && dst != null)
-        )
-        bindings
-    )
-    (builtins.attrNames defaults.keybindings.layers))
 
   # ── P10: Mode graph hierarchy is consistent ──
   # Every non-root mode's parent exists in the graph

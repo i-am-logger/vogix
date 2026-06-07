@@ -120,6 +120,44 @@ impl Hypr {
         self.send(&action_to_command(action))
     }
 
+    /// Set a Hyprland config keyword at runtime (e.g. a per-mode border colour),
+    /// as `hyprctl keyword <key> <value>` does but over the socket directly.
+    pub fn set_keyword(&self, key: &str, value: &str) -> std::io::Result<()> {
+        self.send(&format!("keyword {key} {value}"))
+    }
+
+    /// Path of this instance's EVENT socket (`.socket2.sock`), derived from the
+    /// request socket. Hyprland streams newline-delimited `EVENT>>DATA` here —
+    /// we read `activewindow>>class,title` to track the focused window's class
+    /// for the context-aware Super→Ctrl remap.
+    pub fn event_socket_path(&self) -> PathBuf {
+        self.socket.with_file_name(".socket2.sock")
+    }
+
+    /// Connect to the event stream (non-blocking) for active-window tracking.
+    pub fn connect_events(&self) -> std::io::Result<UnixStream> {
+        let stream = UnixStream::connect(self.event_socket_path())?;
+        stream.set_nonblocking(true)?;
+        Ok(stream)
+    }
+
+    /// Query the currently-focused window's class via `j/activewindow` (used to
+    /// SEED the class on startup; the event stream only delivers later changes).
+    /// `None` when nothing is focused or the query fails.
+    pub fn query_active_class(&self) -> Option<String> {
+        let mut stream = UnixStream::connect(&self.socket).ok()?;
+        stream
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .ok()?;
+        stream
+            .set_write_timeout(Some(Duration::from_millis(200)))
+            .ok()?;
+        stream.write_all(b"j/activewindow").ok()?;
+        let mut buf = String::new();
+        let _ = stream.read_to_string(&mut buf);
+        parse_active_class_json(&buf)
+    }
+
     /// Write a raw command to the control socket and check the reply.
     fn send(&self, command: &str) -> std::io::Result<()> {
         let mut stream = UnixStream::connect(&self.socket)?;
@@ -146,6 +184,28 @@ impl Hypr {
         }
         Ok(())
     }
+}
+
+/// Extract the window class from a Hyprland `activewindow>>class,title` event
+/// line. The title may itself contain commas, so the class is the first field
+/// after `>>`. Returns `None` for non-activewindow lines or an empty class
+/// (e.g. `activewindow>>,` when focus is lost → fail-safe to non-terminal).
+pub fn parse_activewindow_event(line: &str) -> Option<String> {
+    let rest = line
+        .trim_end_matches(['\n', '\r'])
+        .strip_prefix("activewindow>>")?;
+    let class = rest.split(',').next().unwrap_or("").trim();
+    (!class.is_empty()).then(|| class.to_string())
+}
+
+/// Extract `"class"` from a `j/activewindow` JSON reply with a minimal field
+/// scan (no serde dependency here). An empty reply (`{}` / no focus) → None.
+fn parse_active_class_json(json: &str) -> Option<String> {
+    let key = "\"class\":";
+    let after = json[json.find(key)? + key.len()..].trim_start();
+    let after = after.strip_prefix('"')?;
+    let class = &after[..after.find('"')?];
+    (!class.is_empty()).then(|| class.to_string())
 }
 
 #[cfg(test)]
@@ -182,6 +242,33 @@ mod tests {
             action_to_command("  movewindow ,  l "),
             "dispatch movewindow l"
         );
+    }
+
+    #[test]
+    fn activewindow_event_extracts_class() {
+        // Class is the first field; the title may contain commas.
+        assert_eq!(
+            parse_activewindow_event("activewindow>>kitty,~/work, notes"),
+            Some("kitty".into())
+        );
+        assert_eq!(
+            parse_activewindow_event("activewindow>>firefox,Mozilla\n"),
+            Some("firefox".into())
+        );
+        // Focus lost (empty class) → None → fail-safe to non-terminal.
+        assert_eq!(parse_activewindow_event("activewindow>>,"), None);
+        // Unrelated events are ignored.
+        assert_eq!(parse_activewindow_event("workspace>>2"), None);
+    }
+
+    #[test]
+    fn active_class_json_is_scanned() {
+        assert_eq!(
+            parse_active_class_json(r#"{"address":"0x5","class":"kitty","title":"x"}"#),
+            Some("kitty".into())
+        );
+        assert_eq!(parse_active_class_json("{}"), None); // no focus
+        assert_eq!(parse_active_class_json(r#"{"class":""}"#), None); // empty class
     }
 
     // Regression: a Hyprland crash/restart leaves the dead instance's

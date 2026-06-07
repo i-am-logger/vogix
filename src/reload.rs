@@ -298,9 +298,8 @@ mod tests {
 
     #[test]
     fn test_reload_dispatcher_creation() {
+        // Constructing the dispatcher must not panic.
         let _dispatcher = ReloadDispatcher::new();
-        // Verify it can be created
-        assert!(true);
     }
 
     #[test]
@@ -316,13 +315,10 @@ mod tests {
             theme_file_path: None,
         };
 
-        // Test that touch method doesn't crash
-        match dispatcher.reload_app("test", &metadata) {
-            Ok(msg) => assert!(msg.contains("touched")),
-            Err(_) => {
-                // Touch might fail if /tmp doesn't exist in test environment, that's OK
-                assert!(true);
-            }
+        // Touch may fail if /tmp isn't writable in the test env — that's OK; we
+        // only assert it doesn't crash and reports a touch on success.
+        if let Ok(msg) = dispatcher.reload_app("test", &metadata) {
+            assert!(msg.contains("touched"));
         }
     }
 

@@ -6,8 +6,11 @@
 #
 # Philosophy:
 #   - App mode (default): Super = Command (macOS-like), keys → apps
-#   - Desktop mode: the one WM mode. Hold CapsLock to activate, release to
-#     leave (pure spring — no sticky/toggle). Esc is a never-needed safety net.
+#   - Desktop mode: the one WM mode, dual-role CapsLock. HOLD CapsLock = momentary
+#     (acts while held, reverts on release — Raskin's quasimode). TAP CapsLock =
+#     sticky/locked (stays until you tap again; a forgotten sticky self-heals via
+#     idle auto-revert). The active mode is shown by the window border colour, and
+#     Esc is the always-available safety-net exit.
 #   - Console: F12 tmux overlay (infra, passthrough).
 #
 # Desktop keys — the modifier on a direction picks the verb:
@@ -81,6 +84,20 @@ in
   keybindings = {
     modKey = "super";
 
+    # Window classes treated as terminals for the context-aware Super→Ctrl remap
+    # (copy/paste → Ctrl+Shift+C/V; other remaps suppressed). Loaded as data —
+    # override per host. POSIX termios: bare Ctrl+C in a terminal = SIGINT.
+    terminalClasses = [
+      "kitty"
+      "org.wezfurlong.wezterm"
+      "wezterm"
+      "vogix-console"
+      "Alacritty"
+      "foot"
+      "org.gnome.Console"
+      "xterm-256color"
+    ];
+
     mouse = {
       moveWindow = {
         button = "mouse:272";
@@ -97,43 +114,24 @@ in
     layers = {
       # ── CapsLock interaction model (the single source of truth) ──
       #
-      #   caps + a WM key   = MOMENTARY: do the action, return to app when you
-      #                       let go of caps. (caps+→ nudge, caps+q close, …)
+      #   caps + a WM key    = MOMENTARY: do the action, return to app when you
+      #                        let go of caps. (caps+→ nudge, caps+q close, …)
       #   caps clicked alone = STICKY: stay in desktop for several actions;
-      #                       click caps again to leave.
-      #   Esc                = safety net only; never required.
+      #                        click caps again to leave.
+      #   Esc                = safety net; always returns to app.
       #
-      # Kanata `(tap-hold-press 250 250 f24 (multi f23 (on-release-fakekey vogixsubmapexit tap)))`:
-      #   • caps + another key → HOLD → F23 down (enter) ; on caps RELEASE →
-      #     F22 tap (exit). Momentary: enter on press, exit on release.
-      #   • a LONE caps press < 250ms → TAP → F24 → toggle sticky on/off.
-      #
-      # CRITICAL — why exit is a SEPARATE keypress (F22), not the hold key's
-      # release: Hyprland's `bindr` (release-bind) does NOT fire when a key's
-      # PRESS entered a submap and its RELEASE happens inside that submap —
-      # Hyprland loses the press across the submap switch. Proven via evtest:
-      # F23-up fired on caps release but the submap only reset on a later click.
-      # So kanata emits an explicit F22 keypress on release, and Hyprland exits
-      # via a normal press-`bind` (reliable). F22/F23/F24 are internal keys —
-      # Hyprland's binds consume them, apps never see them.
-      #
-      # Hyprland (generated from app/desktop modes):
-      #   app:     bind = , F23, submap desktop  (hold press → enter)
-      #            bind = , F24, submap desktop  (click → sticky on)
-      #   submap:  bind = , F22, submap reset    (hold RELEASE → exit; press-bind)
-      #            bind = , F24, submap reset    (click → off)
-      #            bind = , escape, submap reset (safety net)
-      #
-      # Per-binding exit semantics live on each binding via `exitAfter`:
-      #   exitAfter=true  → return to app after the action (one-shot commands).
-      #   exitAfter=false → stay (chainable: focus/workspace/send/etc).
+      # The vogix input engine owns this directly in one process: a dual-role
+      # CapsLock detector (tap vs hold, threshold = tapHoldMs, "tap-hold-press"
+      # so caps+key is always momentary) drives the praxis mode statechart and
+      # dispatches WM actions over the Hyprland control socket. `entersMode` names
+      # the mode CapsLock activates — a tap enters it sticky, a hold enters it
+      # momentary (released on caps-up). No synthetic keysyms and no compositor
+      # submaps are involved. Per-binding exit semantics live on each binding via
+      # `exitAfter` (true = return to app after a one-shot; false = stay/chain).
       desktopToggle = {
         hold = "capslock";
-        tapAction = "f24"; # lone click → F24 (Hyprland toggles the submap)
-        holdAction = "f23"; # caps+key → F23 on press → ENTER submap (bind)
-        holdReleaseAction = "f22"; # caps release → F22 tap → EXIT submap (bind, not bindr)
-        tapHoldMs = 250; # lone press released within this = click; else hold
-        bindings = { };
+        entersMode = "desktop";
+        tapHoldMs = 250; # lone press released within this = tap (sticky); else hold
       };
     };
   };
@@ -217,10 +215,6 @@ in
         terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
         launcher = { key = "super + space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
 
-        # ── Mac-style function keys ──
-        desktopModeF3 = { key = "F3"; action = "submap, desktop"; description = "Desktop mode (Mission Control)"; };
-        launcherF4 = { key = "F4"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher (Launchpad)"; };
-
         # ── Audio ──
         volumeUp = { key = "XF86AudioRaiseVolume"; action = "exec, pamixer -i 5"; description = "Volume up"; };
         volumeDown = { key = "XF86AudioLowerVolume"; action = "exec, pamixer -d 5"; description = "Volume down"; };
@@ -250,12 +244,9 @@ in
         # ── System console (fullscreen tmux overlay, available everywhere) ──
         console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
 
-        # ── Desktop mode entry (dual-role CapsLock) ──
-        # kanata maps caps → click=F24 / hold=F23 (see desktopToggle).
-        #   click caps → F24 → toggle sticky desktop on (F24 again exits)
-        #   hold  caps → F23 → momentary desktop (release exits via bindr , F23)
-        enterDesktopToggle = { key = "F24"; action = "submap, desktop"; description = "Desktop mode (click CapsLock)"; };
-        enterDesktopHold = { key = "F23"; action = "submap, desktop"; description = "Desktop mode (hold CapsLock)"; };
+        # Desktop mode is entered by CapsLock itself — the engine reads
+        # `keybindings.layers.desktopToggle.entersMode` (tap = sticky, hold =
+        # momentary). No keysym-bridge entry binding is needed.
       };
     };
 
@@ -332,10 +323,8 @@ in
 
         help = { key = "slash"; action = "exec, vogix-modes-desktop"; description = "Show keybindings"; };
 
-        # Exits: click CapsLock (F24) toggles sticky off; releasing a HELD
-        # CapsLock fires the generated `bindr = , Scroll_Lock, submap reset`;
-        # Esc is also bound by the submap builder as a never-needed safety net.
-        exitDesktopToggle = { key = "F24"; action = "submap, reset"; description = "Back to app (click CapsLock)"; };
+        # Exits are owned by the engine: tap CapsLock toggles sticky off, releasing
+        # a held CapsLock leaves a momentary mode, and Esc is the safety-net exit.
       };
     };
 
@@ -355,7 +344,6 @@ in
         moveRightArrow = { key = "right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
 
         toResize = { key = "r"; action = "submap, resize"; description = "Switch to resize mode"; };
-        exitToggle = { key = "F24"; action = "submap, reset"; description = "Back to app (click CapsLock)"; };
         help = { key = "slash"; action = "exec, vogix-modes-move"; description = "Show keybindings"; };
       };
     };
@@ -376,7 +364,6 @@ in
         resizeRightArrow = { key = "right"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
 
         toMove = { key = "m"; action = "submap, move"; description = "Switch to move mode"; };
-        exitToggle = { key = "F24"; action = "submap, reset"; description = "Back to app (click CapsLock)"; };
         help = { key = "slash"; action = "exec, vogix-modes-resize"; description = "Show keybindings"; };
       };
     };

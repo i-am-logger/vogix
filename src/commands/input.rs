@@ -49,18 +49,26 @@ pub fn handle_input_check(config: Option<&str>) -> Result<()> {
     // re-checked here — praxis proves them over arbitrary graphs, so they hold
     // for any graph this loader produces; see the module docs.
     let graph_failures = graph.validate();
-    if graph_failures.is_empty() {
+    // Bindings that won't parse are silently dropped at router-build time, so
+    // surface them here too — a mistyped key is a real, invisible config bug.
+    let unparseable = schema.unparseable_bindings();
+    for f in &graph_failures {
+        println!("  graph axiom FAILED: {f}");
+    }
+    for u in &unparseable {
+        println!("  binding DROPPED (unparseable, won't work): {u}");
+    }
+    if graph_failures.is_empty() && unparseable.is_empty() {
         println!("  graph axioms: OK");
+        println!("  bindings: all parse");
         println!("  engine dynamics (no-stuck): proven upstream in praxis");
         println!("all input axioms hold");
         Ok(())
     } else {
-        for f in &graph_failures {
-            println!("  graph axiom FAILED: {f}");
-        }
         Err(VogixError::Config(format!(
-            "{} input graph axiom(s) failed",
-            graph_failures.len()
+            "{} input graph axiom(s) failed, {} binding(s) unparseable",
+            graph_failures.len(),
+            unparseable.len()
         )))
     }
 }
@@ -85,6 +93,12 @@ pub fn handle_input_run(config: Option<&str>) -> Result<()> {
             graph_failures.len(),
             graph_failures.join("; ")
         )));
+    }
+
+    // A binding that won't parse is dropped silently by the router; warn so it's
+    // visible in the journal rather than failing the whole keyboard over a typo.
+    for u in &schema.unparseable_bindings() {
+        log::warn!("vogix input: binding will be dropped (unparseable): {u}");
     }
 
     log::info!(

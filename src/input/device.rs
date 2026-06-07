@@ -21,7 +21,7 @@ use evdev::KeyCode;
 use pr4xis::engine::Engine;
 use pr4xis_domains::applied::hmi::input::engine::{ModeTransition, drive, new_input_engine};
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A side effect the I/O shell should perform.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +30,10 @@ pub enum Effect {
     Emit { code: u16, value: i32 },
     /// Run a Hyprland action string over the control socket.
     Dispatch(String),
-    /// The active mode changed (for visuals / logging).
+    /// Set a Hyprland keyword over the control socket (`keyword <key> <value>`),
+    /// e.g. a per-mode border colour — the mode-visibility surface.
+    Keyword { key: String, value: String },
+    /// The active mode changed (for visuals / logging / the waybar surface).
     ModeChanged(String),
 }
 
@@ -54,9 +57,24 @@ pub struct Router {
     catchall: HashMap<String, bool>,
     /// Super+code → target chord (e.g. Super+C → Ctrl+C).
     remaps: HashMap<u16, Chord>,
+    /// Window classes that are terminals — the remap is context-adjusted there.
+    terminal_classes: HashSet<String>,
+    /// The focused window's class (fed by the I/O shell from Hyprland's
+    /// active-window event stream); drives the terminal-aware remap policy.
+    active_class: Option<String>,
+    /// Per-mode border colours (active, inactive) for the visibility surface.
+    mode_colors: HashMap<String, (String, String)>,
+    /// Timestamp (ms) of the last input event — drives sticky-mode idle revert.
+    last_activity: u64,
     caps_target: Option<ModeId>,
     root: ModeId,
 }
+
+/// A STICKY (locked) mode auto-reverts to root after this much inactivity, so a
+/// forgotten sticky mode self-heals (the residual sticky mode-error safeguard;
+/// momentary/held modes are user-maintained and never idle-revert). A const
+/// default for now; could become schema data later.
+pub const DEFAULT_STICKY_IDLE_MS: u64 = 30_000;
 
 impl Router {
     /// Build a router from the loaded schema.
@@ -67,6 +85,9 @@ impl Router {
 
         let mut bindings = HashMap::new();
         let mut catchall = HashMap::new();
+        for (name, node) in &schema.mode_graph.modes {
+            catchall.insert(name.clone(), node.kind.as_deref() == Some("submap"));
+        }
         for (mode_name, mode_spec) in &schema.modes {
             let mut map = HashMap::new();
             for b in mode_spec.bindings.values() {
@@ -81,10 +102,22 @@ impl Router {
                     );
                 }
             }
+            // Esc safety-net: a mode's `exit` key always returns to root, so the
+            // user can never be stranded (Harel reachable-default; the engine's
+            // always-legal ExitToRoot). Synthesized ONLY for catchall (submap)
+            // modes — in normal/passthrough modes (app, console) the exit key
+            // must reach the focused application (Esc in vim/dialogs/tmux), so we
+            // never swallow it there. An explicit binding for the same key wins.
+            if *catchall.get(mode_name).unwrap_or(&false)
+                && let Some(chord) = mode_spec.exit.as_deref().and_then(parse_chord)
+            {
+                map.entry(chord).or_insert(Resolved {
+                    action: ActionKind::Submap("reset".to_string()),
+                    exit_after: false,
+                    repeat: false,
+                });
+            }
             bindings.insert(mode_name.clone(), map);
-        }
-        for (name, node) in &schema.mode_graph.modes {
-            catchall.insert(name.clone(), node.kind.as_deref() == Some("submap"));
         }
 
         let mut remaps = HashMap::new();
@@ -103,9 +136,58 @@ impl Router {
             bindings,
             catchall,
             remaps,
+            terminal_classes: schema.terminal_classes.iter().cloned().collect(),
+            active_class: None,
+            mode_colors: schema
+                .mode_colors
+                .iter()
+                .map(|(m, c)| (m.clone(), (c.active.clone(), c.inactive.clone())))
+                .collect(),
+            last_activity: 0,
             caps_target: schema.caps_target().map(ModeId::new),
             root,
         }
+    }
+
+    /// True when a STICKY (locked) mode is active — the only kind that idle-reverts.
+    fn sticky_active(&self) -> bool {
+        self.engine
+            .as_ref()
+            .expect("engine present")
+            .situation()
+            .sticky
+    }
+
+    /// When (in the event clock) a sticky mode should auto-revert if still idle.
+    /// `None` unless a sticky mode is active. The poll loop folds this into its
+    /// wake-up deadline.
+    pub fn idle_deadline(&self) -> Option<u64> {
+        self.sticky_active()
+            .then(|| self.last_activity + DEFAULT_STICKY_IDLE_MS)
+    }
+
+    /// Auto-revert a sticky mode to root once it has been idle past the
+    /// threshold (a forgotten sticky mode self-heals). No-op otherwise.
+    pub fn on_idle(&mut self, now: u64) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        if self.sticky_active() && now.saturating_sub(self.last_activity) >= DEFAULT_STICKY_IDLE_MS
+        {
+            self.apply_and_note(ModeTransition::ExitToRoot, &mut fx);
+        }
+        fx
+    }
+
+    /// Update the focused-window class (fed by the I/O shell from the Hyprland
+    /// active-window event stream). Drives the terminal-aware Super→Ctrl policy.
+    pub fn set_active_class(&mut self, class: Option<String>) {
+        self.active_class = class;
+    }
+
+    /// True when the focused window is a known terminal class.
+    fn active_is_terminal(&self) -> bool {
+        self.active_class
+            .as_ref()
+            .is_some_and(|c| self.terminal_classes.contains(c))
     }
 
     /// The current mode name.
@@ -143,7 +225,21 @@ impl Router {
         self.apply(action);
         let to = self.mode();
         if from != to {
-            fx.push(Effect::ModeChanged(to));
+            fx.push(Effect::ModeChanged(to.clone()));
+            // Mode-visibility surface: paint the active-window border for the new
+            // mode so the user can always SEE the current mode (the cure for mode
+            // error — Norman 1981). Colours are loaded data (theme-derived); a
+            // mode with no colour simply isn't painted.
+            if let Some((active, inactive)) = self.mode_colors.get(&to) {
+                fx.push(Effect::Keyword {
+                    key: "general:col.active_border".into(),
+                    value: active.clone(),
+                });
+                fx.push(Effect::Keyword {
+                    key: "general:col.inactive_border".into(),
+                    value: inactive.clone(),
+                });
+            }
         }
     }
 
@@ -160,6 +256,7 @@ impl Router {
     pub fn on_key(&mut self, code: u16, value: i32, now: u64) -> Vec<Effect> {
         let key = KeyCode(code);
         let mut fx = Vec::new();
+        self.last_activity = now; // any input resets the sticky-idle timer
 
         // CapsLock — the mode trigger; never emitted.
         if is_capslock(key) {
@@ -226,8 +323,28 @@ impl Router {
         if self.mods.sup && self.remaps.contains_key(&code) {
             if is_press {
                 let to = self.remaps[&code];
-                log::debug!("remap super+{:?} → {:?}", KeyCode(code), KeyCode(to.code));
-                self.emit_chord_tap(&to, &mut fx);
+                if self.active_is_terminal() {
+                    // In a terminal a bare Ctrl+C (VINTR under ISIG) sends SIGINT
+                    // to the foreground process group (POSIX termios) — the macOS
+                    // copy gesture would KILL the running job. So re-target
+                    // copy/paste to the universal terminal combo Ctrl+Shift+C/V,
+                    // and suppress every other remap so we never inject readline
+                    // control codes (Ctrl+A start-of-line, Ctrl+W kill-word, …).
+                    // Real Ctrl+C (no Super) still passes straight through as SIGINT.
+                    if let Some(shifted) = terminal_copy_paste_target(&to) {
+                        log::debug!(
+                            "remap (terminal) super+{:?} → Ctrl+Shift+{:?}",
+                            KeyCode(code),
+                            KeyCode(to.code)
+                        );
+                        self.emit_chord_tap(&shifted, &mut fx);
+                    } else {
+                        log::debug!("remap suppressed in terminal: super+{:?}", KeyCode(code));
+                    }
+                } else {
+                    log::debug!("remap super+{:?} → {:?}", KeyCode(code), KeyCode(to.code));
+                    self.emit_chord_tap(&to, &mut fx);
+                }
             }
             return fx; // swallow the original super-combo (incl. release/repeat)
         }
@@ -324,6 +441,91 @@ impl Router {
         });
         for m in mod_codes.iter().rev() {
             fx.push(Effect::Emit { code: *m, value: 0 });
+        }
+    }
+
+    /// Initialize tracked modifier state from the keys physically held at grab
+    /// time. The router starts with no modifiers held, so a Shift/Ctrl/Alt still
+    /// down across an engine (re)start would be lost — chords would mismatch
+    /// until the user re-pressed it. Only modifiers are synced; normal keys are
+    /// matched on their own subsequent down events.
+    pub fn sync_held_keys(&mut self, held: impl IntoIterator<Item = u16>) {
+        for code in held {
+            if let Some(m) = modifier_of(KeyCode(code)) {
+                self.mods.set(m, true);
+            }
+        }
+    }
+
+    /// Key-up effects releasing every modifier the router currently believes is
+    /// held — for a clean shutdown. The engine re-emits Shift/Ctrl/Alt as the
+    /// user holds them; if it exits (SIGTERM on `systemctl stop`/restart) while
+    /// one is down, the compositor is left with a stuck modifier that corrupts
+    /// every later keystroke (a lockout-class bug). Super is never emitted (it is
+    /// swallowed), so it needs no release.
+    pub fn release_held_modifiers(&self) -> Vec<Effect> {
+        [
+            (self.mods.shift, Modifier::Shift),
+            (self.mods.ctrl, Modifier::Ctrl),
+            (self.mods.alt, Modifier::Alt),
+        ]
+        .into_iter()
+        .filter(|(held, _)| *held)
+        .map(|(_, m)| Effect::Emit {
+            code: modifier_code(m).0,
+            value: 0,
+        })
+        .collect()
+    }
+}
+
+/// If a remap target is copy or paste (Ctrl+C / Ctrl+V), return its
+/// terminal-safe equivalent Ctrl+Shift+C / Ctrl+Shift+V (the universal Linux
+/// terminal copy/paste). Returns `None` for any other remap, which the caller
+/// then suppresses in a terminal. Emitted as keycodes, so no config-syntax
+/// case caveats apply.
+fn terminal_copy_paste_target(to: &Chord) -> Option<Chord> {
+    let ctrl_only = to.mods.ctrl && !to.mods.shift && !to.mods.alt && !to.mods.sup;
+    if ctrl_only && (to.code == KeyCode::KEY_C.0 || to.code == KeyCode::KEY_V.0) {
+        Some(Chord {
+            mods: Mods {
+                shift: true,
+                ..to.mods
+            },
+            code: to.code,
+        })
+    } else {
+        None
+    }
+}
+
+/// Drain pending bytes from the Hyprland event stream and update the router's
+/// active-window class from any `activewindow>>class,title` lines. Returns
+/// `true` if the stream closed/errored (the caller drops it and reconnects).
+/// The stream is non-blocking; `WouldBlock` just means we've drained it.
+fn read_window_events(
+    stream: &mut std::os::unix::net::UnixStream,
+    buf: &mut String,
+    router: &mut Router,
+) -> bool {
+    use std::io::Read;
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => return true, // EOF — the compositor closed the stream.
+            Ok(n) => {
+                buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                while let Some(nl) = buf.find('\n') {
+                    let line: String = buf.drain(..=nl).collect();
+                    if line.starts_with("activewindow>>") {
+                        // Some(class) → that window; None (empty class / focus
+                        // lost) → fail-safe to non-terminal.
+                        router.set_active_class(super::hypr::parse_activewindow_event(&line));
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return false,
+            Err(_) => return true, // real error → reconnect
         }
     }
 }
@@ -440,6 +642,13 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     // present and itself advertises KEY_A; grabbing it would make the engine
     // capture the very events it re-emits (a feedback loop that drops all
     // passthrough — caught by the VM test's "plain key re-emitted" assertion).
+    //
+    // LIMITATION (tracked): enumeration happens ONCE at startup. A keyboard
+    // hot-plugged after the engine starts is not grabbed, so its keys reach the
+    // compositor unremapped (no Super-swallow, no modes) until the service is
+    // restarted — a plausible "keybindings randomly don't work" cause. The
+    // proper fix is a udev/inotify monitor that grabs new keyboards as they
+    // appear; deferred.
     let mut devices: Vec<evdev::Device> = evdev::enumerate()
         .map(|(_, d)| d)
         .filter(|d| {
@@ -459,6 +668,29 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     }
 
     let mut router = Router::new(&schema);
+
+    // Resync modifier state: a Shift/Ctrl/Alt still physically held across an
+    // engine (re)start would otherwise be lost (the router starts empty),
+    // mismatching chords until the user re-presses it.
+    for d in &devices {
+        if let Ok(state) = d.get_key_state() {
+            router.sync_held_keys(state.iter().map(|k| k.0));
+        }
+    }
+
+    // Active-window tracking for the context-aware Super→Ctrl remap. The engine
+    // grabs evdev, which is blind to the focused window, so the window class
+    // (needed to know we're in a terminal) must come from the compositor:
+    // subscribe to Hyprland's event socket and SEED the current class. Best
+    // effort — with no compositor the remap fails safe (every window treated as
+    // non-terminal → plain Ctrl+C, the prior behaviour).
+    let mut win_events: Option<std::os::unix::net::UnixStream> = None;
+    let mut win_buf = String::new();
+    if let Some(h) = hypr.as_ref() {
+        router.set_active_class(h.query_active_class());
+        win_events = h.connect_events().ok();
+    }
+
     let start = Instant::now();
     let ms = move |start: &Instant| start.elapsed().as_millis() as u64;
 
@@ -468,6 +700,25 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         router.mode()
     );
 
+    // Clean-shutdown self-pipe. On SIGTERM/SIGINT (`systemctl --user stop` or a
+    // restart) we must release any modifier we re-emitted, or the compositor is
+    // left with a stuck Ctrl/Shift/Alt that corrupts every later keystroke (a
+    // lockout-class bug). ctrlc runs its handler on a dedicated thread; it writes
+    // one byte to this pipe so the poll loop below wakes and shuts down cleanly.
+    // Best-effort: if the pipe or handler can't be installed we skip graceful
+    // release rather than fail to start.
+    let mut shutdown_pipe = [0 as libc::c_int; 2];
+    let have_shutdown_pipe = unsafe { libc::pipe(shutdown_pipe.as_mut_ptr()) } == 0;
+    let (shutdown_r, shutdown_w) = (shutdown_pipe[0], shutdown_pipe[1]);
+    if have_shutdown_pipe {
+        let _ = ctrlc::set_handler(move || {
+            let byte = [1u8];
+            unsafe {
+                libc::write(shutdown_w, byte.as_ptr() as *const libc::c_void, 1);
+            }
+        });
+    }
+
     let mut pollfds: Vec<libc::pollfd> = devices
         .iter()
         .map(|d| libc::pollfd {
@@ -476,12 +727,38 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             revents: 0,
         })
         .collect();
+    // Two trailing slots after the device fds, always present (poll ignores a
+    // negative fd): the shutdown pipe, then the active-window event stream. Their
+    // fds may be -1 when absent and the event fd is swapped in on reconnect.
+    let shutdown_idx = devices.len();
+    let event_idx = devices.len() + 1;
+    pollfds.push(libc::pollfd {
+        fd: if have_shutdown_pipe { shutdown_r } else { -1 },
+        events: libc::POLLIN,
+        revents: 0,
+    });
+    pollfds.push(libc::pollfd {
+        fd: win_events.as_ref().map_or(-1, |s| s.as_raw_fd()),
+        events: libc::POLLIN,
+        revents: 0,
+    });
 
     loop {
-        let timeout = match router.deadline() {
-            Some(dl) => (dl.saturating_sub(ms(&start))) as i32,
-            None => -1,
-        };
+        // Wake at the EARLIEST of: the caps tap-hold deadline, the sticky-idle
+        // auto-revert deadline, and a 2s retry while the active-window stream is
+        // down. -1 = block indefinitely when nothing is pending.
+        let now_ms = ms(&start);
+        let mut timeout: i32 = -1;
+        for dl in [router.deadline(), router.idle_deadline()]
+            .into_iter()
+            .flatten()
+        {
+            let t = dl.saturating_sub(now_ms) as i32;
+            timeout = if timeout < 0 { t } else { timeout.min(t) };
+        }
+        if win_events.is_none() {
+            timeout = if timeout < 0 { 2000 } else { timeout.min(2000) };
+        }
         for p in &mut pollfds {
             p.revents = 0;
         }
@@ -494,8 +771,40 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             return Err(VogixError::Config(format!("poll: {err}")));
         }
         if n == 0 {
-            execute(&mut vdev, &mut hypr, router.on_timeout(ms(&start)));
+            // Lazily (re)connect the active-window stream when the compositor
+            // appeared or restarted, re-seeding the class.
+            if win_events.is_none() {
+                if hypr.is_none() {
+                    hypr = super::hypr::Hypr::discover();
+                }
+                if let Some(h) = hypr.as_ref()
+                    && let Ok(s) = h.connect_events()
+                {
+                    router.set_active_class(h.query_active_class());
+                    pollfds[event_idx].fd = s.as_raw_fd();
+                    win_events = Some(s);
+                    log::debug!("vogix input: active-window stream (re)connected");
+                }
+            }
+            let now = ms(&start);
+            execute(&mut vdev, &mut hypr, router.on_timeout(now));
+            execute(&mut vdev, &mut hypr, router.on_idle(now));
             continue;
+        }
+        // Shutdown signalled → release any modifier we hold, then exit cleanly.
+        if have_shutdown_pipe && pollfds[shutdown_idx].revents & libc::POLLIN != 0 {
+            log::info!("vogix input: shutdown signal received — releasing held modifiers");
+            execute(&mut vdev, &mut hypr, router.release_held_modifiers());
+            return Ok(());
+        }
+        // Active-window class updates from Hyprland's event stream (drives the
+        // terminal-aware Super→Ctrl remap). On close/error → drop + reconnect.
+        if win_events.is_some()
+            && pollfds[event_idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
+            && read_window_events(win_events.as_mut().unwrap(), &mut win_buf, &mut router)
+        {
+            win_events = None;
+            pollfds[event_idx].fd = -1;
         }
         for i in 0..devices.len() {
             if pollfds[i].revents & libc::POLLIN == 0 {
@@ -555,14 +864,45 @@ fn execute(
                     None => log::warn!("dispatch '{action}' dropped: no compositor socket"),
                 }
             }
-            Effect::ModeChanged(mode) => log::info!("mode → {mode}"),
+            Effect::Keyword { key, value } => {
+                // Mode-visibility surface (border colour). Same best-effort,
+                // self-healing path as Dispatch — a missing compositor just means
+                // the border isn't repainted; it never blocks the engine.
+                if hypr.is_none() {
+                    *hypr = super::hypr::Hypr::discover();
+                }
+                match hypr.as_ref() {
+                    Some(h) => match h.set_keyword(&key, &value) {
+                        Ok(()) => log::debug!("keyword ok: '{key} {value}'"),
+                        Err(e) => {
+                            log::warn!("keyword '{key} {value}' failed: {e}; will re-discover");
+                            *hypr = None;
+                        }
+                    },
+                    None => log::warn!("keyword '{key} {value}' dropped: no compositor socket"),
+                }
+            }
+            Effect::ModeChanged(mode) => {
+                // waybar surface: publish the active mode to a state file a custom
+                // waybar module reads (the module wiring is a follow-on).
+                publish_mode(&mode);
+                log::info!("mode → {mode}");
+            }
         }
     }
+}
+
+/// Publish the active mode to `~/.local/state/vogix/current-mode` for the waybar
+/// mode surface. Best-effort: a write failure never affects input handling.
+fn publish_mode(mode: &str) {
+    let path = crate::config::Config::state_dir().join("current-mode");
+    let _ = std::fs::write(path, mode);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     const SCHEMA: &str = r#"{
       "modeGraph": { "root": "app", "modes": {
@@ -575,21 +915,30 @@ mod tests {
       "keybindings": { "modKey": "super", "layers": {
         "desktopToggle": { "hold": "capslock", "tapHoldMs": 250, "holdAction": "f23" }
       }},
-      "superCtrlRemaps": { "copy": { "from": "super + c", "to": "ctrl + c" } },
+      "superCtrlRemaps": {
+        "copy": { "from": "super + c", "to": "ctrl + c" },
+        "paste": { "from": "super + v", "to": "ctrl + v" },
+        "selectAll": { "from": "super + a", "to": "ctrl + a" }
+      },
+      "terminalClasses": ["kitty"],
+      "modeColors": {
+        "desktop": { "active": "rgb(89b4fa)", "inactive": "rgb(313244)" }
+      },
       "modes": {
-        "app": { "bindings": {
+        "app": { "exit": "escape", "bindings": {
           "ws1": { "key": "super + 1", "action": "workspace, 1" },
+          "launcher": { "key": "super + space", "action": "exec, walker" },
           "enterDesktopHold": { "key": "F23", "action": "submap, desktop" }
         }},
-        "desktop": { "bindings": {
+        "desktop": { "exit": "escape", "bindings": {
           "focusLeft": { "key": "h", "action": "movefocus, l", "repeat": true },
           "enterMove": { "key": "m", "action": "submap, move" },
           "close": { "key": "q", "action": "killactive,", "exitAfter": true }
         }},
-        "move": { "bindings": {
+        "move": { "exit": "escape", "bindings": {
           "moveLeft": { "key": "h", "action": "movewindow, l", "repeat": true }
         }},
-        "resize": { "bindings": {} },
+        "resize": { "exit": "escape", "bindings": {} },
         "console": { "bindings": {} }
       }
     }"#;
@@ -606,6 +955,7 @@ mod tests {
     const C: u16 = KeyCode::KEY_C.0;
     const SUPER: u16 = KeyCode::KEY_LEFTMETA.0;
     const CTRL: u16 = KeyCode::KEY_LEFTCTRL.0;
+    const ESC: u16 = KeyCode::KEY_ESC.0;
 
     #[test]
     fn caps_hold_plus_h_focuses_then_release_returns_to_app() {
@@ -639,6 +989,52 @@ mod tests {
         let fx = r.on_key(CAPS, 0, 240);
         assert!(fx.contains(&Effect::ModeChanged("app".into())));
         assert_eq!(r.mode(), "app");
+    }
+
+    #[test]
+    fn sticky_mode_auto_reverts_after_idle() {
+        let mut r = router();
+        r.on_key(CAPS, 1, 0);
+        r.on_key(CAPS, 0, 50); // tap → sticky desktop
+        assert_eq!(r.mode(), "desktop");
+        // Not yet idle → no revert.
+        assert!(r.on_idle(1000).is_empty());
+        assert_eq!(r.mode(), "desktop");
+        // Past the idle threshold → auto-revert to app (forgotten sticky heals).
+        let fx = r.on_idle(50 + DEFAULT_STICKY_IDLE_MS + 1);
+        assert!(fx.contains(&Effect::ModeChanged("app".into())));
+        assert_eq!(r.mode(), "app");
+    }
+
+    #[test]
+    fn momentary_mode_does_not_idle_revert() {
+        // Only STICKY modes idle-revert; a held (momentary) mode is user-maintained.
+        let mut r = router();
+        r.on_key(CAPS, 1, 0);
+        r.on_key(H, 1, 10); // caps-hold+h → momentary desktop
+        assert_eq!(r.mode(), "desktop");
+        assert!(
+            r.on_idle(DEFAULT_STICKY_IDLE_MS + 100).is_empty(),
+            "a momentary mode must not idle-revert"
+        );
+        assert_eq!(r.mode(), "desktop");
+    }
+
+    #[test]
+    fn mode_change_paints_the_border_surface() {
+        // Entering a mode with a configured colour paints the active-window
+        // border (the mode-visibility surface — the cure for mode error).
+        let mut r = router();
+        r.on_key(CAPS, 1, 0);
+        let fx = r.on_key(CAPS, 0, 50); // tap → sticky desktop
+        assert!(fx.contains(&Effect::ModeChanged("desktop".into())));
+        assert!(
+            fx.contains(&Effect::Keyword {
+                key: "general:col.active_border".into(),
+                value: "rgb(89b4fa)".into()
+            }),
+            "entering desktop must paint the active border, got {fx:?}"
+        );
     }
 
     #[test]
@@ -703,11 +1099,102 @@ mod tests {
     }
 
     #[test]
+    fn super_c_in_terminal_is_ctrl_shift_c_not_sigint() {
+        // POSIX termios: a bare Ctrl+C in a terminal sends SIGINT. In a terminal
+        // the macOS copy gesture must become Ctrl+Shift+C, never bare Ctrl+C.
+        let mut r = router();
+        r.set_active_class(Some("kitty".into())); // a declared terminal class
+        assert!(r.on_key(SUPER, 1, 0).is_empty());
+        let shift = KeyCode::KEY_LEFTSHIFT.0;
+        assert_eq!(
+            r.on_key(C, 1, 10),
+            vec![
+                Effect::Emit {
+                    code: CTRL,
+                    value: 1
+                },
+                Effect::Emit {
+                    code: shift,
+                    value: 1
+                },
+                Effect::Emit { code: C, value: 1 },
+                Effect::Emit { code: C, value: 0 },
+                Effect::Emit {
+                    code: shift,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 0
+                },
+            ],
+            "Super+C in a terminal must be Ctrl+Shift+C, not bare Ctrl+C (SIGINT)"
+        );
+    }
+
+    #[test]
+    fn non_copy_remap_suppressed_in_terminal() {
+        // Super+A → Ctrl+A would be readline start-of-line; suppress it entirely
+        // in a terminal rather than inject a control code.
+        let mut r = router();
+        r.set_active_class(Some("kitty".into()));
+        r.on_key(SUPER, 1, 0);
+        let fx = r.on_key(A, 1, 10);
+        assert!(
+            fx.is_empty(),
+            "a non-copy/paste remap must be suppressed in a terminal, got {fx:?}"
+        );
+    }
+
+    #[test]
+    fn super_c_in_gui_app_is_plain_ctrl_c() {
+        // Outside a terminal (and on unknown/None class — fail-safe), the normal
+        // macOS-Command remap applies: Super+C → Ctrl+C.
+        let mut r = router();
+        r.set_active_class(Some("firefox".into())); // not a terminal class
+        r.on_key(SUPER, 1, 0);
+        assert_eq!(
+            r.on_key(C, 1, 10),
+            vec![
+                Effect::Emit {
+                    code: CTRL,
+                    value: 1
+                },
+                Effect::Emit { code: C, value: 1 },
+                Effect::Emit { code: C, value: 0 },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 0
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn super_number_dispatches_workspace_not_passthrough() {
         let mut r = router();
         r.on_key(SUPER, 1, 0);
         let fx = r.on_key(KeyCode::KEY_1.0, 1, 10);
         assert!(fx.contains(&Effect::Dispatch("workspace, 1".into())));
+    }
+
+    #[test]
+    fn super_space_dispatches_launcher() {
+        // Regression: Super+Space (launcher) stopped working on the live host.
+        let mut r = router();
+        assert!(r.on_key(SUPER, 1, 0).is_empty(), "super swallowed");
+        let fx = r.on_key(KeyCode::KEY_SPACE.0, 1, 10);
+        assert!(
+            fx.contains(&Effect::Dispatch("exec, walker".into())),
+            "super+space must dispatch the launcher, got {fx:?}"
+        );
+        assert!(
+            !fx.contains(&Effect::Emit {
+                code: KeyCode::KEY_SPACE.0,
+                value: 1
+            }),
+            "super+space must be swallowed, not typed as a space"
+        );
     }
 
     #[test]
@@ -729,6 +1216,166 @@ mod tests {
             fx.is_empty(),
             "catchall must swallow unbound keys, got {fx:?}"
         );
+    }
+
+    #[test]
+    fn esc_exits_catchall_mode_but_passes_through_in_app() {
+        let mut r = router();
+        // In app (normal/passthrough) mode Esc must reach the app — re-emitted,
+        // never swallowed — even though app declares exit="escape".
+        let fx = r.on_key(ESC, 1, 0);
+        assert_eq!(
+            fx,
+            vec![Effect::Emit {
+                code: ESC,
+                value: 1
+            }],
+            "Esc must pass through in app (not a catchall mode)"
+        );
+        assert_eq!(r.mode(), "app");
+        // Enter sticky desktop (a catchall mode), then Esc is the safety-net exit.
+        r.on_key(CAPS, 1, 10);
+        r.on_key(CAPS, 0, 50);
+        assert_eq!(r.mode(), "desktop");
+        let fx = r.on_key(ESC, 1, 100);
+        assert!(
+            fx.contains(&Effect::ModeChanged("app".into())),
+            "Esc must exit a catchall mode to root, got {fx:?}"
+        );
+        assert!(
+            !fx.contains(&Effect::Emit {
+                code: ESC,
+                value: 1
+            }),
+            "Esc is swallowed (consumed as the exit) inside a catchall mode"
+        );
+        assert_eq!(r.mode(), "app");
+    }
+
+    #[test]
+    fn caps_tap_just_under_threshold_is_sticky_not_hold() {
+        // A lone caps press released just UNDER tapHoldMs (250) is a TAP (enters
+        // sticky), never mis-resolved as a hold — the boundary the loaded VM
+        // clock can't reliably hit, pinned here with the injected clock.
+        let mut r = router();
+        r.on_key(CAPS, 1, 0);
+        let fx = r.on_key(CAPS, 0, 240); // 240 < 250 → tap
+        assert!(
+            fx.contains(&Effect::ModeChanged("desktop".into())),
+            "240ms lone caps must be a sticky tap, got {fx:?}"
+        );
+        assert_eq!(r.mode(), "desktop");
+    }
+
+    #[test]
+    fn caps_hold_at_threshold_is_momentary_not_tap() {
+        // A lone caps held to tapHoldMs resolves as a hold on the poll timeout
+        // (momentary); releasing returns to app — never left sticky.
+        let mut r = router();
+        r.on_key(CAPS, 1, 0);
+        let fx = r.on_timeout(250); // deadline reached → hold
+        assert!(
+            fx.contains(&Effect::ModeChanged("desktop".into())),
+            "250ms timeout must be a momentary hold, got {fx:?}"
+        );
+        let fx = r.on_key(CAPS, 0, 300); // release → back to app (NOT sticky)
+        assert!(fx.contains(&Effect::ModeChanged("app".into())));
+        assert_eq!(r.mode(), "app");
+    }
+
+    #[test]
+    fn grab_resync_picks_up_a_held_modifier() {
+        // A modifier physically held when the engine grabs must be tracked, so a
+        // restart mid-hold doesn't lose it (the Mods-starts-empty stuck class).
+        let mut r = router();
+        r.sync_held_keys([KeyCode::KEY_LEFTSHIFT.0]);
+        // And a clean shutdown then releases exactly that modifier — no stuck Shift.
+        assert_eq!(
+            r.release_held_modifiers(),
+            vec![Effect::Emit {
+                code: KeyCode::KEY_LEFTSHIFT.0,
+                value: 0
+            }]
+        );
+    }
+
+    #[test]
+    fn release_held_modifiers_releases_only_what_is_held() {
+        let mut r = router();
+        // Nothing held → nothing to release.
+        assert!(r.release_held_modifiers().is_empty());
+        // Ctrl down (tracked + re-emitted), then a clean shutdown releases it.
+        r.on_key(CTRL, 1, 0);
+        assert_eq!(
+            r.release_held_modifiers(),
+            vec![Effect::Emit {
+                code: CTRL,
+                value: 0
+            }]
+        );
+        // Releasing it normally clears the state (no double-release on shutdown).
+        r.on_key(CTRL, 0, 10);
+        assert!(r.release_held_modifiers().is_empty());
+    }
+
+    #[test]
+    fn right_hand_modifiers_match_left_swallow_and_reemit() {
+        let mut r = router();
+        // Right Super is swallowed exactly like left (a user pressing the right
+        // Super expects the same ownership), producing no passthrough.
+        assert!(
+            r.on_key(KeyCode::KEY_RIGHTMETA.0, 1, 0).is_empty(),
+            "RIGHTMETA must be swallowed like LEFTMETA"
+        );
+        // Right Shift/Ctrl/Alt pass through (re-emitted) so typing/app shortcuts work.
+        for code in [
+            KeyCode::KEY_RIGHTSHIFT.0,
+            KeyCode::KEY_RIGHTCTRL.0,
+            KeyCode::KEY_RIGHTALT.0,
+        ] {
+            assert_eq!(
+                r.on_key(code, 1, 0),
+                vec![Effect::Emit { code, value: 1 }],
+                "right-hand non-super modifier must re-emit"
+            );
+        }
+    }
+
+    #[test]
+    fn caps_autorepeat_produces_no_intent_and_no_deadline_drift() {
+        let mut r = router();
+        r.on_key(CAPS, 1, 0); // pending
+        let dl = r.deadline();
+        // CapsLock auto-repeat (value==2) must be ignored: no effects, deadline unchanged.
+        assert!(
+            r.on_key(CAPS, 2, 50).is_empty(),
+            "caps repeat must produce no effect"
+        );
+        assert_eq!(
+            r.deadline(),
+            dl,
+            "caps repeat must not extend/reset the deadline"
+        );
+        assert_eq!(r.mode(), "app", "caps repeat must not change mode");
+    }
+
+    proptest! {
+        // The Router had no property test. Fuzz arbitrary (code, value, time)
+        // streams and assert the integration never panics and never escapes to an
+        // undeclared mode (the layer proptests cover the detector/engine in
+        // isolation; this covers their composition through on_key).
+        #[test]
+        fn router_never_panics_and_stays_in_a_valid_mode(
+            events in proptest::collection::vec((1u16..600u16, 0i32..3i32, 0u64..3000u64), 0..300)
+        ) {
+            let mut r = router();
+            let valid = ["app", "desktop", "move", "resize", "console"];
+            for (code, value, t) in events {
+                let _ = r.on_key(code, value, t);
+                let _ = r.on_timeout(t);
+                prop_assert!(valid.contains(&r.mode().as_str()), "escaped to invalid mode {}", r.mode());
+            }
+        }
     }
 
     #[test]

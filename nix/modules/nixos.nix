@@ -32,10 +32,6 @@ let
 
   cfg = config.vogix;
 
-  # Behavior module for kanata config generation
-  behaviorModule = import ./behavior { inherit lib; };
-  kanataConfig = behaviorModule.mkKanataConfig { };
-
   # Import vogix16 themes for console colors
   vogix16Import = import ./vogix16-import.nix {
     inherit lib vogix16Themes;
@@ -118,24 +114,6 @@ in
       description = "Theme variant (dark or light) for console colors (overrides auto-detection).";
     };
 
-    # Input subsystem selection at the SYSTEM level. The home-manager module
-    # reads the same value back (via `osConfig.vogix.input.engine`) so the
-    # user-side systemd service matches what the system wires up — keeping
-    # the two halves in lockstep avoids a configuration where, e.g., kanata
-    # is running system-wide while vogix-input.service is also grabbing evdev.
-    input.engine = mkOption {
-      type = types.enum [ "kanata" "vogix" ];
-      default = "kanata";
-      description = ''
-        Which input subsystem activates. "kanata" (default) keeps the
-        legacy kanata + Hyprland-submaps split. "vogix" is the
-        ontology-driven daemon (`vogix input run`): kanata is disabled,
-        Hyprland submap binds are omitted, hardware.uinput is enabled,
-        and users running vogix are added to the input + uinput groups
-        so the daemon can grab evdev and emit via uinput without root.
-        Opt-in until proven end-to-end in the NixOS VM test.
-      '';
-    };
   };
 
   config = mkIf cfg.enable (mkMerge [
@@ -211,33 +189,17 @@ in
       ];
     })
 
-    # Kanata service for behavior module (evdev key remapping)
-    # System-wide: nav layer, Super→Ctrl, CapsLock toggle.
-    # Gated on the legacy engine — when `cfg.input.engine = "vogix"` the
-    # ontology-driven daemon (vogix input run) owns the keyboard instead,
-    # and running both would mean two processes fighting for evdev grabs.
-    (mkIf (cfg.input.engine == "kanata" && kanataConfig != null) {
-      services.kanata = {
-        enable = true;
-        keyboards.default = {
-          devices = [ ];
-          config = kanataConfig;
-          extraDefCfg = "process-unmapped-keys yes";
-        };
-      };
-    })
-
-    # Engine "vogix": uinput + group membership wiring.
-    # hardware.uinput exposes /dev/uinput; the daemon needs to open it RW to
-    # create the virtual keyboard. Membership in the `input` group lets it
-    # open /dev/input/event* for the real keyboard grab; membership in
-    # `uinput` lets it open /dev/uinput for emit. Without root either of
-    # those would EACCES — that's the whole reason we list the groups here.
-    (mkIf (cfg.input.engine == "vogix") {
+    # Input engine: uinput + group membership wiring.
+    # hardware.uinput exposes /dev/uinput; the vogix input daemon needs to open
+    # it RW to create the virtual keyboard. Membership in the `input` group lets
+    # it open /dev/input/event* for the real keyboard grab; membership in
+    # `uinput` lets it open /dev/uinput for emit. Without root either of those
+    # would EACCES — that's the whole reason we list the groups here.
+    {
       hardware.uinput.enable = true;
       users.users = lib.genAttrs homeManagerUsers (_user: {
         extraGroups = [ "input" "uinput" ];
       });
-    })
+    }
   ]);
 }

@@ -1,13 +1,12 @@
 # Vogix behavior module
 #
-# Wires behavior options to generators (kanata, hyprland, help).
+# Wires behavior options to generators (hyprland, help).
 # Imported by the home-manager module.
 { lib, pkgs ? null }:
 
 let
   defaults = import ./defaults.nix { };
   hyprlandGen = import ./generators/hyprland.nix { inherit lib; };
-  kanataGen = import ./generators/kanata.nix { inherit lib; };
   helpGen =
     if pkgs != null
     then import ./generators/help.nix { inherit lib pkgs; }
@@ -28,11 +27,6 @@ let
     in
     {
       modKey = kb.modKey or defaults.keybindings.modKey;
-      # Thread the engine selection through to the generators. The Hyprland
-      # generator uses it to omit the native navigation submaps + their entry
-      # binds under the vogix engine (the engine owns mode). Without this the
-      # generator only ever saw the default ("kanata") and the gate never fired.
-      inputEngine = behaviorCfg.inputEngine or "kanata";
       inherit modeGraph;
       modes = lib.mapAttrs
         (name: _:
@@ -57,10 +51,6 @@ in
   # Generate Hyprland config
   mkHyprlandConfig = behaviorCfg:
     hyprlandGen.generate (mkGeneratorConfig behaviorCfg);
-
-  # Generate kanata config
-  mkKanataConfig = behaviorCfg:
-    kanataGen.generate (mkGeneratorConfig behaviorCfg);
 
   # Generate per-mode help scripts
   mkHelpScripts = behaviorCfg:
@@ -101,5 +91,11 @@ in
       modes = effectiveModes;
       keybindings = effectiveKeybindings;
       inherit (defaults) _superCtrlRemaps;
+      # Top-level for the Rust `Schema.terminal_classes` (context-aware remap).
+      terminalClasses = effectiveKeybindings.terminalClasses or [ ];
+      # Per-mode border colours for the mode-visibility surface (engine paints
+      # the border on a mode change). Theme-derived; set by the home-manager
+      # module's modeColors block.
+      modeColors = userModes.modeColors or { };
     };
 }

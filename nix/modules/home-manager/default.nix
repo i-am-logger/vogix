@@ -239,7 +239,7 @@ in
   inherit (optionsModule) options;
 
   config = mkIf cfg.enable (mkMerge [
-    # Behavior: generate hyprland and kanata configs
+    # Behavior: generate the hyprland config
     # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
     # to avoid infinite recursion between config definition and evaluation)
     (
@@ -281,7 +281,18 @@ in
                   inactive = toRgb (colors.background-selection or "313244");
                 };
                 desktop = {
+                  active = toRgb (colors.active or "89dceb");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
+                # Sub-modes get distinct accent borders so the active mode is
+                # always visible (the cure for mode error): move = blue, resize
+                # = purple, matching the prior daemon's semantic slots.
+                move = {
                   active = toRgb (colors.link or "89b4fa");
+                  inactive = toRgb (colors.background-selection or "313244");
+                };
+                resize = {
+                  active = toRgb (colors.highlight or "cba6f7");
                   inactive = toRgb (colors.background-selection or "313244");
                 };
                 console = {
@@ -293,7 +304,6 @@ in
 
           # Generated outputs for downstream consumption
           generatedHyprland = behaviorModule.mkHyprlandConfig behaviorCfg;
-          generatedKanata = behaviorModule.mkKanataConfig behaviorCfg;
         };
 
         # Install help scripts
@@ -508,27 +518,26 @@ in
       };
     })
 
-    # ── Engine = "vogix": render the schema + run the input daemon ──
+    # ── Input engine: render the schema + run the input daemon ──
     # The state file is the bridge from the authored Nix config to the Rust
     # runtime — `Schema::load()` reads it on startup. Writing it via
     # home.file (instead of an activation script) keeps it under nix's GC
     # roots and gives us atomic replacement on switch.
-    (mkIf (behaviorCfg.inputEngine == "vogix") {
+    {
       home.file.".local/state/vogix/input.json" = {
         text = behaviorModule.mkSchemaJSON behaviorCfg;
       };
 
       # The user systemd service that grabs evdev, runs the praxis-validated
       # mode statechart, and dispatches to Hyprland over its control socket.
-      # Replaces kanata + Hyprland submap binds (see the NixOS module: under
-      # this engine `services.kanata` is disabled and the user is in the
-      # `input` + `uinput` groups so the grab + uinput emit don't need root).
+      # vogix is the sole input engine; the user is in the `input` + `uinput`
+      # groups (set by the NixOS module) so the grab + uinput emit don't need root.
       #
       # `After = graphical-session.target` because the Hyprland IPC socket is
       # owned by that session; dispatches before it lands would be dropped.
       systemd.user.services.vogix-input = {
         Unit = {
-          Description = "Vogix Input Engine (ontology-driven; replaces kanata + Hyprland submaps)";
+          Description = "Vogix Input Engine (ontology-driven keybinding + mode engine)";
           After = [ "graphical-session.target" ];
           PartOf = [ "graphical-session.target" ];
           # Hard cap on the restart loop. The engine grabs evdev as its last
@@ -557,7 +566,7 @@ in
           WantedBy = [ "graphical-session.target" ];
         };
       };
-    })
+    }
 
   ]);
 }
