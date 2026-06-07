@@ -143,8 +143,27 @@ in
 
               paradigm = mkOption {
                 type = types.str;
-                default = "macos";
-                description = "Interaction-paradigm preset supplying the Super-modifier remap set (a praxis preset, e.g. \"macos\" → macos_remap()).";
+                default = "vim";
+                description = "Selected interaction paradigm (whole-WM flavour) — a key in `paradigms`. Resolves to that paradigm's per-mode bindings + Super remap. Default \"vim\" = the native modal CapsLock→desktop style.";
+              };
+
+              paradigms = mkOption {
+                type = types.attrsOf (types.submodule {
+                  options = {
+                    remap = mkOption {
+                      type = types.str;
+                      default = "macos";
+                      description = "praxis RemapSet preset for the Super modifier (\"macos\" → macos_remap(); \"none\" → no remap).";
+                    };
+                    modes = mkOption {
+                      type = types.attrsOf types.anything;
+                      default = { };
+                      description = "Per-mode WM-navigation bindings for this paradigm (same shape as `modes`), over vogix's app/desktop/move/resize.";
+                    };
+                  };
+                });
+                default = { };
+                description = "Interaction-paradigm presets (vim/windows/mac/…). The user picks one via `paradigm` and overlays their own bindings via `modes`.";
               };
 
               mouse = mkOption {

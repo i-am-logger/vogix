@@ -80,8 +80,27 @@ let
     (check "defaults.keybindings.layers has desktopToggle"
       (defaults.keybindings.layers ? desktopToggle))
 
-    (check "defaults.keybindings.paradigm selects macOS remap preset"
-      (defaults.keybindings.paradigm == "macos"))
+    (check "defaults.keybindings.paradigm is the vim flavour (native modal)"
+      (defaults.keybindings.paradigm == "vim"))
+
+    (check "vim paradigm pairs the macOS remap with the shared modes"
+      (defaults.keybindings.paradigms.vim.remap == "macos"
+        && defaults.keybindings.paradigms.vim.modes == defaults.modes))
+
+    (check "windows paradigm uses no Super remap (Ctrl is native)"
+      (defaults.keybindings.paradigms.windows.remap == "none"))
+
+    (check "mac paradigm keeps the macOS Super→Ctrl remap"
+      (defaults.keybindings.paradigms.mac.remap == "macos"))
+
+    (assertContains "selecting windows renders chorded Super+arrow WM nav"
+      "super + left"
+      (kbModule.mkSchemaJSON (defaults // {
+        keybindings = defaults.keybindings // { paradigm = "windows"; };
+      })))
+
+    (check "the default (vim) render is modal — no chorded Super+arrow nav"
+      (!(lib.hasInfix "super + left" (kbModule.mkSchemaJSON defaults))))
 
     (check "defaults.keybindings has terminalClasses (context-aware remap)"
       ((defaults.keybindings.terminalClasses or [ ]) != [ ]))
@@ -264,8 +283,8 @@ let
     # === Super→Ctrl remap (a praxis paradigm preset; the macos_remap RemapSet
     # is applied at evdev by the engine + axiom-checked by `vogix input check`,
     # proven by the input-engine VM test) ===
-    (check "keybindings paradigm selects the macOS remap preset"
-      (defaults.keybindings.paradigm == "macos"))
+    (check "the selected paradigm resolves to its remap in the rendered schema"
+      (defaults.keybindings.paradigms.${defaults.keybindings.paradigm}.remap == "macos"))
 
     # === Help in every mode ===
     (check "desktop mode has help binding"

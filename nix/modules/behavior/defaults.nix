@@ -27,7 +27,8 @@ let
   # Checks if console workspace is visible, starts wezterm+tmux if needed, switches submap.
   consoleToggleAction = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi";
 in
-{
+# `rec` so a paradigm preset can reference the shared `modes`/`modeGraph` below.
+rec {
   # ── Input settings ──
   input = {
     repeatDelay = 200;
@@ -83,10 +84,86 @@ in
   # ── Keybindings (modal input) ──
   keybindings = {
     modKey = "super";
-    # Interaction paradigm supplying the Super-modifier remap set. "macos" =
-    # praxis macos_remap() (Command≈Super for copy/paste/save/…), a cited +
-    # axiom-checked preset rather than a hand-listed table.
-    paradigm = "macos";
+    # Interaction PARADIGM (whole-WM flavour) the user selects. Each paradigm in
+    # `paradigms` below pairs a Super-modifier remap (a praxis RemapSet preset)
+    # with a per-mode WM-navigation binding set. `mkSchemaJSON` resolves the
+    # chosen paradigm into the engine's `modes` + remap. Default `vim` = the
+    # modal CapsLock→desktop bare-key style (the current/native vogix model).
+    paradigm = "vim";
+
+    # WM interaction paradigms. A paradigm = { remap = <praxis RemapSet name>;
+    # modes = <per-mode bindings over vogix's own app/desktop/move/resize>; }.
+    # The user picks one via `paradigm` above and overlays their own bindings via
+    # `programs.vogix.behavior.modes` (recursiveUpdate, per binding name).
+    paradigms = {
+      # vim: the native modal model — CapsLock→desktop, bare hjkl/arrows. Its
+      # bindings ARE the shared `modes` below, so selecting vim is the identity.
+      vim = {
+        remap = "macos";
+        inherit modes;
+      };
+
+      # windows: chorded Win-key navigation IN app mode (no CapsLock needed),
+      # remap = none (Windows uses Ctrl natively for copy/paste). Reuses vim's app
+      # bindings (workspaces/media/console) + adds Super-combo WM nav; the CapsLock
+      # modal layer (desktop/move/resize) stays available as a bonus.
+      windows = {
+        remap = "none";
+        modes = {
+          app = {
+            enter = null;
+            exit = "escape";
+            bindings = modes.app.bindings // {
+              winFocusLeft = { key = "super + left"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
+              winFocusDown = { key = "super + down"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
+              winFocusUp = { key = "super + up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
+              winFocusRight = { key = "super + right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
+              winMoveLeft = { key = "super + shift + left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
+              winMoveDown = { key = "super + shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
+              winMoveUp = { key = "super + shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
+              winMoveRight = { key = "super + shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
+              winResizeLeft = { key = "super + ctrl + left"; action = "resizeactive, -40 0"; description = "Shrink width"; repeat = true; };
+              winResizeRight = { key = "super + ctrl + right"; action = "resizeactive, 40 0"; description = "Grow width"; repeat = true; };
+              winResizeUp = { key = "super + ctrl + up"; action = "resizeactive, 0 -40"; description = "Shrink height"; repeat = true; };
+              winResizeDown = { key = "super + ctrl + down"; action = "resizeactive, 0 40"; description = "Grow height"; repeat = true; };
+              winCycle = { key = "alt + tab"; action = "cyclenext,"; description = "Cycle windows"; };
+              winClose = { key = "super + q"; action = "killactive,"; description = "Close window"; };
+              winCloseAltF4 = { key = "alt + F4"; action = "killactive,"; description = "Close window"; };
+              winFullscreen = { key = "super + f"; action = "fullscreen, 0"; description = "Fullscreen"; };
+              winFloat = { key = "super + shift + space"; action = "togglefloating,"; description = "Toggle floating"; };
+            };
+          };
+          inherit (modes) desktop move resize console;
+        };
+      };
+
+      # mac: chorded Command-key navigation; keeps the macOS Super→Ctrl remap for
+      # app shortcuts (Cmd+C/V/Q/W → Ctrl…), so WM nav avoids Super+letter and uses
+      # Super+arrows / Super+Tab / Cmd+Ctrl+F (the real macOS fullscreen). CapsLock
+      # modal layer stays available.
+      mac = {
+        remap = "macos";
+        modes = {
+          app = {
+            enter = null;
+            exit = "escape";
+            bindings = modes.app.bindings // {
+              macFocusLeft = { key = "super + left"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
+              macFocusDown = { key = "super + down"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
+              macFocusUp = { key = "super + up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
+              macFocusRight = { key = "super + right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
+              macMoveLeft = { key = "super + shift + left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
+              macMoveDown = { key = "super + shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
+              macMoveUp = { key = "super + shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
+              macMoveRight = { key = "super + shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
+              macCycle = { key = "super + tab"; action = "cyclenext,"; description = "Cycle windows"; };
+              macFullscreen = { key = "super + ctrl + f"; action = "fullscreen, 0"; description = "Fullscreen (Cmd+Ctrl+F)"; };
+            };
+          };
+          inherit (modes) desktop move resize console;
+        };
+      };
+    };
 
     # Window classes treated as terminals for the context-aware Super→Ctrl remap
     # (copy/paste → Ctrl+Shift+C/V; other remaps suppressed). Loaded as data —

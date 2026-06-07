@@ -78,19 +78,34 @@ in
     let
       userModes = behaviorCfg.modes or { };
       modeGraph = behaviorCfg.modeGraph or defaults.modeGraph;
-      effectiveModes = lib.mapAttrs
-        (name: _:
-          mergeOr (userModes.${name} or { }) (defaults.modes.${name} or { })
-        )
-        modeGraph.modes;
       effectiveKeybindings = mergeOr
         (behaviorCfg.keybindings or { })
         defaults.keybindings;
+      # Resolve the selected interaction PARADIGM (whole-WM flavour) into the
+      # engine's two inputs: the per-mode base bindings and the Super remap name.
+      # The user's `behavior.modes` overlays on top of the paradigm's modes.
+      paradigmName = effectiveKeybindings.paradigm or "vim";
+      paradigms = effectiveKeybindings.paradigms or { };
+      # Fail loudly on an unknown paradigm — a silent fallback would ship an empty
+      # binding set (no desktop nav), the exact footgun the seam must avoid.
+      selected = paradigms.${paradigmName} or (throw
+        "vogix: unknown keybindings.paradigm \"${paradigmName}\" — known paradigms: ${toString (builtins.attrNames paradigms)}");
+      paradigmModes = selected.modes or { };
+      effectiveModes = lib.mapAttrs
+        (name: _:
+          mergeOr (userModes.${name} or { }) (paradigmModes.${name} or { })
+        )
+        modeGraph.modes;
+      # The engine reads `keybindings.paradigm` as the REMAP name; the flavour's
+      # remap fills it. `paradigms`/`paradigm` themselves aren't engine inputs.
+      engineKeybindings =
+        (builtins.removeAttrs effectiveKeybindings [ "paradigms" "paradigm" ])
+        // { paradigm = selected.remap or "macos"; };
     in
     builtins.toJSON {
       inherit modeGraph;
       modes = effectiveModes;
-      keybindings = effectiveKeybindings;
+      keybindings = engineKeybindings;
       # Top-level for the Rust `Schema.terminal_classes` (context-aware remap).
       terminalClasses = effectiveKeybindings.terminalClasses or [ ];
       # Per-mode border colours for the mode-visibility surface (engine paints
