@@ -95,6 +95,11 @@ let
         default = 250;
         description = "Tap↔hold threshold in milliseconds (tap = sticky, hold = momentary)";
       };
+      stickyIdleMs = mkOption {
+        type = types.int;
+        default = 30000;
+        description = "Idle milliseconds after which a sticky (tapped/locked) mode auto-reverts to root";
+      };
     };
   };
 
@@ -134,6 +139,12 @@ in
                 type = types.enum [ "super" "alt" "ctrl" "meta" ];
                 default = "super";
                 description = "Primary modifier key (acts as macOS Command — implies Super→Ctrl remap)";
+              };
+
+              paradigm = mkOption {
+                type = types.str;
+                default = "macos";
+                description = "Interaction-paradigm preset supplying the Super-modifier remap set (a praxis preset, e.g. \"macos\" → macos_remap()).";
               };
 
               mouse = mkOption {

@@ -80,14 +80,18 @@ let
     (check "defaults.keybindings.layers has desktopToggle"
       (defaults.keybindings.layers ? desktopToggle))
 
-    (check "defaults._superCtrlRemaps has copy"
-      (defaults._superCtrlRemaps ? copy))
+    (check "defaults.keybindings.paradigm selects macOS remap preset"
+      (defaults.keybindings.paradigm == "macos"))
 
     (check "defaults.keybindings has terminalClasses (context-aware remap)"
       ((defaults.keybindings.terminalClasses or [ ]) != [ ]))
 
     (assertContains "rendered schema JSON carries terminalClasses"
       "terminalClasses"
+      (kbModule.mkSchemaJSON defaults))
+
+    (assertContains "rendered schema JSON carries the paradigm (remap preset)"
+      "macos"
       (kbModule.mkSchemaJSON defaults))
 
     (check "defaults.keybindings.mouse has moveWindow"
@@ -97,8 +101,8 @@ let
     (check "fullConfig.modes has app (root mode)"
       (fullConfig.modes ? app))
 
-    (check "fullConfig has universal remaps"
-      (fullConfig ? universal))
+    (check "fullConfig carries the modKey"
+      (fullConfig.modKey or null == "super"))
 
     (check "fullConfig has mouse"
       (fullConfig ? mouse))
@@ -257,11 +261,11 @@ let
     (check "resize sub-mode has no exitAfter bindings"
       (builtins.all (b: !(b.exitAfter or false)) (builtins.attrValues defaults.modes.resize.bindings)))
 
-    # === Super→Ctrl remap (engine-native data; applied at evdev by the engine,
+    # === Super→Ctrl remap (a praxis paradigm preset; the macos_remap RemapSet
+    # is applied at evdev by the engine + axiom-checked by `vogix input check`,
     # proven by the input-engine VM test) ===
-    (check "_superCtrlRemaps maps Super+C → Ctrl+C"
-      (defaults._superCtrlRemaps.copy.from == "super + c"
-        && defaults._superCtrlRemaps.copy.to == "ctrl + c"))
+    (check "keybindings paradigm selects the macOS remap preset"
+      (defaults.keybindings.paradigm == "macos"))
 
     # === Help in every mode ===
     (check "desktop mode has help binding"
@@ -405,18 +409,9 @@ let
     )
     modeNames)
 
-  # ── P8: Universal remaps are all Super→Ctrl ──
-  # The pattern must be consistent
-  ++ (mapAttrsToList
-    (name: entry:
-      let
-        from = parseUniversalCombo (entry.from or "");
-        to = parseUniversalCombo (entry.to or "");
-      in
-      check "P8: universal '${name}' maps Super→Ctrl"
-        (from != null && to != null && from.mod == "super" && to.mod == "ctrl")
-    )
-    defaults._superCtrlRemaps)
+  # P8 (universal remaps are all Super→Ctrl) is retired: the remap set is now a
+  # praxis paradigm preset (macos_remap), proven Super→Ctrl + injective + complete
+  # by the RemapInjective/MacosRemapComplete axioms in `vogix input check`.
 
   # ── P10: Mode graph hierarchy is consistent ──
   # Every non-root mode's parent exists in the graph
@@ -446,18 +441,6 @@ let
       )
     )
     (builtins.attrNames defaults.modeGraph.modes));
-
-  # Helper used by P8
-  parseUniversalCombo = combo:
-    let
-      parts = map lib.trim (lib.splitString "+" combo);
-      lower = map lib.toLower parts;
-    in
-    if builtins.length parts == 2 then {
-      mod = builtins.head lower;
-      key = lib.toLower (lib.last parts);
-    }
-    else null;
 
   allTests = tests ++ propertyTests;
   results = map (t: t) allTests;

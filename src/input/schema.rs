@@ -18,6 +18,7 @@
 
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
+use pr4xis_domains::applied::hmi::input::keybindings::{RemapSet, macos_remap};
 use pr4xis_domains::applied::hmi::input::modes::{ModeGraph, ModeId, ModeProperties};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -31,9 +32,6 @@ pub struct Schema {
     pub modes: HashMap<String, ModeSpec>,
     #[serde(default)]
     pub keybindings: Keybindings,
-    // `defaults.nix` names this `_superCtrlRemaps`; accept both.
-    #[serde(default, rename = "superCtrlRemaps", alias = "_superCtrlRemaps")]
-    pub super_ctrl_remaps: HashMap<String, RemapSpec>,
     /// Hyprland window classes that are terminals. When one is focused, the
     /// Super→Ctrl remap is context-adjusted (copy/paste → Ctrl+Shift+C/V; other
     /// remaps suppressed) so Super+C can't fire Ctrl+C=SIGINT into the shell.
@@ -110,6 +108,11 @@ pub struct Keybindings {
     pub mod_key: Option<String>,
     #[serde(default)]
     pub layers: HashMap<String, Layer>,
+    /// Interaction-paradigm preset that supplies the Super-modifier remap set
+    /// (e.g. `"macos"` → praxis `macos_remap()`). The named paradigm replaces a
+    /// hand-listed remap table; defaults to `"macos"`. See [`Schema::remap_set`].
+    #[serde(default)]
+    pub paradigm: Option<String>,
 }
 
 /// A CapsLock-style dual-role layer (we read its tap/hold timing + target mode).
@@ -119,6 +122,11 @@ pub struct Layer {
     pub hold: Option<String>,
     #[serde(default, rename = "tapHoldMs")]
     pub tap_hold_ms: Option<u64>,
+    /// Idle auto-revert threshold (ms) for a STICKY (tapped/locked) mode entered
+    /// via this layer — a forgotten lock self-heals. Falls back to
+    /// [`DEFAULT_STICKY_IDLE_MS`].
+    #[serde(default, rename = "stickyIdleMs")]
+    pub sticky_idle_ms: Option<u64>,
     /// Engine-native: the mode this layer's trigger enters, named directly
     /// (e.g. `"desktop"`). This is how the vogix engine learns which mode
     /// CapsLock activates — no synthetic keysym indirection.
@@ -129,13 +137,6 @@ pub struct Layer {
     /// by `entersMode`; still read as a fallback for old schemas.
     #[serde(default, rename = "holdAction")]
     pub hold_action: Option<String>,
-}
-
-/// A Super→Ctrl style remap (`from`/`to` are `"mod + key"` strings).
-#[derive(Debug, Clone, Deserialize)]
-pub struct RemapSpec {
-    pub from: String,
-    pub to: String,
 }
 
 /// A parsed Hyprland action: either a mode switch or a dispatch.
@@ -159,6 +160,10 @@ pub fn parse_action(action: &str) -> ActionKind {
 
 /// Default tap↔hold threshold if the schema doesn't specify one.
 pub const DEFAULT_TAP_HOLD_MS: u64 = 250;
+
+/// Default sticky-mode idle auto-revert threshold if the schema doesn't specify
+/// one — a forgotten locked mode self-heals after this much inactivity.
+pub const DEFAULT_STICKY_IDLE_MS: u64 = 30_000;
 
 impl Schema {
     /// Load the schema from the standard location
@@ -197,6 +202,31 @@ impl Schema {
             .find(|l| l.hold.as_deref() == Some("capslock"))
             .and_then(|l| l.tap_hold_ms)
             .unwrap_or(DEFAULT_TAP_HOLD_MS)
+    }
+
+    /// The selected interaction paradigm (defaults to `"macos"`).
+    pub fn paradigm(&self) -> &str {
+        self.keybindings.paradigm.as_deref().unwrap_or("macos")
+    }
+
+    /// The Super-modifier remap set for the selected paradigm — a praxis
+    /// [`RemapSet`] (cited + axiom-checkable), not a hand-listed table. `"macos"`
+    /// → [`macos_remap`]; `"none"` (or unknown) → an empty named set.
+    pub fn remap_set(&self) -> RemapSet {
+        match self.paradigm() {
+            "macos" => macos_remap(),
+            other => RemapSet::new(other),
+        }
+    }
+
+    /// The sticky-mode idle auto-revert threshold (ms), from the dual-role layer.
+    pub fn sticky_idle_ms(&self) -> u64 {
+        self.keybindings
+            .layers
+            .values()
+            .find(|l| l.hold.as_deref() == Some("capslock"))
+            .and_then(|l| l.sticky_idle_ms)
+            .unwrap_or(DEFAULT_STICKY_IDLE_MS)
     }
 
     /// The mode CapsLock enters.
@@ -244,14 +274,8 @@ impl Schema {
                 }
             }
         }
-        for (name, r) in &self.super_ctrl_remaps {
-            if super::keys::parse_chord(&r.from).is_none() {
-                out.push(format!("remap.{name}: unparseable from {:?}", r.from));
-            }
-            if super::keys::parse_chord(&r.to).is_none() {
-                out.push(format!("remap.{name}: unparseable to {:?}", r.to));
-            }
-        }
+        // Remaps are supplied by a praxis paradigm preset (always well-formed),
+        // so there are no hand-written remap chords to validate here.
         out.sort();
         out
     }
@@ -347,9 +371,6 @@ mod tests {
           "desktopToggle": { "hold": "capslock", "tapHoldMs": 250, "holdAction": "f23" }
         }
       },
-      "superCtrlRemaps": {
-        "copy": { "from": "super + c", "to": "ctrl + c" }
-      },
       "modes": {
         "app": { "exit": "escape", "bindings": {
           "ws1": { "key": "super + 1", "action": "workspace, 1" },
@@ -390,7 +411,9 @@ mod tests {
         assert_eq!(s.mode_graph.modes.len(), 5);
         assert_eq!(s.tap_hold_ms(), 250);
         assert_eq!(s.caps_target().as_deref(), Some("desktop"));
-        assert_eq!(s.super_ctrl_remaps.len(), 1);
+        // No paradigm set → defaults to macOS; the preset supplies the remaps.
+        assert_eq!(s.paradigm(), "macos");
+        assert!(s.remap_set().remaps.len() >= 6);
     }
 
     #[test]

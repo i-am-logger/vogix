@@ -217,6 +217,60 @@ pub fn parse_chord(s: &str) -> Option<Chord> {
     Some(Chord { mods, code: code.0 })
 }
 
+// ── praxis Key codec ─────────────────────────────────────────────────────────
+//
+// Bridges evdev keycodes ↔ the abstract praxis `Key`/`Modifier` ontology, so the
+// engine can match against praxis `RemapSet`/`BindingSet` constructs (which are
+// cited + axiom-proven) rather than a hand-rolled table. praxis `Key` is a
+// physical-key identity with deliberately NO keycode mapping — that mapping is
+// this evdev-substrate adapter's job. Reuses `key_name_to_code` (the one name↔
+// code table) so there is a single source of truth.
+
+use pr4xis_domains::applied::hmi::input::keybindings::{Key, Modifier as PxMod};
+
+/// evdev keycode → praxis [`Key`]. `None` for keys that can't be a remap source
+/// today (only letters/numbers appear in the remap presets); extend here when a
+/// named/media remap is introduced.
+pub fn keycode_to_key(code: u16) -> Option<Key> {
+    for c in 'a'..='z' {
+        if key_name_to_code(&c.to_string()).map(|k| k.0) == Some(code) {
+            return Some(Key::Letter(c));
+        }
+    }
+    for n in 0u8..=9 {
+        if key_name_to_code(&n.to_string()).map(|k| k.0) == Some(code) {
+            return Some(Key::Number(n));
+        }
+    }
+    None
+}
+
+/// praxis [`Key`] → evdev keycode, for emitting a remap target. Inverse of
+/// [`keycode_to_key`] over the shared name↔code table.
+pub fn key_to_keycode(key: &Key) -> Option<u16> {
+    match key {
+        Key::Letter(c) => key_name_to_code(&c.to_string()).map(|k| k.0),
+        Key::Number(n) => key_name_to_code(&n.to_string()).map(|k| k.0),
+        Key::Function(n) => key_name_to_code(&format!("f{n}")).map(|k| k.0),
+        _ => None,
+    }
+}
+
+/// praxis [`Modifier`]s → the tracked [`Mods`] set (Hyper has no evdev key).
+pub fn modifiers_to_mods(modifiers: &[PxMod]) -> Mods {
+    let mut m = Mods::default();
+    for px in modifiers {
+        match px {
+            PxMod::Super => m.sup = true,
+            PxMod::Shift => m.shift = true,
+            PxMod::Ctrl => m.ctrl = true,
+            PxMod::Alt => m.alt = true,
+            PxMod::Hyper => {}
+        }
+    }
+    m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

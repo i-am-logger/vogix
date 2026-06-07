@@ -83,6 +83,10 @@ in
   # ── Keybindings (modal input) ──
   keybindings = {
     modKey = "super";
+    # Interaction paradigm supplying the Super-modifier remap set. "macos" =
+    # praxis macos_remap() (Command≈Super for copy/paste/save/…), a cited +
+    # axiom-checked preset rather than a hand-listed table.
+    paradigm = "macos";
 
     # Window classes treated as terminals for the context-aware Super→Ctrl remap
     # (copy/paste → Ctrl+Shift+C/V; other remaps suppressed). Loaded as data —
@@ -132,34 +136,9 @@ in
         hold = "capslock";
         entersMode = "desktop";
         tapHoldMs = 250; # lone press released within this = tap (sticky); else hold
+        stickyIdleMs = 30000; # a tapped (locked) mode self-reverts after this idle
       };
     };
-  };
-
-  # Super → Ctrl remaps (internal, derived from modKey = "super")
-  # Not user-facing — generated automatically when modKey is super
-  _superCtrlRemaps = {
-    copy = { from = "super + c"; to = "ctrl + c"; };
-    paste = { from = "super + v"; to = "ctrl + v"; };
-    cut = { from = "super + x"; to = "ctrl + x"; };
-    undo = { from = "super + z"; to = "ctrl + z"; };
-    save = { from = "super + s"; to = "ctrl + s"; };
-    selectAll = { from = "super + a"; to = "ctrl + a"; };
-    find = { from = "super + f"; to = "ctrl + f"; };
-    closeTab = { from = "super + w"; to = "ctrl + w"; };
-    newTab = { from = "super + t"; to = "ctrl + t"; };
-    newWindow = { from = "super + n"; to = "ctrl + n"; };
-    print = { from = "super + p"; to = "ctrl + p"; };
-    reload = { from = "super + r"; to = "ctrl + r"; };
-    addressBar = { from = "super + l"; to = "ctrl + l"; };
-    open = { from = "super + o"; to = "ctrl + o"; };
-    bold = { from = "super + b"; to = "ctrl + b"; };
-    italic = { from = "super + i"; to = "ctrl + i"; };
-    underline = { from = "super + u"; to = "ctrl + u"; };
-    redo = { from = "super + y"; to = "ctrl + y"; };
-    quit = { from = "super + q"; to = "ctrl + q"; };
-    goToLine = { from = "super + g"; to = "ctrl + g"; };
-    devTools = { from = "super + d"; to = "ctrl + d"; };
   };
 
   # ── Mode graph — defines mode topology ──

@@ -52,25 +52,64 @@ pub fn handle_input_check(config: Option<&str>) -> Result<()> {
     // Bindings that won't parse are silently dropped at router-build time, so
     // surface them here too — a mistyped key is a real, invisible config bug.
     let unparseable = schema.unparseable_bindings();
+
+    // Remap-set axioms (praxis): the loaded paradigm's remaps must be injective,
+    // and a macOS paradigm must cover the essential shortcuts (C/V/X/Z/S/A).
+    let remap_failures = remap_axiom_failures(&schema);
+    println!(
+        "  paradigm: {} ({} remaps)",
+        schema.paradigm(),
+        schema.remap_set().remaps.len()
+    );
+
     for f in &graph_failures {
         println!("  graph axiom FAILED: {f}");
     }
     for u in &unparseable {
         println!("  binding DROPPED (unparseable, won't work): {u}");
     }
-    if graph_failures.is_empty() && unparseable.is_empty() {
+    for f in &remap_failures {
+        println!("  remap axiom FAILED: {f}");
+    }
+    if graph_failures.is_empty() && unparseable.is_empty() && remap_failures.is_empty() {
         println!("  graph axioms: OK");
         println!("  bindings: all parse");
+        println!("  remap axioms: OK");
         println!("  engine dynamics (no-stuck): proven upstream in praxis");
         println!("all input axioms hold");
         Ok(())
     } else {
         Err(VogixError::Config(format!(
-            "{} input graph axiom(s) failed, {} binding(s) unparseable",
+            "{} graph axiom(s) failed, {} binding(s) unparseable, {} remap axiom(s) failed",
             graph_failures.len(),
-            unparseable.len()
+            unparseable.len(),
+            remap_failures.len(),
         )))
     }
+}
+
+/// Verify the loaded paradigm's remap set against the praxis keybinding axioms.
+/// Returns the names of any that fail (empty = all hold).
+fn remap_axiom_failures(schema: &Schema) -> Vec<String> {
+    use pr4xis::ontology::Axiom;
+    use pr4xis_domains::applied::hmi::input::keybindings::{MacosRemapComplete, RemapInjective};
+
+    let remaps = schema.remap_set();
+    let mut failures = Vec::new();
+    let injective = RemapInjective {
+        remaps: remaps.clone(),
+    };
+    if injective.verify().is_err() {
+        failures.push("RemapInjective".to_string());
+    }
+    // Completeness is only required of the macOS paradigm (the one that claims it).
+    if schema.paradigm() == "macos" {
+        let complete = MacosRemapComplete { remaps };
+        if complete.verify().is_err() {
+            failures.push("MacosRemapComplete".to_string());
+        }
+    }
+    failures
 }
 
 /// Load the schema, validate the loaded graph fail-closed, then hand off to

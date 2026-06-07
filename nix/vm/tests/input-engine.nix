@@ -53,14 +53,10 @@ let
     };
     keybindings = {
       modKey = "super";
+      # No paradigm set → defaults to "macos" (praxis macos_remap): Super+C/V → Ctrl+C/V.
       layers = {
         desktopToggle = { hold = "capslock"; tapHoldMs = 250; entersMode = "desktop"; };
       };
-    };
-    # Two remaps prove the table is data-driven, not hardcoded to one letter.
-    _superCtrlRemaps = {
-      copy = { from = "super + c"; to = "ctrl + c"; };
-      paste = { from = "super + v"; to = "ctrl + v"; };
     };
     # kitty is a terminal: the context-aware remap retargets copy/paste there.
     terminalClasses = [ "kitty" ];

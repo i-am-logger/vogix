@@ -14,12 +14,18 @@
 //! every unbound key is swallowed too; in passthrough modes unbound keys are
 //! re-emitted. CapsLock is never emitted — it is the mode trigger.
 
-use super::keys::{Chord, Modifier, Mods, is_capslock, modifier_code, modifier_of, parse_chord};
+use super::keys::{
+    Chord, Modifier, Mods, is_capslock, key_to_keycode, keycode_to_key, modifier_code, modifier_of,
+    modifiers_to_mods, parse_chord,
+};
 use super::schema::{ActionKind, Schema, parse_action};
 use super::taphold::{CapsDetector, CapsEvent, CapsIntent};
 use evdev::KeyCode;
 use pr4xis::engine::Engine;
 use pr4xis_domains::applied::hmi::input::engine::{ModeTransition, drive, new_input_engine};
+use pr4xis_domains::applied::hmi::input::keybindings::{
+    Key, KeyCombo, Modifier as PxMod, RemapSet,
+};
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
 use std::collections::{HashMap, HashSet};
 
@@ -55,8 +61,9 @@ pub struct Router {
     bindings: HashMap<String, HashMap<Chord, Resolved>>,
     /// mode name → catchall (swallows unbound keys).
     catchall: HashMap<String, bool>,
-    /// Super+code → target chord (e.g. Super+C → Ctrl+C).
-    remaps: HashMap<u16, Chord>,
+    /// The paradigm's Super-modifier remap set (e.g. macOS-Command: Super+C →
+    /// Ctrl+C), a praxis `RemapSet` consulted via `apply`.
+    remaps: RemapSet,
     /// Window classes that are terminals — the remap is context-adjusted there.
     terminal_classes: HashSet<String>,
     /// The focused window's class (fed by the I/O shell from Hyprland's
@@ -66,28 +73,28 @@ pub struct Router {
     mode_colors: HashMap<String, (String, String)>,
     /// Timestamp (ms) of the last input event — drives sticky-mode idle revert.
     last_activity: u64,
+    /// Idle threshold (ms) after which a sticky mode auto-reverts (loaded).
+    sticky_idle_ms: u64,
     caps_target: Option<ModeId>,
     root: ModeId,
 }
-
-/// A STICKY (locked) mode auto-reverts to root after this much inactivity, so a
-/// forgotten sticky mode self-heals (the residual sticky mode-error safeguard;
-/// momentary/held modes are user-maintained and never idle-revert). A const
-/// default for now; could become schema data later.
-pub const DEFAULT_STICKY_IDLE_MS: u64 = 30_000;
 
 impl Router {
     /// Build a router from the loaded schema.
     pub fn new(schema: &Schema) -> Self {
         let graph = schema.build_mode_graph();
         let root = graph.root.clone();
+        // "Catchall" (does a mode swallow unbound keys?) is a praxis
+        // ModeProperties quality — read it from the built graph, the single
+        // source of truth, rather than recomputing kind=="submap" here.
+        let catchall: HashMap<String, bool> = graph
+            .modes
+            .iter()
+            .map(|(id, props)| (id.0.clone(), props.catchall))
+            .collect();
         let engine = Some(new_input_engine(graph));
 
         let mut bindings = HashMap::new();
-        let mut catchall = HashMap::new();
-        for (name, node) in &schema.mode_graph.modes {
-            catchall.insert(name.clone(), node.kind.as_deref() == Some("submap"));
-        }
         for (mode_name, mode_spec) in &schema.modes {
             let mut map = HashMap::new();
             for b in mode_spec.bindings.values() {
@@ -120,14 +127,9 @@ impl Router {
             bindings.insert(mode_name.clone(), map);
         }
 
-        let mut remaps = HashMap::new();
-        for r in schema.super_ctrl_remaps.values() {
-            if let (Some(from), Some(to)) = (parse_chord(&r.from), parse_chord(&r.to))
-                && from.mods.sup
-            {
-                remaps.insert(from.code, to);
-            }
-        }
+        // The remap set comes from the loaded interaction paradigm (a praxis
+        // preset, e.g. macos_remap) — cited + axiom-checkable, not a hand table.
+        let remaps = schema.remap_set();
 
         Self {
             engine,
@@ -144,6 +146,7 @@ impl Router {
                 .map(|(m, c)| (m.clone(), (c.active.clone(), c.inactive.clone())))
                 .collect(),
             last_activity: 0,
+            sticky_idle_ms: schema.sticky_idle_ms(),
             caps_target: schema.caps_target().map(ModeId::new),
             root,
         }
@@ -163,15 +166,14 @@ impl Router {
     /// wake-up deadline.
     pub fn idle_deadline(&self) -> Option<u64> {
         self.sticky_active()
-            .then(|| self.last_activity + DEFAULT_STICKY_IDLE_MS)
+            .then(|| self.last_activity + self.sticky_idle_ms)
     }
 
     /// Auto-revert a sticky mode to root once it has been idle past the
     /// threshold (a forgotten sticky mode self-heals). No-op otherwise.
     pub fn on_idle(&mut self, now: u64) -> Vec<Effect> {
         let mut fx = Vec::new();
-        if self.sticky_active() && now.saturating_sub(self.last_activity) >= DEFAULT_STICKY_IDLE_MS
-        {
+        if self.sticky_active() && now.saturating_sub(self.last_activity) >= self.sticky_idle_ms {
             self.apply_and_note(ModeTransition::ExitToRoot, &mut fx);
         }
         fx
@@ -332,10 +334,10 @@ impl Router {
             return fx; // a bound key is always swallowed
         }
 
-        // Super→Ctrl style remap, when nothing explicit matched. Only when Super
-        // is the SOLE modifier — the remap table is keyed on the bare base key, so
-        // Super+Shift+C is a *different* chord and must not fire the Super+C remap
-        // (which, with Shift still physically held, would inject Ctrl+Shift+C).
+        // Paradigm remap (macOS-Command: Super+letter → Ctrl+letter), via the
+        // praxis RemapSet. Only when Super is the SOLE modifier — the remap source
+        // is `Super + key`, so Super+Shift+C is a *different* combo and must not
+        // fire the Super+C remap (which, with Shift held, would inject Ctrl+Shift+C).
         if self.mods
             == (Mods {
                 sup: true,
@@ -343,11 +345,11 @@ impl Router {
                 ctrl: false,
                 alt: false,
             })
-            && self.remaps.contains_key(&code)
+            && let Some(key) = keycode_to_key(code)
         {
-            if is_press {
-                let to = self.remaps[&code];
-                if self.active_is_terminal() {
+            let from = KeyCombo::new(key).with_mod(PxMod::Super);
+            if let Some(to) = self.remaps.apply(&from).cloned() {
+                if is_press {
                     // In a terminal a bare Ctrl+C (VINTR under ISIG) sends SIGINT
                     // to the foreground process group (POSIX termios) — the macOS
                     // copy gesture would KILL the running job. So re-target
@@ -355,22 +357,23 @@ impl Router {
                     // and suppress every other remap so we never inject readline
                     // control codes (Ctrl+A start-of-line, Ctrl+W kill-word, …).
                     // Real Ctrl+C (no Super) still passes straight through as SIGINT.
-                    if let Some(shifted) = terminal_copy_paste_target(&to) {
-                        log::debug!(
-                            "remap (terminal) super+{:?} → Ctrl+Shift+{:?}",
-                            KeyCode(code),
-                            KeyCode(to.code)
-                        );
-                        self.emit_chord_tap(&shifted, &mut fx);
+                    let target = if self.active_is_terminal() {
+                        terminal_copy_paste_target(&to)
                     } else {
-                        log::debug!("remap suppressed in terminal: super+{:?}", KeyCode(code));
+                        Some(to.clone())
+                    };
+                    match target.as_ref().and_then(keycombo_to_chord) {
+                        Some(chord) => {
+                            log::debug!("remap super+{:?} → {}", KeyCode(code), to.display());
+                            self.emit_chord_tap(&chord, &mut fx);
+                        }
+                        None => {
+                            log::debug!("remap suppressed/unmappable: super+{:?}", KeyCode(code))
+                        }
                     }
-                } else {
-                    log::debug!("remap super+{:?} → {:?}", KeyCode(code), KeyCode(to.code));
-                    self.emit_chord_tap(&to, &mut fx);
                 }
+                return fx; // swallow the original super-combo (incl. release/repeat)
             }
-            return fx; // swallow the original super-combo (incl. release/repeat)
         }
 
         // A Super-combo that matched neither a binding nor a remap is still OWNED
@@ -517,21 +520,25 @@ impl Router {
 /// If a remap target is copy or paste (Ctrl+C / Ctrl+V), return its
 /// terminal-safe equivalent Ctrl+Shift+C / Ctrl+Shift+V (the universal Linux
 /// terminal copy/paste). Returns `None` for any other remap, which the caller
-/// then suppresses in a terminal. Emitted as keycodes, so no config-syntax
-/// case caveats apply.
-fn terminal_copy_paste_target(to: &Chord) -> Option<Chord> {
-    let ctrl_only = to.mods.ctrl && !to.mods.shift && !to.mods.alt && !to.mods.sup;
-    if ctrl_only && (to.code == KeyCode::KEY_C.0 || to.code == KeyCode::KEY_V.0) {
-        Some(Chord {
-            mods: Mods {
-                shift: true,
-                ..to.mods
-            },
-            code: to.code,
-        })
-    } else {
-        None
-    }
+/// then suppresses in a terminal. Works on the praxis `KeyCombo`, so the
+/// copy/paste identity is the paradigm's `Key::Letter`, not a hardwired keycode.
+fn terminal_copy_paste_target(to: &KeyCombo) -> Option<KeyCombo> {
+    let is_copy_paste =
+        matches!(to.key, Key::Letter('c') | Key::Letter('v')) && to.modifiers == [PxMod::Ctrl];
+    is_copy_paste.then(|| {
+        KeyCombo::new(to.key.clone())
+            .with_mod(PxMod::Ctrl)
+            .with_mod(PxMod::Shift)
+    })
+}
+
+/// Convert a praxis `KeyCombo` to the evdev `Chord` the I/O shell emits. `None`
+/// if the key has no evdev keycode (e.g. a mouse button).
+fn keycombo_to_chord(combo: &KeyCombo) -> Option<Chord> {
+    Some(Chord {
+        mods: modifiers_to_mods(&combo.modifiers),
+        code: key_to_keycode(&combo.key)?,
+    })
 }
 
 /// Drain pending bytes from the Hyprland event stream and update the router's
@@ -978,11 +985,6 @@ mod tests {
       "keybindings": { "modKey": "super", "layers": {
         "desktopToggle": { "hold": "capslock", "tapHoldMs": 250, "holdAction": "f23" }
       }},
-      "superCtrlRemaps": {
-        "copy": { "from": "super + c", "to": "ctrl + c" },
-        "paste": { "from": "super + v", "to": "ctrl + v" },
-        "selectAll": { "from": "super + a", "to": "ctrl + a" }
-      },
       "terminalClasses": ["kitty"],
       "modeColors": {
         "desktop": { "active": "rgb(89b4fa)", "inactive": "rgb(313244)" }
@@ -1064,7 +1066,7 @@ mod tests {
         assert!(r.on_idle(1000).is_empty());
         assert_eq!(r.mode(), "desktop");
         // Past the idle threshold → auto-revert to app (forgotten sticky heals).
-        let fx = r.on_idle(50 + DEFAULT_STICKY_IDLE_MS + 1);
+        let fx = r.on_idle(50 + crate::input::schema::DEFAULT_STICKY_IDLE_MS + 1);
         assert!(fx.contains(&Effect::ModeChanged("app".into())));
         assert_eq!(r.mode(), "app");
     }
@@ -1077,7 +1079,8 @@ mod tests {
         r.on_key(H, 1, 10); // caps-hold+h → momentary desktop
         assert_eq!(r.mode(), "desktop");
         assert!(
-            r.on_idle(DEFAULT_STICKY_IDLE_MS + 100).is_empty(),
+            r.on_idle(crate::input::schema::DEFAULT_STICKY_IDLE_MS + 100)
+                .is_empty(),
             "a momentary mode must not idle-revert"
         );
         assert_eq!(r.mode(), "desktop");

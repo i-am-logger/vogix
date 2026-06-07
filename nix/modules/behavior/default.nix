@@ -35,7 +35,6 @@ let
         modeGraph.modes;
       mouse = mergeOr (kb.mouse or { }) defaults.keybindings.mouse;
       layers = mergeOr (kb.layers or { }) defaults.keybindings.layers;
-      universal = defaults._superCtrlRemaps;
       modeColors = userModes.modeColors or { };
       input = mergeOr (behaviorCfg.input or { }) defaults.input;
       touchpad = mergeOr (behaviorCfg.touchpad or { }) defaults.touchpad;
@@ -68,8 +67,10 @@ in
   # Render the behavior config to the JSON shape `src/input/schema.rs` expects.
   # The Rust side reads this via `Schema::load()` from
   # `~/.local/state/vogix/input.json`. The top-level keys mirror defaults.nix
-  # 1:1 (`modeGraph`, `modes`, `keybindings`, `_superCtrlRemaps`) — the Rust
-  # struct's `#[serde(rename)]` lines were written against that layout.
+  # 1:1 (`modeGraph`, `modes`, `keybindings`) — the Rust struct's
+  # `#[serde(rename)]` lines were written against that layout. The Super→Ctrl
+  # remap set is selected by `keybindings.paradigm` (a praxis preset), not a
+  # listed table.
   #
   # We iterate `modeGraph.modes` (not `behaviorCfg.modes`) so every declared
   # mode lands in the schema even if only some are exposed as user options.
@@ -90,7 +91,6 @@ in
       inherit modeGraph;
       modes = effectiveModes;
       keybindings = effectiveKeybindings;
-      inherit (defaults) _superCtrlRemaps;
       # Top-level for the Rust `Schema.terminal_classes` (context-aware remap).
       terminalClasses = effectiveKeybindings.terminalClasses or [ ];
       # Per-mode border colours for the mode-visibility surface (engine paints
