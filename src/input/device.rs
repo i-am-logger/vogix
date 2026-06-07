@@ -226,21 +226,34 @@ impl Router {
         let to = self.mode();
         if from != to {
             fx.push(Effect::ModeChanged(to.clone()));
-            // Mode-visibility surface: paint the active-window border for the new
-            // mode so the user can always SEE the current mode (the cure for mode
-            // error — Norman 1981). Colours are loaded data (theme-derived); a
-            // mode with no colour simply isn't painted.
-            if let Some((active, inactive)) = self.mode_colors.get(&to) {
-                fx.push(Effect::Keyword {
-                    key: "general:col.active_border".into(),
-                    value: active.clone(),
-                });
-                fx.push(Effect::Keyword {
-                    key: "general:col.inactive_border".into(),
-                    value: inactive.clone(),
-                });
-            }
+            self.push_border(&to, fx);
         }
+    }
+
+    /// Mode-visibility surface: paint the active-window border for `mode` so the
+    /// user can always SEE the current mode (the cure for mode error — Norman
+    /// 1981). Colours are loaded data (theme-derived); a mode with no colour
+    /// simply isn't painted.
+    fn push_border(&self, mode: &str, fx: &mut Vec<Effect>) {
+        if let Some((active, inactive)) = self.mode_colors.get(mode) {
+            fx.push(Effect::Keyword {
+                key: "general:col.active_border".into(),
+                value: active.clone(),
+            });
+            fx.push(Effect::Keyword {
+                key: "general:col.inactive_border".into(),
+                value: inactive.clone(),
+            });
+        }
+    }
+
+    /// Border effects for the CURRENT mode — painted once at startup so the
+    /// visibility cue is correct from the start (a prior session may have left a
+    /// non-app border on the compositor across an engine restart).
+    pub fn paint_current_mode(&self) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        self.push_border(&self.mode(), &mut fx);
+        fx
     }
 
     /// Poll deadline elapsed — let a pure caps-hold resolve.
@@ -319,8 +332,19 @@ impl Router {
             return fx; // a bound key is always swallowed
         }
 
-        // Super→Ctrl style remap, when nothing explicit matched.
-        if self.mods.sup && self.remaps.contains_key(&code) {
+        // Super→Ctrl style remap, when nothing explicit matched. Only when Super
+        // is the SOLE modifier — the remap table is keyed on the bare base key, so
+        // Super+Shift+C is a *different* chord and must not fire the Super+C remap
+        // (which, with Shift still physically held, would inject Ctrl+Shift+C).
+        if self.mods
+            == (Mods {
+                sup: true,
+                shift: false,
+                ctrl: false,
+                alt: false,
+            })
+            && self.remaps.contains_key(&code)
+        {
             if is_press {
                 let to = self.remaps[&code];
                 if self.active_is_terminal() {
@@ -347,6 +371,17 @@ impl Router {
                 }
             }
             return fx; // swallow the original super-combo (incl. release/repeat)
+        }
+
+        // A Super-combo that matched neither a binding nor a remap is still OWNED
+        // by vogix — Super was already swallowed above, so falling through to the
+        // passthrough re-emit would type the bare base key (e.g. Super+h → a stray
+        // "h") into the focused app. Drop any unmapped Super-combo instead.
+        if self.mods.sup {
+            if is_press {
+                log::debug!("unmapped super-combo swallowed: super+{:?}", KeyCode(code));
+            }
+            return fx;
         }
 
         // Unbound: catchall swallows; passthrough re-emits.
@@ -691,6 +726,11 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         win_events = h.connect_events().ok();
     }
 
+    // Paint the current mode's border once at startup, so the mode-visibility cue
+    // is correct from the start — a prior session/crash may have left the border
+    // at a non-app colour across this engine restart.
+    execute(&mut vdev, &mut hypr, router.paint_current_mode());
+
     let start = Instant::now();
     let ms = move |start: &Instant| start.elapsed().as_millis() as u64;
 
@@ -772,18 +812,28 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         }
         if n == 0 {
             // Lazily (re)connect the active-window stream when the compositor
-            // appeared or restarted, re-seeding the class.
+            // appeared or restarted, re-seeding the class. After a compositor
+            // RESTART the cached `hypr` still points at the DEAD instance (it is
+            // not None), so we must re-discover whenever the stream is down — not
+            // only when hypr is None — or connect_events would hit ECONNREFUSED on
+            // the dead .socket2.sock forever and terminal detection would freeze.
             if win_events.is_none() {
                 if hypr.is_none() {
                     hypr = super::hypr::Hypr::discover();
                 }
-                if let Some(h) = hypr.as_ref()
-                    && let Ok(s) = h.connect_events()
-                {
-                    router.set_active_class(h.query_active_class());
-                    pollfds[event_idx].fd = s.as_raw_fd();
-                    win_events = Some(s);
-                    log::debug!("vogix input: active-window stream (re)connected");
+                let connected = hypr
+                    .as_ref()
+                    .and_then(|h| h.connect_events().ok().map(|s| (h.query_active_class(), s)));
+                match connected {
+                    Some((class, s)) => {
+                        router.set_active_class(class);
+                        pollfds[event_idx].fd = s.as_raw_fd();
+                        win_events = Some(s);
+                        log::debug!("vogix input: active-window stream (re)connected");
+                    }
+                    // Connect failed: drop the (possibly stale) handle so the next
+                    // pass re-discovers the live instance after a compositor restart.
+                    None => hypr = None,
                 }
             }
             let now = ms(&start);
@@ -795,6 +845,10 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         if have_shutdown_pipe && pollfds[shutdown_idx].revents & libc::POLLIN != 0 {
             log::info!("vogix input: shutdown signal received — releasing held modifiers");
             execute(&mut vdev, &mut hypr, router.release_held_modifiers());
+            // Let the kernel deliver the key-up events before the uinput fd closes
+            // on return (device teardown isn't ordered after the compositor reads
+            // them) — otherwise a modifier could be left stuck across the restart.
+            std::thread::sleep(std::time::Duration::from_millis(20));
             return Ok(());
         }
         // Active-window class updates from Hyprland's event stream (drives the
@@ -807,6 +861,15 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             pollfds[event_idx].fd = -1;
         }
         for i in 0..devices.len() {
+            // A grabbed keyboard that was unplugged raises POLLHUP/POLLERR (never
+            // POLLIN). Without dropping it, poll() would report it ready every
+            // iteration and spin the loop at 100% CPU. Detach the dead fd (the
+            // device isn't re-grabbed — that's the documented hotplug limitation).
+            if pollfds[i].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+                log::warn!("vogix input: grabbed keyboard #{i} disconnected — dropping it");
+                pollfds[i].fd = -1;
+                continue;
+            }
             if pollfds[i].revents & libc::POLLIN == 0 {
                 continue;
             }
@@ -1095,6 +1158,36 @@ mod tests {
                     value: 0
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn unmapped_super_combo_is_swallowed_not_typed() {
+        // Super+h is neither an app binding nor a remap; vogix OWNS Super, so it
+        // must be swallowed — never re-emit a bare 'h' into the focused app.
+        let mut r = router();
+        assert!(r.on_key(SUPER, 1, 0).is_empty(), "super is swallowed");
+        let fx = r.on_key(H, 1, 10);
+        assert!(
+            fx.is_empty(),
+            "an unmapped super-combo must be swallowed, not typed, got {fx:?}"
+        );
+    }
+
+    #[test]
+    fn remap_does_not_fire_with_an_extra_modifier_held() {
+        // Super+Shift+C must NOT fire the Super+C→Ctrl+C remap (Shift is physically
+        // held, so it would wrongly become Ctrl+Shift+C). With no super+shift+c
+        // binding it is swallowed — never a synthesized Ctrl chord.
+        let mut r = router();
+        let shift = KeyCode::KEY_LEFTSHIFT.0;
+        r.on_key(SUPER, 1, 0);
+        r.on_key(shift, 1, 5); // shift down (tracked + re-emitted)
+        let fx = r.on_key(C, 1, 10);
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::Emit { code, .. } if *code == CTRL)),
+            "super+shift+c must not synthesize a Ctrl chord, got {fx:?}"
         );
     }
 
