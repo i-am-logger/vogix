@@ -330,6 +330,42 @@ impl Router {
 
 // ── I/O shell ────────────────────────────────────────────────────────────────
 
+/// Path of the input engine's single-instance lock
+/// (`$XDG_RUNTIME_DIR/vogix-input.lock`, falling back to `/tmp`).
+fn single_instance_lock_path() -> std::path::PathBuf {
+    let dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+    std::path::Path::new(&dir).join("vogix-input.lock")
+}
+
+/// Take a non-blocking exclusive advisory lock on `path` (creating it). Returns
+/// the held [`std::fs::File`] (keep it alive — the lock releases when it drops),
+/// or an error if another process already holds it.
+fn lock_exclusive(path: &std::path::Path) -> crate::errors::Result<std::fs::File> {
+    use crate::errors::VogixError;
+    use std::os::fd::AsRawFd;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|e| VogixError::Config(format!("open lock {}: {e}", path.display())))?;
+    // LOCK_EX | LOCK_NB: take it, or fail immediately if another fd holds it.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let err = std::io::Error::last_os_error();
+        return Err(VogixError::Config(format!(
+            "another vogix-input already holds {} ({err}); refusing to grab the keyboard \
+             (a second engine would collide and drop keystrokes)",
+            path.display()
+        )));
+    }
+    Ok(file)
+}
+
+/// Acquire the engine's single-instance lock (see [`run`]).
+fn acquire_single_instance_lock() -> crate::errors::Result<std::fs::File> {
+    lock_exclusive(&single_instance_lock_path())
+}
+
 /// Open the uinput emit device, grab the keyboard, and pump events through a
 /// [`Router`] built from the loaded schema. Blocks until interrupted.
 ///
@@ -348,6 +384,15 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     use evdev::{AttributeSet, EventType, InputEvent};
     use std::os::fd::AsRawFd;
     use std::time::Instant;
+
+    // Single-instance guard FIRST, before any grab. Two engines grabbing the
+    // same keyboards at once collide and drop keystrokes (observed when a
+    // restart overlapped the previous instance). A second instance fails to
+    // take this lock and exits cleanly WITHOUT racing the grab. The lock
+    // releases when this process exits (fd close), so a clean restart hands off
+    // as soon as the old instance is gone. `_instance_lock` must stay bound for
+    // the whole run loop to keep the lock held.
+    let _instance_lock = acquire_single_instance_lock()?;
 
     // vogix owns the keyboard regardless of whether a compositor is running.
     // It has two output paths and only ONE of them depends on a compositor:
@@ -696,5 +741,24 @@ mod tests {
         let fx = r.on_key(CAPS, 0, 400); // release → back to app
         assert!(fx.contains(&Effect::ModeChanged("app".into())));
         assert_eq!(r.mode(), "app");
+    }
+
+    // The single-instance guard: a second engine must not take the lock while
+    // one already holds it (overlapping grabs collide and drop keystrokes).
+    #[test]
+    fn single_instance_lock_is_exclusive() {
+        let path =
+            std::env::temp_dir().join(format!("vogix-input-test-{}.lock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let held = super::lock_exclusive(&path).expect("first instance takes the lock");
+        assert!(
+            super::lock_exclusive(&path).is_err(),
+            "a second instance must be refused while the first holds the lock"
+        );
+        drop(held); // first instance exits → lock releases
+        let reacquired = super::lock_exclusive(&path).expect("re-acquirable after release");
+        drop(reacquired);
+        let _ = std::fs::remove_file(&path);
     }
 }

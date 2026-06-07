@@ -200,6 +200,27 @@ let
         fail("keyboard wedged after mode use — typing stopped re-emitting")
     print("PASS: no lockout — typing still works after mode use")
 
+    # --- Test 4: single-instance guard — a 2nd engine refuses, never double-grabs ---
+    # Two engines grabbing the same keyboards at once collide and drop keystrokes
+    # (the "can't type the first letter" failure after an overlapping restart).
+    proc2 = subprocess.run(
+        ["vogix", "input", "run", "--config", "/etc/vogix-test-schema.json"],
+        env=env, capture_output=True, text=True, timeout=15,
+    )
+    msg = proc2.stdout + proc2.stderr
+    if proc2.returncode == 0:
+        fail("second vogix-input must refuse while one is running, but it succeeded")
+    if "already holds" not in msg:
+        fail(f"second instance must refuse with the single-instance lock message, got: {msg!r}")
+    if proc.poll() is not None:
+        fail("first engine must stay alive when a second is launched")
+    emitted.clear()
+    tap(e.KEY_A)
+    time.sleep(0.3)
+    if e.KEY_A not in emitted_codes():
+        fail("first engine must keep working after a second instance is rejected")
+    print("PASS: single-instance guard — 2nd engine refused, 1st intact + typing works")
+
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';
 
