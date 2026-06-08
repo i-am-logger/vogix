@@ -102,6 +102,18 @@ let
     (check "the default paradigm render is modal — no chorded Super+arrow nav"
       (!(lib.hasInfix "super + left" (kbModule.mkSchemaJSON defaults))))
 
+    (check "emacs paradigm uses no Super remap (Ctrl is native)"
+      (defaults.keybindings.paradigms.emacs.remap == "none"))
+
+    (check "emacs paradigm adds a C-x prefix mode (a sequence = a mode)"
+      (defaults.keybindings.paradigms.emacs.modeGraph.modes ? emacs-cx))
+
+    (assertContains "selecting emacs renders the C-x prefix mode into the graph"
+      "emacs-cx"
+      (kbModule.mkSchemaJSON (defaults // {
+        keybindings = defaults.keybindings // { paradigm = "emacs"; };
+      })))
+
     (check "defaults.keybindings has terminalClasses (context-aware remap)"
       ((defaults.keybindings.terminalClasses or [ ]) != [ ]))
 

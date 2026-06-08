@@ -77,19 +77,25 @@ in
   mkSchemaJSON = behaviorCfg:
     let
       userModes = behaviorCfg.modes or { };
-      modeGraph = behaviorCfg.modeGraph or defaults.modeGraph;
       effectiveKeybindings = mergeOr
         (behaviorCfg.keybindings or { })
         defaults.keybindings;
       # Resolve the selected interaction PARADIGM (whole-WM flavour) into the
       # engine's two inputs: the per-mode base bindings and the Super remap name.
       # The user's `behavior.modes` overlays on top of the paradigm's modes.
-      paradigmName = effectiveKeybindings.paradigm or "vim";
+      paradigmName = effectiveKeybindings.paradigm or "default";
       paradigms = effectiveKeybindings.paradigms or { };
       # Fail loudly on an unknown paradigm — a silent fallback would ship an empty
       # binding set (no desktop nav), the exact footgun the seam must avoid.
       selected = paradigms.${paradigmName} or (throw
         "vogix: unknown keybindings.paradigm \"${paradigmName}\" — known paradigms: ${toString (builtins.attrNames paradigms)}");
+      # A paradigm may EXTEND the mode graph with extra modes (e.g. an emacs C-x
+      # PREFIX mode — a key sequence is a chord that enters a transient mode whose
+      # next chord completes it). Merge those onto the shared topology.
+      baseModeGraph = behaviorCfg.modeGraph or defaults.modeGraph;
+      modeGraph = baseModeGraph // {
+        modes = baseModeGraph.modes // (selected.modeGraph.modes or { });
+      };
       paradigmModes = selected.modes or { };
       effectiveModes = lib.mapAttrs
         (name: _:

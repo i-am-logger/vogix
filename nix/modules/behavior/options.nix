@@ -160,6 +160,11 @@ in
                       default = { };
                       description = "Per-mode WM-navigation bindings for this paradigm (same shape as `modes`), over vogix's app/desktop/move/resize.";
                     };
+                    modeGraph = mkOption {
+                      type = types.attrsOf types.anything;
+                      default = { };
+                      description = "Optional mode-graph extension for this paradigm (e.g. a `{ modes.emacs-cx = { parent; type = \"submap\"; }; }` prefix mode for key sequences). Merged onto the shared topology.";
+                    };
                   };
                 });
                 default = { };

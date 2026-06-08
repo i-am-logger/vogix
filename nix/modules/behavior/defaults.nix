@@ -163,6 +163,48 @@ rec {
           inherit (modes) desktop move resize console;
         };
       };
+
+      # emacs: modal + emacs-flavoured. emacs's Ctrl chords are app-internal, so a
+      # GLOBAL C-x would hijack "cut" everywhere — instead the emacs bindings live
+      # INSIDE the CapsLock desktop mode, where Ctrl-chords are WM nav (not app).
+      # Motion is emacs's C-f/C-b/C-n/C-p; C-x is a PREFIX that enters a transient
+      # command mode — a key SEQUENCE modelled as a mode (C-x then a key). remap =
+      # none (emacs uses Ctrl natively).
+      emacs = {
+        remap = "none";
+        # The C-x prefix mode (a sequence = a chord that enters a transient mode).
+        modeGraph = {
+          modes = {
+            emacs-cx = { parent = "app"; type = "submap"; };
+          };
+        };
+        modes = {
+          desktop = {
+            enter = null;
+            exit = "escape";
+            bindings = modes.desktop.bindings // {
+              emacsForward = { key = "ctrl + f"; action = "movefocus, r"; description = "C-f forward (focus right)"; repeat = true; };
+              emacsBack = { key = "ctrl + b"; action = "movefocus, l"; description = "C-b back (focus left)"; repeat = true; };
+              emacsNext = { key = "ctrl + n"; action = "movefocus, d"; description = "C-n next (focus down)"; repeat = true; };
+              emacsPrev = { key = "ctrl + p"; action = "movefocus, u"; description = "C-p previous (focus up)"; repeat = true; };
+              emacsCx = { key = "ctrl + x"; action = "submap, emacs-cx"; description = "C-x prefix"; };
+            };
+          };
+          # After C-x, the next key completes the sequence (emacs window commands).
+          emacs-cx = {
+            enter = null;
+            exit = "escape";
+            bindings = {
+              quit = { key = "ctrl + c"; action = "killactive,"; description = "C-x C-c — close window"; exitAfter = true; };
+              otherWindow = { key = "o"; action = "cyclenext,"; description = "C-x o — other window"; exitAfter = true; };
+              deleteWindow = { key = "0"; action = "killactive,"; description = "C-x 0 — delete window"; exitAfter = true; };
+              maximize = { key = "1"; action = "fullscreen, 0"; description = "C-x 1 — maximise (delete other windows)"; exitAfter = true; };
+            };
+          };
+          inherit (modes) app;
+          inherit (modes) move resize console;
+        };
+      };
     };
 
     # Window classes treated as terminals for the context-aware Super→Ctrl remap

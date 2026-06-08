@@ -38,6 +38,7 @@ let
   # signature gesture actually dispatches (the behavioural section in the driver).
   paradigmWindowsJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "windows"; }; };
   paradigmMacJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "mac"; }; };
+  paradigmEmacsJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "emacs"; }; };
 
   # A fixed ENGINE-NATIVE schema so the behavioural assertions are deterministic.
   # Mirrors the shape `defaults.nix` renders (real-config parsing is covered by
@@ -192,7 +193,7 @@ let
     #    key the UX assertions inject.
     caps = { e.EV_KEY: [
         e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_Q, e.KEY_R, e.KEY_Y,
-        e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_C, e.KEY_V, e.KEY_1,
+        e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_C, e.KEY_V, e.KEY_X, e.KEY_1,
         e.KEY_LEFT, e.KEY_TAB, e.KEY_ESC, e.KEY_VOLUMEUP,
     ] }
     ui = UInput(caps, name="vogix-test-kbd")
@@ -609,6 +610,20 @@ let
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_TAB, hold=0.03), up(e.KEY_LEFTMETA)),
         "dispatch cyclenext",
     )
+    # emacs: a key SEQUENCE — CapsLock-tap → desktop, then C-x (prefix mode), then
+    # C-c completes it → close window. Proves sequences = chord-triggered modes.
+    def emacs_cxcc():
+        tap(e.KEY_CAPSLOCK, hold=0.05)  # tap → sticky desktop
+        time.sleep(0.15)
+        down(e.KEY_LEFTCTRL); tap(e.KEY_X, hold=0.03); up(e.KEY_LEFTCTRL)  # C-x → emacs-cx
+        time.sleep(0.1)
+        down(e.KEY_LEFTCTRL); tap(e.KEY_C, hold=0.03); up(e.KEY_LEFTCTRL)  # C-c → close
+    paradigm_dispatch(
+        "emacs — C-x C-c sequence dispatches killactive",
+        "/etc/vogix-paradigm-emacs.json",
+        emacs_cxcc,
+        "dispatch killactive",
+    )
 
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';
@@ -622,6 +637,7 @@ pkgs.testers.nixosTest {
     environment.etc."vogix-real-defaults.json".text = realDefaultsJson;
     environment.etc."vogix-paradigm-windows.json".text = paradigmWindowsJson;
     environment.etc."vogix-paradigm-mac.json".text = paradigmMacJson;
+    environment.etc."vogix-paradigm-emacs.json".text = paradigmEmacsJson;
     # Reference the flake's vogix build directly (the `pkgs` in scope here is the
     # outer test pkgs, which carries no vogix overlay; an overlay would only land
     # on the machine's own pkgs arg). pyenv/evtest come from the plain pkgs.
@@ -647,6 +663,7 @@ pkgs.testers.nixosTest {
     print(machine.succeed("vogix input check --config /etc/vogix-real-defaults.json"))
     print(machine.succeed("vogix input check --config /etc/vogix-paradigm-windows.json"))
     print(machine.succeed("vogix input check --config /etc/vogix-paradigm-mac.json"))
+    print(machine.succeed("vogix input check --config /etc/vogix-paradigm-emacs.json"))
 
     print(machine.succeed("${pyenv}/bin/python3 ${driver}"))
   '';
