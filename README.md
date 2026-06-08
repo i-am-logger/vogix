@@ -8,7 +8,9 @@
 
 Vogix is a declarative UX layer for NixOS that unifies desktop configuration - define your appearance (colors, fonts, transparency, animations) and behavior (keybindings, window rules, gestures) once, and vogix generates configs for all your applications.
 
-**Currently implemented:** Runtime color theme switching across 4 schemes without system rebuilds.
+**Currently implemented:**
+- **Appearance** - runtime color theme switching across 4 schemes, no system rebuilds.
+- **Behavior** - an ontology-driven keyboard input engine: modal + chorded keybindings, dual-role CapsLock, and selectable interaction *paradigms* (default / windows / mac / emacs).
 
 **Vision:** Full desktop UX management - see [roadmap](#roadmap).
 
@@ -38,7 +40,7 @@ Vogix is evolving from a color theming tool to a full NixOS UX subsystem. See [#
 - [ ] [Shaders](https://github.com/i-am-logger/vogix/issues/145) - CRT, bloom effects
 
 ### Behavior (how things act)
-- [ ] [Keybindings](https://github.com/i-am-logger/vogix/issues/154) - unified across apps
+- [x] [Keybindings](https://github.com/i-am-logger/vogix/issues/154) - ontology-driven input engine: modes, dual-role CapsLock, interaction paradigms (default/windows/mac/emacs)
 - [ ] [Window rules](https://github.com/i-am-logger/vogix/issues/155) - floating, positioning
 - [ ] [Focus](https://github.com/i-am-logger/vogix/issues/156) - follow mouse, click-to-focus
 - [ ] [Gestures](https://github.com/i-am-logger/vogix/issues/157) - touchpad, touchscreen
@@ -77,6 +79,18 @@ Vogix supports 4 color schemes, each with its own philosophy:
 - **Nix-Based Theme Generation**: All theme configurations pre-generated at build time
 - **NixOS Integration**: Home Manager module with systemd service
 - **Shell Completions**: Support for Bash, Zsh, Fish, and Elvish
+
+### Input Engine
+
+A single ontology-driven input daemon (evdev grab → uinput re-emit + compositor IPC) that owns the keyboard — no kanata, no compositor submaps — so the same keybindings work even without a running compositor.
+
+- **Modes**: a typed mode statechart (app / desktop / move / resize / console). Modes and their bindings are loaded as *data*, not hard-coded; "stuck in a mode" is unrepresentable (machine-checked against the [praxis](https://github.com/i-am-logger/pr4xis) HMI ontology — Raskin/Norman/Harel).
+- **Dual-role CapsLock**: tap = sticky (locked) mode, hold = momentary (reverts on release); a forgotten sticky mode idle-reverts. Esc is an always-available safety-net exit; the active mode is shown by the window border.
+- **Interaction paradigms**: select a whole keymap *flavour* as data and layer your own bindings on top —
+  - `default` - your own modal CapsLock→desktop config (bare hjkl/arrows)
+  - `windows` / `mac` - chorded navigation (each cited to the platform's keyboard-shortcut docs)
+  - `emacs` - modal motion + a real `C-x` prefix (key *sequences* modelled as transient modes)
+- **Context-aware macOS-Command remap**: Super behaves like ⌘ (Super+C → Ctrl+C), retargeted to Ctrl+Shift in terminals so it can't SIGINT a running job.
 
 ## Quick Start
 
