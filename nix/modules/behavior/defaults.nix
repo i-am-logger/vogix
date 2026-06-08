@@ -119,11 +119,13 @@ rec {
       #
       # Source: Microsoft, "Keyboard shortcuts in Windows"
       # (support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec).
-      # Platform-native (verbatim): Alt+Tab = switch windows, Alt+F4 = close, and
-      # Ctrl-native copy/paste (remap = none). The Super+arrow focus / Super+Shift
-      # move / Super+Ctrl resize block is a vogix WM-FLAVOUR convention, NOT a
-      # Windows binding — Windows uses Win+arrow for window SNAP and Win+Ctrl+arrow
-      # to switch virtual desktops. (Win+D show-desktop is deliberately unbound.)
+      # Platform-native (verbatim): Alt+Tab = switch windows, Alt+F4 = close,
+      # Win+Ctrl+←/→ = switch virtual desktops (-> workspace ∓1), and Ctrl-native
+      # copy/paste (remap = none). The Super+arrow focus / Super+Shift+arrow move
+      # block is a vogix WM-FLAVOUR convention, NOT Windows-native — Windows binds
+      # Win+arrow to window SNAP, which a tiling WM has no equivalent for; the
+      # tiling-useful focus/move is kept here instead. Win+D (show desktop) is
+      # omitted: Hyprland has no core show-desktop dispatcher to map it faithfully.
       windows = {
         remap = "none";
         modes = {
@@ -139,10 +141,10 @@ rec {
               winMoveDown = { key = "super + shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
               winMoveUp = { key = "super + shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
               winMoveRight = { key = "super + shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-              winResizeLeft = { key = "super + ctrl + left"; action = "resizeactive, -40 0"; description = "Shrink width"; repeat = true; };
-              winResizeRight = { key = "super + ctrl + right"; action = "resizeactive, 40 0"; description = "Grow width"; repeat = true; };
-              winResizeUp = { key = "super + ctrl + up"; action = "resizeactive, 0 -40"; description = "Shrink height"; repeat = true; };
-              winResizeDown = { key = "super + ctrl + down"; action = "resizeactive, 0 40"; description = "Grow height"; repeat = true; };
+              # Win+Ctrl+←/→ switch virtual desktops on Windows (MS: "Win+Ctrl+Left/
+              # Right — Switch between virtual desktops"); map to adjacent workspaces.
+              winDesktopPrev = { key = "super + ctrl + left"; action = "workspace, -1"; description = "Previous virtual desktop"; };
+              winDesktopNext = { key = "super + ctrl + right"; action = "workspace, +1"; description = "Next virtual desktop"; };
               winCycle = { key = "alt + tab"; action = "cyclenext,"; description = "Cycle windows"; };
               winClose = { key = "super + q"; action = "killactive,"; description = "Close window"; };
               winCloseAltF4 = { key = "alt + F4"; action = "killactive,"; description = "Close window"; };
@@ -154,17 +156,15 @@ rec {
         };
       };
 
-      # mac: chorded Command-key navigation; keeps the macOS Super→Ctrl remap for
-      # app shortcuts (Cmd+C/V/Q/W → Ctrl…), so WM nav avoids Super+letter and uses
-      # Super+arrows / Super+Tab / Cmd+Ctrl+F. CapsLock modal layer stays available.
+      # mac: Command-key app shortcuts via the macOS Super→Ctrl remap, plus the
+      # native macOS Spaces / app-switch / fullscreen gestures. Tiling focus/move
+      # is via the CapsLock desktop layer (macOS has no chorded window focus).
       #
       # Source: Apple, "Mac keyboard shortcuts" (support.apple.com/en-us/102650) +
       # the macOS HIG (Command is the primary shortcut modifier — the basis for the
-      # Super→Ctrl remap). Platform-native (verbatim): Cmd+Tab (Super+Tab →
-      # cyclenext), Control+Command+F (Super+Ctrl+F → fullscreen), and Cmd+C/V/W/Q
-      # via remap = macos. The Super+arrow focus/move block is a vogix WM-FLAVOUR
-      # convention, NOT a macOS binding — on macOS Cmd+arrow is TEXT navigation and
-      # the native window/space nav is Control+arrow (Mission Control / Spaces).
+      # Super→Ctrl remap). Platform-native (verbatim): Control+←/→ = move between
+      # Spaces (-> workspace ∓1), Cmd+Tab (Super+Tab → cyclenext), Control+Command+F
+      # (Super+Ctrl+F → fullscreen), and Cmd+C/V/W/Q via remap = macos.
       mac = {
         remap = "macos";
         modes = {
@@ -172,15 +172,15 @@ rec {
             enter = null;
             exit = "escape";
             bindings = modes.app.bindings // {
-              macFocusLeft = { key = "super + left"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
-              macFocusDown = { key = "super + down"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
-              macFocusUp = { key = "super + up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
-              macFocusRight = { key = "super + right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
-              macMoveLeft = { key = "super + shift + left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
-              macMoveDown = { key = "super + shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
-              macMoveUp = { key = "super + shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
-              macMoveRight = { key = "super + shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-              macCycle = { key = "super + tab"; action = "cyclenext,"; description = "Cycle windows"; };
+              # macOS Control+←/→ move between Spaces (Apple: "Control-Right/Left
+              # Arrow — move between Spaces"); map to adjacent workspaces. macOS has
+              # no keyboard window-FOCUS convention (that is a tiling concept), so
+              # chorded focus/move are intentionally absent — use the CapsLock
+              # desktop layer for tiling. Mission Control (Control-Up) is omitted:
+              # Hyprland has no core overview dispatcher to map it faithfully.
+              macSpacePrev = { key = "ctrl + left"; action = "workspace, -1"; description = "Previous Space"; };
+              macSpaceNext = { key = "ctrl + right"; action = "workspace, +1"; description = "Next Space"; };
+              macCycle = { key = "super + tab"; action = "cyclenext,"; description = "Cycle windows (Cmd+Tab)"; };
               macFullscreen = { key = "super + ctrl + f"; action = "fullscreen, 0"; description = "Fullscreen (Cmd+Ctrl+F)"; };
             };
           };
@@ -201,8 +201,8 @@ rec {
       # C-x C-c = save-buffers-kill-terminal (close), C-x o = other-window, C-x 0 =
       # delete-window, C-x 1 = delete-other-windows (maximise). NOTE C-f/C-b/C-n/C-p
       # are Emacs char/line motion WITHIN a buffer, re-interpreted here as window
-      # focus (a defensible WM re-mapping, not a literal Emacs binding). The split
-      # commands C-x 2 / C-x 3 are intentionally omitted for now.
+      # focus (a defensible WM re-mapping, not a literal Emacs binding). C-x 2 / C-x
+      # 3 split a buffer view (no exact WM equivalent) → mapped to dwindle preselect.
       emacs = {
         remap = "none";
         # The C-x prefix mode (a sequence = a chord that enters a transient mode).
@@ -232,6 +232,11 @@ rec {
               otherWindow = { key = "o"; action = "cyclenext,"; description = "C-x o — other window"; exitAfter = true; };
               deleteWindow = { key = "0"; action = "killactive,"; description = "C-x 0 — delete window"; exitAfter = true; };
               maximize = { key = "1"; action = "fullscreen, 0"; description = "C-x 1 — maximise (delete other windows)"; exitAfter = true; };
+              # C-x 2 / C-x 3 split a window (showing the same buffer) — no exact WM
+              # equivalent, so mapped to Hyprland's dwindle preselect (the next window
+              # opens below / to the right), the closest tiling analog of a split.
+              splitBelow = { key = "2"; action = "layoutmsg, preselect d"; description = "C-x 2 — split below (preselect down)"; exitAfter = true; };
+              splitRight = { key = "3"; action = "layoutmsg, preselect r"; description = "C-x 3 — split right (preselect right)"; exitAfter = true; };
             };
           };
           inherit (modes) app;

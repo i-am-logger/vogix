@@ -603,12 +603,13 @@ let
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_LEFT, hold=0.03), up(e.KEY_LEFTMETA)),
         "dispatch movefocus l",
     )
-    # mac: chorded Super+Tab → cycle windows (remap = macos kept for letters).
+    # mac: native Control+Left → previous Space (workspace -1); the faithful macOS
+    # Spaces gesture (Super+Tab=Cmd+Tab cycle is also bound, covered by check).
     paradigm_dispatch(
-        "mac — Super+Tab dispatches cyclenext",
+        "mac — Control+Left dispatches workspace (Spaces)",
         "/etc/vogix-paradigm-mac.json",
-        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_TAB, hold=0.03), up(e.KEY_LEFTMETA)),
-        "dispatch cyclenext",
+        lambda: (down(e.KEY_LEFTCTRL), tap(e.KEY_LEFT, hold=0.03), up(e.KEY_LEFTCTRL)),
+        "dispatch workspace -1",
     )
     # emacs: a key SEQUENCE — CapsLock-tap → desktop, then C-x (prefix mode), then
     # C-c completes it → close window. Proves sequences = chord-triggered modes.
