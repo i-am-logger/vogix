@@ -98,15 +98,32 @@ rec {
     paradigms = {
       # default: the user's own preferred model — modal CapsLock→desktop, bare
       # hjkl/arrows. Its bindings ARE the shared `modes` below, so it is the identity.
+      #
+      # Source: the user's own evolved workflow. The original pre-vogix Hyprland
+      # config (git show cce4ddc^:home/gui/hyprland/config/bindings.conf) used
+      # $mainMod = SUPER directly with flat Super-combos and NO Super→Ctrl remap;
+      # the macOS-Command remap and the modal CapsLock→desktop model are deliberate
+      # vogix-era choices (the remap is what justifies the evdev engine). The modal
+      # dynamics are machine-checked in praxis: quasimode-reverts-to-root (Raskin
+      # 2000 §3-2; Norman 1981 mode error) and exit-always-reaches-root (Harel 1987
+      # statecharts) — see pr4xis hmi::input::engine axioms.
       default = {
         remap = "macos";
         inherit modes;
       };
 
       # windows: chorded Win-key navigation IN app mode (no CapsLock needed),
-      # remap = none (Windows uses Ctrl natively for copy/paste). Reuses vim's app
-      # bindings (workspaces/media/console) + adds Super-combo WM nav; the CapsLock
-      # modal layer (desktop/move/resize) stays available as a bonus.
+      # remap = none (Windows uses Ctrl natively for copy/paste). Reuses the
+      # default app bindings (workspaces/media/console) + adds Super-combo WM nav;
+      # the CapsLock modal layer (desktop/move/resize) stays available as a bonus.
+      #
+      # Source: Microsoft, "Keyboard shortcuts in Windows"
+      # (support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec).
+      # Platform-native (verbatim): Alt+Tab = switch windows, Alt+F4 = close, and
+      # Ctrl-native copy/paste (remap = none). The Super+arrow focus / Super+Shift
+      # move / Super+Ctrl resize block is a vogix WM-FLAVOUR convention, NOT a
+      # Windows binding — Windows uses Win+arrow for window SNAP and Win+Ctrl+arrow
+      # to switch virtual desktops. (Win+D show-desktop is deliberately unbound.)
       windows = {
         remap = "none";
         modes = {
@@ -139,8 +156,15 @@ rec {
 
       # mac: chorded Command-key navigation; keeps the macOS Super→Ctrl remap for
       # app shortcuts (Cmd+C/V/Q/W → Ctrl…), so WM nav avoids Super+letter and uses
-      # Super+arrows / Super+Tab / Cmd+Ctrl+F (the real macOS fullscreen). CapsLock
-      # modal layer stays available.
+      # Super+arrows / Super+Tab / Cmd+Ctrl+F. CapsLock modal layer stays available.
+      #
+      # Source: Apple, "Mac keyboard shortcuts" (support.apple.com/en-us/102650) +
+      # the macOS HIG (Command is the primary shortcut modifier — the basis for the
+      # Super→Ctrl remap). Platform-native (verbatim): Cmd+Tab (Super+Tab →
+      # cyclenext), Control+Command+F (Super+Ctrl+F → fullscreen), and Cmd+C/V/W/Q
+      # via remap = macos. The Super+arrow focus/move block is a vogix WM-FLAVOUR
+      # convention, NOT a macOS binding — on macOS Cmd+arrow is TEXT navigation and
+      # the native window/space nav is Control+arrow (Mission Control / Spaces).
       mac = {
         remap = "macos";
         modes = {
@@ -170,6 +194,15 @@ rec {
       # Motion is emacs's C-f/C-b/C-n/C-p; C-x is a PREFIX that enters a transient
       # command mode — a key SEQUENCE modelled as a mode (C-x then a key). remap =
       # none (emacs uses Ctrl natively).
+      #
+      # Source: GNU Emacs Manual — Prefix-Keys ("a key sequence whose binding is a
+      # keymap" — exactly the C-x→submap modelling here), Exiting, Other-Window,
+      # Moving-Point (gnu.org/software/emacs/manual/html_node/emacs/). Faithful:
+      # C-x C-c = save-buffers-kill-terminal (close), C-x o = other-window, C-x 0 =
+      # delete-window, C-x 1 = delete-other-windows (maximise). NOTE C-f/C-b/C-n/C-p
+      # are Emacs char/line motion WITHIN a buffer, re-interpreted here as window
+      # focus (a defensible WM re-mapping, not a literal Emacs binding). The split
+      # commands C-x 2 / C-x 3 are intentionally omitted for now.
       emacs = {
         remap = "none";
         # The C-x prefix mode (a sequence = a chord that enters a transient mode).
