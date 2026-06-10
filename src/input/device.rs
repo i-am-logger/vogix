@@ -997,7 +997,10 @@ mod tests {
         }},
         "desktop": { "exit": "escape", "bindings": {
           "focusLeft": { "key": "h", "action": "movefocus, l", "repeat": true },
+          "moveShift": { "key": "shift + h", "action": "movewindow, l", "repeat": true },
           "enterMove": { "key": "m", "action": "submap, move" },
+          "fullscreen": { "key": "f", "action": "fullscreen" },
+          "terminal": { "key": "t", "action": "exec, $TERMINAL", "exitAfter": true },
           "close": { "key": "q", "action": "killactive,", "exitAfter": true }
         }},
         "move": { "exit": "escape", "bindings": {
@@ -1021,6 +1024,7 @@ mod tests {
     const SUPER: u16 = KeyCode::KEY_LEFTMETA.0;
     const CTRL: u16 = KeyCode::KEY_LEFTCTRL.0;
     const ESC: u16 = KeyCode::KEY_ESC.0;
+    const SPACE: u16 = KeyCode::KEY_SPACE.0;
 
     #[test]
     fn caps_hold_plus_h_focuses_then_release_returns_to_app() {
@@ -1299,6 +1303,34 @@ mod tests {
         // plain 'a' in app mode → emitted (typing works).
         let fx = r.on_key(A, 1, 0);
         assert_eq!(fx, vec![Effect::Emit { code: A, value: 1 }]);
+    }
+
+    #[test]
+    fn app_mode_passes_through_space() {
+        // Regression (live host): every letter typed but Space did not. In app
+        // (passthrough) mode a bare Space — Super NOT held — must re-emit as a
+        // literal space; it must NOT match the `super + space` launcher binding,
+        // nor be swallowed. (`super_space_dispatches_launcher` covers Super-held.)
+        let mut r = router();
+        let down = r.on_key(SPACE, 1, 0);
+        assert_eq!(
+            down,
+            vec![Effect::Emit {
+                code: SPACE,
+                value: 1
+            }],
+            "bare Space must type a space in app mode, got {down:?}"
+        );
+        // release re-emits too (a half-emitted space would stick the key).
+        let up = r.on_key(SPACE, 0, 5);
+        assert_eq!(
+            up,
+            vec![Effect::Emit {
+                code: SPACE,
+                value: 0
+            }],
+            "bare Space release must re-emit, got {up:?}"
+        );
     }
 
     #[test]
