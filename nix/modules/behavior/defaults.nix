@@ -17,9 +17,15 @@
 #   direction (arrows or h/j/k/l) = focus
 #   Shift + direction             = move window
 #   Ctrl  + direction             = resize window
+#   m / r                         = sustained move / resize sub-modes (bare arrows)
+#   Tab                           = toggle split orientation (horizontal/vertical)
 #   number                        = go to workspace
 #   Shift + number                = send window to workspace + follow
-#   q = close, f = fullscreen, y = float, x = lock, d = dismiss, Space = launcher
+#   q = close   f = toggle fullscreen   y = float   Tab = split   d = dismiss
+#   t = terminal   e = browser   Space = launcher   x = lock
+# You STAY in the mode while managing (toggle/move/resize/close/dismiss); you
+# leave only by tapping CapsLock / Esc, or via an action that opens a new surface
+# (t/e/Space/x). f is a TOGGLE — press it again to un-fullscreen without leaving.
 _:
 
 let
@@ -405,7 +411,29 @@ rec {
         focusUpArrow = { key = "up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
         focusRightArrow = { key = "right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
 
-        # ── Enter MOVE / RESIZE sub-modes (native submap → daemon colours them) ──
+        # ── Move (Shift+dir) / Resize (Ctrl+dir): the modifier on a direction
+        # picks the verb (bare = focus, Shift = move, Ctrl = resize). The quick,
+        # in-place path; for a sustained session, enter the m/r sub-modes below
+        # (same arrows, no modifier held).
+        moveLeft = { key = "shift + h"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
+        moveDown = { key = "shift + j"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
+        moveUp = { key = "shift + k"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
+        moveRight = { key = "shift + l"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
+        moveLeftArrow = { key = "shift + left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
+        moveDownArrow = { key = "shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
+        moveUpArrow = { key = "shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
+        moveRightArrow = { key = "shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
+        resizeLeft = { key = "ctrl + h"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
+        resizeDown = { key = "ctrl + j"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
+        resizeUp = { key = "ctrl + k"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
+        resizeRight = { key = "ctrl + l"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
+        resizeLeftArrow = { key = "ctrl + left"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
+        resizeDownArrow = { key = "ctrl + down"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
+        resizeUpArrow = { key = "ctrl + up"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
+        resizeRightArrow = { key = "ctrl + right"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
+
+        # ── Sustained MOVE / RESIZE sub-modes (m / r): arrows with no modifier,
+        # for arranging a window over many keystrokes. Border recolours per mode. ──
         enterMove = { key = "m"; action = "submap, move"; description = "Move-window mode"; };
         enterResize = { key = "r"; action = "submap, resize"; description = "Resize-window mode"; };
 
@@ -436,21 +464,25 @@ rec {
         sendToWs10 = { key = "shift + 0"; action = "movetoworkspace, 10"; description = "Send window to ws 10 + follow"; };
 
         # ── Window state ──
-        # One-shot commands return to app (exitAfter); float + split stay so you
-        # can keep arranging the window you just floated/split.
-        closeWindow = { key = "q"; action = "killactive,"; description = "Close window"; exitAfter = true; };
-        fullscreen = { key = "f"; action = "fullscreen"; description = "Fullscreen"; exitAfter = true; };
+        # exitAfter RULE: a mode is a sustained context — you leave it by tapping
+        # CapsLock or Esc, NOT by doing things in it. So `exitAfter` is set ONLY
+        # for actions that move your attention to a NEW surface (launch an app,
+        # lock the screen). Window-management actions — toggle fullscreen/float/
+        # split, close, resize, dismiss, switch workspace — STAY so you can keep
+        # arranging. (fullscreen is a TOGGLE: f on, f off, without leaving.)
+        closeWindow = { key = "q"; action = "killactive,"; description = "Close window"; };
+        fullscreen = { key = "f"; action = "fullscreen"; description = "Toggle fullscreen"; };
         toggleFloat = { key = "y"; action = "togglefloating,"; description = "Float (yank from tiling)"; };
-        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split orientation"; };
+        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split (horizontal/vertical)"; };
 
         # ── Quick launches (auto-exit desktop so you can use the app) ──
         openTerminal = { key = "t"; action = "exec, $TERMINAL"; description = "Terminal"; exitAfter = true; };
         openBrowser = { key = "e"; action = "exec, $BROWSER"; description = "Browser"; exitAfter = true; };
         openLauncher = { key = "space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; exitAfter = true; };
 
-        # ── Notifications + lock (one-shot → return to app) ──
-        dismissNotification = { key = "d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; exitAfter = true; };
-        dismissAll = { key = "shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all"; exitAfter = true; };
+        # Dismiss = a quick management action, stays. Lock moves to a new surface.
+        dismissNotification = { key = "d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
+        dismissAll = { key = "shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all"; };
         lock = { key = "x"; action = "exec, hyprlock"; description = "Lock screen"; exitAfter = true; };
 
         # ── Console + history ──
@@ -480,6 +512,7 @@ rec {
         moveRightArrow = { key = "right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
 
         toResize = { key = "r"; action = "submap, resize"; description = "Switch to resize mode"; };
+        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split (horizontal/vertical)"; };
         help = { key = "slash"; action = "exec, vogix-modes-move"; description = "Show keybindings"; };
       };
     };
@@ -500,6 +533,7 @@ rec {
         resizeRightArrow = { key = "right"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
 
         toMove = { key = "m"; action = "submap, move"; description = "Switch to move mode"; };
+        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split (horizontal/vertical)"; };
         help = { key = "slash"; action = "exec, vogix-modes-resize"; description = "Show keybindings"; };
       };
     };
