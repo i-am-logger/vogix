@@ -342,6 +342,20 @@ let
         fail("hotplugged keyboard was not grabbed — its key was not re-emitted")
     print("PASS: hotplug — keyboard added after startup is grabbed")
 
+    # --- Test 1e: hotplug REMOVE is clean (unplug → slot freed, no wedge) ---
+    # Destroying the hotplugged keyboard raises POLLHUP on the engine's grab; the
+    # slot is freed (the Device ungrabs on Drop) and the engine keeps running —
+    # the ORIGINAL keyboard still types, no 100% CPU spin / wedge.
+    ui_hp.close()
+    time.sleep(1.0)  # let POLLHUP propagate and the slot drop
+    if proc.poll() is not None:
+        fail("engine died after a hotplugged keyboard was removed")
+    emitted.clear()
+    tap(e.KEY_A); time.sleep(0.3)
+    if e.KEY_A not in emitted_codes():
+        fail("after a hotplug remove, the original keyboard must still type")
+    print("PASS: hotplug remove is clean (slot freed, original keyboard still types)")
+
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
     received.clear()
     emitted.clear()
