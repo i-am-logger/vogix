@@ -91,6 +91,13 @@ let
           sendToWs1 = { key = "shift + 1"; action = "movetoworkspace, 1"; };
           toggleFloat = { key = "y"; action = "togglefloating,"; }; # stay (no exitAfter)
           close = { key = "q"; action = "killactive,"; exitAfter = true; };
+          # In-place window management from desktop (the exitAfter rework): the
+          # modifier on a direction picks the verb — bare = focus, Shift = move,
+          # Ctrl = resize — and Tab toggles split. The quick path; the m/r
+          # sub-modes below are for sustained arranging.
+          moveShift = { key = "shift + h"; action = "movewindow, l"; repeat = true; };
+          resizeCtrl = { key = "ctrl + h"; action = "resizeactive, -40 0"; repeat = true; };
+          toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; };
         };
       };
       move = {
@@ -98,6 +105,7 @@ let
         bindings = {
           moveLeft = { key = "h"; action = "movewindow, l"; repeat = true; };
           toResize = { key = "r"; action = "submap, resize"; };
+          toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; };
         };
       };
       resize = {
@@ -105,6 +113,7 @@ let
         bindings = {
           resizeLeft = { key = "h"; action = "resizeactive, -40 0"; repeat = true; };
           toMove = { key = "m"; action = "submap, move"; };
+          toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; };
         };
       };
       console = { bindings = { }; };
@@ -431,6 +440,28 @@ let
     if "dispatch resizeactive -40 0" not in d or "dispatch movewindow l" not in d:
         fail(f"resize then switch-to-move must dispatch both, got {received}")
     print("PASS: resize sub-mode + move↔resize switch")
+
+    # --- Test 9b: in-place move/resize/split from desktop (exitAfter rework) ---
+    # Shift+dir moves the window, Ctrl+dir resizes it, Tab toggles split — all
+    # straight from the desktop mode, no m/r sub-mode. (Bare h stays focus, Test 2.)
+    received.clear()
+    down(e.KEY_CAPSLOCK); time.sleep(0.03)                        # hold → momentary desktop
+    down(e.KEY_LEFTSHIFT); tap(e.KEY_H, hold=0.03); up(e.KEY_LEFTSHIFT); time.sleep(0.1)  # Shift+h → move
+    down(e.KEY_LEFTCTRL); tap(e.KEY_H, hold=0.03); up(e.KEY_LEFTCTRL); time.sleep(0.1)    # Ctrl+h → resize
+    tap(e.KEY_TAB, hold=0.03); time.sleep(0.1)                    # Tab → toggle split
+    up(e.KEY_CAPSLOCK); time.sleep(0.3)                          # release → app
+    d = dispatched()
+    if "dispatch movewindow l" not in d:
+        fail(f"desktop Shift+h must move the window (movewindow l), got {received}")
+    if "dispatch resizeactive -40 0" not in d:
+        fail(f"desktop Ctrl+h must resize the window (resizeactive), got {received}")
+    if "dispatch layoutmsg togglesplit" not in d:
+        fail(f"desktop Tab must toggle split (layoutmsg togglesplit), got {received}")
+    emitted.clear()
+    tap(e.KEY_A, hold=0.03); time.sleep(0.2)
+    if e.KEY_A not in emitted_codes():
+        fail("after in-place management, caps release must return to app (typing works)")
+    print("PASS: in-place move/resize/split from desktop (Shift/Ctrl+dir, Tab)")
 
     # --- Test 10: exitAfter returns to app WITHOUT a second caps tap ---
     received.clear(); emitted.clear()
