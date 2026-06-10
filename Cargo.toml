@@ -58,6 +58,11 @@ swayipc = { version = "3.0", optional = true }
 # evdev — grab the keyboard + emit via uinput for the input engine (Phase 2b)
 evdev = "0.13"
 
+# inotify — hotplug: grab keyboards reconnected after startup by watching
+# /dev/input. Pure Rust (no libudev / pkg-config), so it builds free under
+# crate2nix — unlike the libudev-based `udev` crate (vogix's first native-C link).
+inotify = "0.11"
+
 [dev-dependencies]
 tempfile = "3.10"
 serial_test = "3.2"

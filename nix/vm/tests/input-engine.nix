@@ -316,6 +316,23 @@ let
         fail("health snapshot must carry NO key identity (no-keylog invariant)")
     print("PASS: health snapshot reflects flow (no keylog)")
 
+    # --- Test 1d: hotplug — a keyboard created AFTER startup is grabbed live ---
+    # The engine watches /dev/input via inotify; a new node that passes the
+    # keyboard filter is grabbed without a restart. Inject a key unique to the
+    # new device and assert it is re-emitted on vogix-input (= it was grabbed).
+    hp = { e.EV_KEY: [
+        e.KEY_A, e.KEY_ENTER, e.KEY_LEFTSHIFT, e.KEY_S, e.KEY_D, e.KEY_F, e.KEY_Z,
+    ] }
+    ui_hp = UInput(hp, name="vogix-hotplug-kbd")
+    time.sleep(2.0)  # let inotify fire (CREATE/ATTRIB) and the engine grab it
+    emitted.clear()
+    ui_hp.write(e.EV_KEY, e.KEY_Z, 1); ui_hp.syn()
+    ui_hp.write(e.EV_KEY, e.KEY_Z, 0); ui_hp.syn()
+    time.sleep(0.4)
+    if e.KEY_Z not in emitted_codes():
+        fail("hotplugged keyboard was not grabbed — its key was not re-emitted")
+    print("PASS: hotplug — keyboard added after startup is grabbed")
+
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
     received.clear()
     emitted.clear()

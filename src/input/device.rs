@@ -49,6 +49,18 @@ pub enum Effect {
     ModeChanged(String),
 }
 
+/// One grabbed keyboard the engine owns: the evdev device, its `/dev/input`
+/// node (to dedup inotify add events), and its observability identity +
+/// counters. Held in a stable `Vec<Option<Grabbed>>` slot — a slot is `None`d
+/// when its device unplugs (so the counter indices never shift) and a
+/// hotplugged keyboard reuses a free slot or pushes a new one.
+struct Grabbed {
+    dev: evdev::Device,
+    node: std::path::PathBuf,
+    meta: health::DeviceMeta,
+    counters: health::Counters,
+}
+
 /// A binding resolved from the schema for fast lookup.
 #[derive(Debug, Clone)]
 struct Resolved {
@@ -701,15 +713,17 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     //            broad set instead — excluding the user's only keyboard is a total
     //            lockout (`selection`'s fail-safe).
     let filter = schema.device_filter();
-    let broad: Vec<evdev::Device> = evdev::enumerate()
-        .map(|(_, d)| d)
-        .filter(|d| {
+    let broad: Vec<(std::path::PathBuf, evdev::Device)> = evdev::enumerate()
+        .filter(|(_, d)| {
             d.name() != Some(VIRTUAL_NAME)
                 && d.supported_keys()
                     .is_some_and(|k| k.contains(KeyCode::KEY_A))
         })
         .collect();
-    let flags: Vec<bool> = broad.iter().map(|d| filter.is_text_keyboard(d)).collect();
+    let flags: Vec<bool> = broad
+        .iter()
+        .map(|(_, d)| filter.is_text_keyboard(d))
+        .collect();
     let (keep_idx, widened) = super::devfilter::selection(&flags);
     if widened {
         log::warn!(
@@ -719,12 +733,10 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         );
     }
     let keep: HashSet<usize> = keep_idx.into_iter().collect();
-    let mut devices: Vec<evdev::Device> = Vec::with_capacity(keep.len());
-    // Per-grabbed-device identity, captured here while we still own the `Device`
-    // (the poll loop borrows it as a raw fd afterwards). Hardware metadata only —
-    // it feeds the health snapshot, never key identity.
-    let mut meta: Vec<health::DeviceMeta> = Vec::with_capacity(keep.len());
-    for (i, d) in broad.into_iter().enumerate() {
+    // Stable slots: each grabbed keyboard keeps its index for the life of the
+    // engine; a slot is `None`d on unplug and reused/extended on hotplug.
+    let mut slots: Vec<Option<Grabbed>> = Vec::new();
+    for (i, (node, mut d)) in broad.into_iter().enumerate() {
         // Device identity (name/vendor) is hardware metadata, not keystrokes —
         // logging it closes the "is this the right device?" diagnosis gap (the
         // exact confusion of the flaky-keyboard incident) without keylogging.
@@ -732,27 +744,28 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         let (vendor, product) = (id.vendor(), id.product());
         let name = d.name().unwrap_or("?").to_string();
         if keep.contains(&i) {
-            log::info!("grabbing keyboard {name:?} (vendor {vendor:04x})");
-            meta.push(health::DeviceMeta {
-                name,
-                vendor,
-                product,
-            });
-            devices.push(d);
+            // Grab here (was a separate pass): we own the keyboard from now on.
+            d.grab()
+                .map_err(|e| VogixError::Config(format!("cannot grab keyboard {name:?}: {e}")))?;
+            log::info!("grabbing keyboard {name:?} ({vendor:04x}:{product:04x})");
+            slots.push(Some(Grabbed {
+                dev: d,
+                node,
+                meta: health::DeviceMeta {
+                    name,
+                    vendor,
+                    product,
+                },
+                counters: health::Counters::default(),
+            }));
         } else {
             log::info!(
-                "not grabbing {name:?} (vendor {vendor:04x}) — not a text keyboard / excluded"
+                "not grabbing {name:?} ({vendor:04x}:{product:04x}) — not a text keyboard / excluded"
             );
         }
     }
-    if devices.is_empty() {
+    if slots.is_empty() {
         return Err(VogixError::Config("no keyboard devices found".into()));
-    }
-    // Grab last. If we got this far, uinput is open and we can route; the
-    // grab is the last thing that takes input away from anyone else.
-    for d in &mut devices {
-        d.grab()
-            .map_err(|e| VogixError::Config(format!("cannot grab keyboard: {e}")))?;
     }
 
     let mut router = Router::new(&schema);
@@ -760,8 +773,8 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     // Resync modifier state: a Shift/Ctrl/Alt still physically held across an
     // engine (re)start would otherwise be lost (the router starts empty),
     // mismatching chords until the user re-presses it.
-    for d in &devices {
-        if let Ok(state) = d.get_key_state() {
+    for g in slots.iter().flatten() {
+        if let Ok(state) = g.dev.get_key_state() {
             router.sync_held_keys(state.iter().map(|k| k.0));
         }
     }
@@ -789,25 +802,41 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
 
     log::info!(
         "vogix input running: grabbed {} keyboard(s), mode = {}",
-        devices.len(),
+        slots.iter().flatten().count(),
         router.mode()
     );
 
-    // Observability: per-device flow counters + stuck-key tracking, dumped to
-    // ~/.local/state/vogix/input-health.json for `vogix input doctor`. Counts and
-    // device identity only — never key identity (see [`super::health`]).
+    // Observability: per-device flow counters live IN each `Grabbed` slot (so
+    // they can never desync from the device set under hotplug); stuck-key
+    // tracking + the health snapshot for `vogix input doctor`. Counts + device
+    // identity only — never key identity (see [`super::health`]).
     let pid = std::process::id();
-    let mut counters: Vec<health::Counters> = vec![health::Counters::default(); devices.len()];
     let mut held = health::HeldKeys::default();
     let mut last_snapshot_ms: u64 = 0;
-    health::write_snapshot(&build_snapshot(
-        &meta,
-        &counters,
-        &held,
-        &router.mode(),
-        0,
-        pid,
-    ));
+    health::write_snapshot(&build_snapshot(&slots, &held, &router.mode(), 0, pid));
+
+    // Hotplug: watch /dev/input so a keyboard reconnected AFTER startup is grabbed
+    // without a service restart (the old once-at-enumerate limitation). inotify is
+    // pure-Rust (no libudev); best-effort — a failure just disables hotplug.
+    let mut inotify_buf = [0u8; 4096];
+    let mut inotify = inotify::Inotify::init().ok();
+    if let Some(ino) = inotify.as_mut() {
+        if ino
+            .watches()
+            .add(
+                "/dev/input",
+                inotify::WatchMask::CREATE | inotify::WatchMask::ATTRIB,
+            )
+            .is_err()
+        {
+            log::warn!("vogix input: inotify watch on /dev/input failed — hotplug disabled");
+            inotify = None;
+        }
+    } else {
+        log::warn!(
+            "vogix input: inotify init failed — hotplug disabled (reconnect needs a restart)"
+        );
+    }
 
     // Clean-shutdown self-pipe. On SIGTERM/SIGINT (`systemctl --user stop` or a
     // restart) we must release any modifier we re-emitted, or the compositor is
@@ -828,31 +857,44 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         });
     }
 
-    let mut pollfds: Vec<libc::pollfd> = devices
-        .iter()
-        .map(|d| libc::pollfd {
-            fd: d.as_raw_fd(),
+    loop {
+        // Rebuild the poll set each iteration from the LIVE device slots plus the
+        // fixed trailing aux fds. The device count changes under hotplug, so the
+        // aux indices can't be constants — derive them from the live count, and
+        // map each device poll entry back to its STABLE slot via `fd_slot`. This
+        // also eliminates the old fixed-index / `fd=-1`-tombstone bug class.
+        let mut pollfds: Vec<libc::pollfd> = Vec::with_capacity(slots.len() + 3);
+        let mut fd_slot: Vec<usize> = Vec::new();
+        for (i, slot) in slots.iter().enumerate() {
+            if let Some(g) = slot {
+                pollfds.push(libc::pollfd {
+                    fd: g.dev.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                });
+                fd_slot.push(i);
+            }
+        }
+        let aux_base = pollfds.len();
+        let inotify_idx = aux_base;
+        let shutdown_idx = aux_base + 1;
+        let event_idx = aux_base + 2;
+        pollfds.push(libc::pollfd {
+            fd: inotify.as_ref().map_or(-1, |ino| ino.as_raw_fd()),
             events: libc::POLLIN,
             revents: 0,
-        })
-        .collect();
-    // Two trailing slots after the device fds, always present (poll ignores a
-    // negative fd): the shutdown pipe, then the active-window event stream. Their
-    // fds may be -1 when absent and the event fd is swapped in on reconnect.
-    let shutdown_idx = devices.len();
-    let event_idx = devices.len() + 1;
-    pollfds.push(libc::pollfd {
-        fd: if have_shutdown_pipe { shutdown_r } else { -1 },
-        events: libc::POLLIN,
-        revents: 0,
-    });
-    pollfds.push(libc::pollfd {
-        fd: win_events.as_ref().map_or(-1, |s| s.as_raw_fd()),
-        events: libc::POLLIN,
-        revents: 0,
-    });
+        });
+        pollfds.push(libc::pollfd {
+            fd: if have_shutdown_pipe { shutdown_r } else { -1 },
+            events: libc::POLLIN,
+            revents: 0,
+        });
+        pollfds.push(libc::pollfd {
+            fd: win_events.as_ref().map_or(-1, |s| s.as_raw_fd()),
+            events: libc::POLLIN,
+            revents: 0,
+        });
 
-    loop {
         // Wake at the EARLIEST of: the caps tap-hold deadline, the sticky-idle
         // auto-revert deadline, and a 2s retry while the active-window stream is
         // down. -1 = block indefinitely when nothing is pending.
@@ -867,9 +909,6 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         }
         if win_events.is_none() {
             timeout = if timeout < 0 { 2000 } else { timeout.min(2000) };
-        }
-        for p in &mut pollfds {
-            p.revents = 0;
         }
         let n = unsafe { libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, timeout) };
         if n < 0 {
@@ -896,7 +935,6 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                 match connected {
                     Some((class, s)) => {
                         router.set_active_class(class);
-                        pollfds[event_idx].fd = s.as_raw_fd();
                         win_events = Some(s);
                         log::debug!("vogix input: active-window stream (re)connected");
                     }
@@ -908,14 +946,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             let now = ms(&start);
             execute(&mut vdev, &mut hypr, router.on_timeout(now));
             execute(&mut vdev, &mut hypr, router.on_idle(now));
-            health::write_snapshot(&build_snapshot(
-                &meta,
-                &counters,
-                &held,
-                &router.mode(),
-                now,
-                pid,
-            ));
+            health::write_snapshot(&build_snapshot(&slots, &held, &router.mode(), now, pid));
             last_snapshot_ms = now;
             continue;
         }
@@ -936,22 +967,40 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             && read_window_events(win_events.as_mut().unwrap(), &mut win_buf, &mut router)
         {
             win_events = None;
-            pollfds[event_idx].fd = -1;
         }
-        for i in 0..devices.len() {
-            // A grabbed keyboard that was unplugged raises POLLHUP/POLLERR (never
-            // POLLIN). Without dropping it, poll() would report it ready every
-            // iteration and spin the loop at 100% CPU. Detach the dead fd (the
-            // device isn't re-grabbed — that's the documented hotplug limitation).
-            if pollfds[i].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
-                log::warn!("vogix input: grabbed keyboard #{i} disconnected — dropping it");
-                pollfds[i].fd = -1;
+        // Hotplug: a new /dev/input node appeared → grab it if it's a text
+        // keyboard (reusing the startup predicate), so a reconnected keyboard
+        // works without a service restart.
+        if pollfds[inotify_idx].revents & libc::POLLIN != 0
+            && let Some(ino) = inotify.as_mut()
+        {
+            handle_hotplug(ino, &mut inotify_buf, &filter, &mut slots, &mut router);
+        }
+        // Device fds: map each ready poll entry back to its STABLE slot.
+        for j in 0..aux_base {
+            let slot = fd_slot[j];
+            let revents = pollfds[j].revents;
+            // An unplugged grabbed keyboard raises POLLHUP/POLLERR (never POLLIN);
+            // left in, poll() would report it ready forever and spin at 100% CPU.
+            // POLLHUP is the AUTHORITATIVE drop signal (reconciled by live fd, not
+            // by a reused devnode): None the slot — the `Grabbed`'s `Device`
+            // ungrabs on Drop — and a future hotplug re-grabs it.
+            if revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+                if let Some(g) = slots[slot].take() {
+                    log::info!(
+                        "vogix input: keyboard {:?} disconnected — released",
+                        g.meta.name
+                    );
+                }
                 continue;
             }
-            if pollfds[i].revents & libc::POLLIN == 0 {
+            if revents & libc::POLLIN == 0 {
                 continue;
             }
-            let events: Vec<(u16, i32)> = match devices[i].fetch_events() {
+            let Some(g) = slots[slot].as_mut() else {
+                continue;
+            };
+            let events: Vec<(u16, i32)> = match g.dev.fetch_events() {
                 Ok(it) => it
                     .filter(|e| e.event_type() == EventType::KEY)
                     .map(|e| (e.code(), e.value()))
@@ -962,7 +1011,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                 let now = ms(&start);
                 held.on_event(code, value, now);
                 let fx = router.on_key(code, value, now);
-                counters[i].record(&fx, now);
+                g.counters.record(&fx, now);
                 execute(&mut vdev, &mut hypr, fx);
             }
         }
@@ -972,44 +1021,107 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         let now = ms(&start);
         if now.saturating_sub(last_snapshot_ms) >= 1000 {
             last_snapshot_ms = now;
-            health::write_snapshot(&build_snapshot(
-                &meta,
-                &counters,
-                &held,
-                &router.mode(),
-                now,
-                pid,
-            ));
+            health::write_snapshot(&build_snapshot(&slots, &held, &router.mode(), now, pid));
         }
         let _ = InputEvent::new; // keep import meaningful across cfgs
     }
 }
 
-/// Assemble a health snapshot from the live counters + device identity. Carries
-/// NO key identity — `silent_ms` (time since a device's last event) is the
-/// "this device went quiet" tell that localises a flaky keyboard to the hardware.
+/// Open + grab a hotplugged `/dev/input` node as a keyboard slot, or `None` if
+/// it isn't a real text keyboard (the SAME `DeviceFilter` predicate as startup)
+/// or can't be opened/grabbed. Best-effort: a reject leaves it ungrabbed (its
+/// keys reach the compositor unremapped — degraded, never a lockout), retried on
+/// the next inotify event.
+fn try_grab_keyboard(
+    node: &std::path::Path,
+    filter: &super::devfilter::DeviceFilter,
+) -> Option<Grabbed> {
+    let mut dev = evdev::Device::open(node).ok()?;
+    if dev.name() == Some(VIRTUAL_NAME) || !filter.is_text_keyboard(&dev) {
+        return None;
+    }
+    let id = dev.input_id();
+    let (vendor, product) = (id.vendor(), id.product());
+    let name = dev.name().unwrap_or("?").to_string();
+    if let Err(e) = dev.grab() {
+        log::warn!("vogix input: cannot grab hotplugged {name:?}: {e}");
+        return None;
+    }
+    log::info!("vogix input: grabbed hotplugged keyboard {name:?} ({vendor:04x}:{product:04x})");
+    Some(Grabbed {
+        dev,
+        node: node.to_path_buf(),
+        meta: health::DeviceMeta {
+            name,
+            vendor,
+            product,
+        },
+        counters: health::Counters::default(),
+    })
+}
+
+/// Drain inotify events and grab any newly-appeared text keyboard. Dedups by
+/// devnode (inotify fires CREATE then ATTRIB for one node) and reuses a freed
+/// (`None`) slot before pushing, so repeated unplug/replug keeps `slots` bounded.
+fn handle_hotplug(
+    inotify: &mut inotify::Inotify,
+    buf: &mut [u8],
+    filter: &super::devfilter::DeviceFilter,
+    slots: &mut Vec<Option<Grabbed>>,
+    router: &mut Router,
+) {
+    let Ok(events) = inotify.read_events(buf) else {
+        return;
+    };
+    for event in events {
+        let Some(name) = event.name else {
+            continue;
+        };
+        // Only /dev/input/event* nodes are evdev devices.
+        if !name.to_string_lossy().starts_with("event") {
+            continue;
+        }
+        let node = std::path::Path::new("/dev/input").join(name);
+        if slots.iter().flatten().any(|g| g.node == node) {
+            continue; // already grabbed
+        }
+        if let Some(g) = try_grab_keyboard(&node, filter) {
+            // A modifier held across the reconnect would otherwise be lost.
+            if let Ok(state) = g.dev.get_key_state() {
+                router.sync_held_keys(state.iter().map(|k| k.0));
+            }
+            match slots.iter_mut().find(|s| s.is_none()) {
+                Some(free) => *free = Some(g),
+                None => slots.push(Some(g)),
+            }
+        }
+    }
+}
+
+/// Assemble a health snapshot from the live slots' counters + device identity.
+/// Carries NO key identity — `silent_ms` (time since a device's last event) is
+/// the "this device went quiet" tell that localises a flaky keyboard to hardware.
 fn build_snapshot(
-    meta: &[health::DeviceMeta],
-    counters: &[health::Counters],
+    slots: &[Option<Grabbed>],
     held: &health::HeldKeys,
     mode: &str,
     now_ms: u64,
     pid: u32,
 ) -> health::HealthSnapshot {
-    let devices = meta
+    let devices = slots
         .iter()
-        .zip(counters)
-        .map(|(m, c)| {
-            let silent_ms = if c.last_event_ms == 0 {
+        .flatten()
+        .map(|g| {
+            let silent_ms = if g.counters.last_event_ms == 0 {
                 now_ms
             } else {
-                now_ms.saturating_sub(c.last_event_ms)
+                now_ms.saturating_sub(g.counters.last_event_ms)
             };
             health::DeviceHealth {
-                name: m.name.clone(),
-                vendor: m.vendor,
-                product: m.product,
-                counters: c.clone(),
+                name: g.meta.name.clone(),
+                vendor: g.meta.vendor,
+                product: g.meta.product,
+                counters: g.counters.clone(),
                 silent_ms,
             }
         })
