@@ -11,7 +11,7 @@
 //! - WCAG 2.1: contrast validation axioms
 
 use crate::scheme::Scheme;
-use pr4xis::category::Concept;
+use pr4xis::category::FinitelyGenerated;
 use pr4xis_domains::applied::hmi::theming::base16::{ColorSlot, Polarity};
 use pr4xis_domains::applied::hmi::theming::ontology::{self, Palette};
 use pr4xis_domains::applied::hmi::theming::schemes::{Ansi16Color, Vogix16Semantic};

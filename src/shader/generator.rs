@@ -101,7 +101,7 @@ fn with_saturation(color: &ShaderColor, saturation: f32) -> ShaderColor {
 ///
 /// These are preserved through the monochromatic tint so UI elements stay readable.
 fn functional_color_keys() -> Vec<String> {
-    use pr4xis::category::Concept;
+    use pr4xis::category::FinitelyGenerated;
     use pr4xis_domains::applied::hmi::theming::base16::{ColorSlot, SemanticRole};
 
     let mut keys = Vec::new();
