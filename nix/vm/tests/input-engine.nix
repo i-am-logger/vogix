@@ -214,6 +214,10 @@ let
     env = dict(os.environ)
     env["XDG_RUNTIME_DIR"] = XDG
     env["RUST_LOG"] = "info"
+    # Deterministic state dir so the health-snapshot assertion (Test 1c) knows
+    # where ~/.local/state/vogix/input-health.json lands.
+    env["HOME"] = "/root"
+    env.pop("XDG_STATE_HOME", None)
     env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
     proc = subprocess.Popen(
         ["vogix", "input", "run", "--config", "/etc/vogix-test-schema.json"],
@@ -288,6 +292,29 @@ let
     if e.KEY_9 in emitted_codes():
         fail("YubiKey (vendor 0x1050) must NOT be grabbed — its key was re-emitted")
     print("PASS: YubiKey not grabbed (security key left alone)")
+
+    # --- Test 1c: the health snapshot reflects real flow, with NO key identity ---
+    # The engine writes ~/.local/state/vogix/input-health.json about once a second
+    # (`vogix input doctor` reads it). After the taps above it must list the
+    # grabbed keyboard with events_in > 0 and no stuck keys — and contain no
+    # keycode field (the no-keylog invariant).
+    import json
+    tap(e.KEY_A); tap(e.KEY_A)
+    time.sleep(1.4)  # ensure at least one periodic snapshot write lands
+    snap_path = "/root/.local/state/vogix/input-health.json"
+    raw = open(snap_path).read()
+    snap = json.loads(raw)
+    names = [d["name"] for d in snap["devices"]]
+    if "vogix-test-kbd" not in names:
+        fail(f"health snapshot missing the grabbed keyboard, got {names}")
+    kbd = next(d for d in snap["devices"] if d["name"] == "vogix-test-kbd")
+    if kbd["events_in"] < 1:
+        fail(f"health events_in should be > 0 after typing, got {kbd}")
+    if snap["stuck_count"] != 0:
+        fail(f"health stuck_count should be 0, got {snap['stuck_count']}")
+    if '"code"' in raw or '"keycode"' in raw:
+        fail("health snapshot must carry NO key identity (no-keylog invariant)")
+    print("PASS: health snapshot reflects flow (no keylog)")
 
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
     received.clear()

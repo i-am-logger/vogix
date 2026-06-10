@@ -15,6 +15,7 @@
 
 use crate::errors::{Result, VogixError};
 use crate::input::device;
+use crate::input::health;
 use crate::input::schema::Schema;
 use std::path::PathBuf;
 
@@ -147,4 +148,69 @@ pub fn handle_input_run(config: Option<&str>) -> Result<()> {
         schema.tap_hold_ms(),
     );
     device::run(schema)
+}
+
+/// `vogix input doctor` — read-only diagnostics. Renders the health snapshot the
+/// running engine writes: which keyboards are grabbed, each one's event flow, a
+/// SILENT flag for a device gone quiet (the tell that localises a flaky keyboard
+/// to the hardware, not the engine), the stuck-key count, the mode, and the
+/// snapshot age. Never grabs the keyboard; the snapshot carries NO key identity,
+/// so this never logs keystrokes. `--watch` repaints continuously.
+pub fn handle_input_doctor(watch: bool) -> Result<()> {
+    use std::io::Write;
+    loop {
+        if watch {
+            print!("\x1b[2J\x1b[H"); // clear + cursor home
+        }
+        match health::read_snapshot() {
+            Some(snap) => print_health(&snap),
+            None => println!(
+                "no health snapshot — is `vogix input run` active? \
+                 (it writes ~/.local/state/vogix/input-health.json about once a second)"
+            ),
+        }
+        if !watch {
+            return Ok(());
+        }
+        let _ = std::io::stdout().flush();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+fn print_health(s: &health::HealthSnapshot) {
+    println!(
+        "vogix input engine — pid {}  mode {}  up {}s",
+        s.pid,
+        s.mode,
+        s.uptime_ms / 1000
+    );
+    if s.stuck_count > 0 {
+        println!(
+            "  ⚠ {} stuck key(s) (oldest held {}ms)",
+            s.stuck_count, s.stuck_oldest_ms
+        );
+    }
+    if s.devices.is_empty() {
+        println!("  (no keyboards grabbed)");
+    }
+    for d in &s.devices {
+        // 3s with no event from a grabbed keyboard is the "went quiet" signal.
+        let silent = if d.silent_ms >= 3000 {
+            "  <-- SILENT"
+        } else {
+            ""
+        };
+        println!(
+            "  {:<34} {:04x}:{:04x}  in={} emit={} dispatch={} swallow={} last-seen={}s ago{}",
+            d.name,
+            d.vendor,
+            d.product,
+            d.counters.events_in,
+            d.counters.emitted,
+            d.counters.dispatched,
+            d.counters.swallowed,
+            d.silent_ms / 1000,
+            silent,
+        );
+    }
 }

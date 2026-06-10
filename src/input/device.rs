@@ -14,6 +14,7 @@
 //! every unbound key is swallowed too; in passthrough modes unbound keys are
 //! re-emitted. CapsLock is never emitted — it is the mode trigger.
 
+use super::health;
 use super::keys::{
     Chord, Modifier, Mods, is_capslock, key_to_keycode, keycode_to_key, modifier_code, modifier_of,
     modifiers_to_mods, parse_chord,
@@ -719,14 +720,24 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     }
     let keep: HashSet<usize> = keep_idx.into_iter().collect();
     let mut devices: Vec<evdev::Device> = Vec::with_capacity(keep.len());
+    // Per-grabbed-device identity, captured here while we still own the `Device`
+    // (the poll loop borrows it as a raw fd afterwards). Hardware metadata only —
+    // it feeds the health snapshot, never key identity.
+    let mut meta: Vec<health::DeviceMeta> = Vec::with_capacity(keep.len());
     for (i, d) in broad.into_iter().enumerate() {
         // Device identity (name/vendor) is hardware metadata, not keystrokes —
         // logging it closes the "is this the right device?" diagnosis gap (the
         // exact confusion of the flaky-keyboard incident) without keylogging.
-        let vendor = d.input_id().vendor();
+        let id = d.input_id();
+        let (vendor, product) = (id.vendor(), id.product());
         let name = d.name().unwrap_or("?").to_string();
         if keep.contains(&i) {
             log::info!("grabbing keyboard {name:?} (vendor {vendor:04x})");
+            meta.push(health::DeviceMeta {
+                name,
+                vendor,
+                product,
+            });
             devices.push(d);
         } else {
             log::info!(
@@ -781,6 +792,22 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         devices.len(),
         router.mode()
     );
+
+    // Observability: per-device flow counters + stuck-key tracking, dumped to
+    // ~/.local/state/vogix/input-health.json for `vogix input doctor`. Counts and
+    // device identity only — never key identity (see [`super::health`]).
+    let pid = std::process::id();
+    let mut counters: Vec<health::Counters> = vec![health::Counters::default(); devices.len()];
+    let mut held = health::HeldKeys::default();
+    let mut last_snapshot_ms: u64 = 0;
+    health::write_snapshot(&build_snapshot(
+        &meta,
+        &counters,
+        &held,
+        &router.mode(),
+        0,
+        pid,
+    ));
 
     // Clean-shutdown self-pipe. On SIGTERM/SIGINT (`systemctl --user stop` or a
     // restart) we must release any modifier we re-emitted, or the compositor is
@@ -881,6 +908,15 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             let now = ms(&start);
             execute(&mut vdev, &mut hypr, router.on_timeout(now));
             execute(&mut vdev, &mut hypr, router.on_idle(now));
+            health::write_snapshot(&build_snapshot(
+                &meta,
+                &counters,
+                &held,
+                &router.mode(),
+                now,
+                pid,
+            ));
+            last_snapshot_ms = now;
             continue;
         }
         // Shutdown signalled → release any modifier we hold, then exit cleanly.
@@ -923,11 +959,69 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                 Err(_) => continue,
             };
             for (code, value) in events {
-                let fx = router.on_key(code, value, ms(&start));
+                let now = ms(&start);
+                held.on_event(code, value, now);
+                let fx = router.on_key(code, value, now);
+                counters[i].record(&fx, now);
                 execute(&mut vdev, &mut hypr, fx);
             }
         }
+        // Refresh the health snapshot on a coarse wall-clock interval even under
+        // steady typing (the idle branch never fires while keys flow), so `doctor`
+        // always sees a fresh per-device view — including the "went silent" tell.
+        let now = ms(&start);
+        if now.saturating_sub(last_snapshot_ms) >= 1000 {
+            last_snapshot_ms = now;
+            health::write_snapshot(&build_snapshot(
+                &meta,
+                &counters,
+                &held,
+                &router.mode(),
+                now,
+                pid,
+            ));
+        }
         let _ = InputEvent::new; // keep import meaningful across cfgs
+    }
+}
+
+/// Assemble a health snapshot from the live counters + device identity. Carries
+/// NO key identity — `silent_ms` (time since a device's last event) is the
+/// "this device went quiet" tell that localises a flaky keyboard to the hardware.
+fn build_snapshot(
+    meta: &[health::DeviceMeta],
+    counters: &[health::Counters],
+    held: &health::HeldKeys,
+    mode: &str,
+    now_ms: u64,
+    pid: u32,
+) -> health::HealthSnapshot {
+    let devices = meta
+        .iter()
+        .zip(counters)
+        .map(|(m, c)| {
+            let silent_ms = if c.last_event_ms == 0 {
+                now_ms
+            } else {
+                now_ms.saturating_sub(c.last_event_ms)
+            };
+            health::DeviceHealth {
+                name: m.name.clone(),
+                vendor: m.vendor,
+                product: m.product,
+                counters: c.clone(),
+                silent_ms,
+            }
+        })
+        .collect();
+    let (stuck_count, stuck_oldest_ms) = held.stuck(now_ms, health::STUCK_MS);
+    health::HealthSnapshot {
+        pid,
+        uptime_ms: now_ms,
+        mode: mode.to_string(),
+        devices,
+        stuck_count,
+        stuck_oldest_ms,
     }
 }
 

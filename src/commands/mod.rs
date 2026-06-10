@@ -23,7 +23,7 @@ pub mod theme_change;
 pub use cache::handle_cache_clean;
 pub use completions::handle_completions;
 pub use daemon::handle_daemon;
-pub use input::{handle_input_check, handle_input_run};
+pub use input::{handle_input_check, handle_input_doctor, handle_input_run};
 pub use list::handle_list;
 pub use modes::{handle_modes_confusion, handle_modes_recent, handle_modes_stats};
 pub use session::{

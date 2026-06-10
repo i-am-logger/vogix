@@ -112,6 +112,14 @@ pub enum InputCommands {
         #[arg(long)]
         config: Option<String>,
     },
+    /// Read-only diagnostics for a running engine: which keyboards are grabbed
+    /// and their event flow (so a silent device localises a fault to the
+    /// hardware, not the engine). Never grabs the keyboard, never logs keystrokes.
+    Doctor {
+        /// Repaint continuously instead of printing one snapshot.
+        #[arg(long)]
+        watch: bool,
+    },
 }
 
 #[derive(Subcommand)]

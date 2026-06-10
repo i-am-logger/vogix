@@ -19,8 +19,8 @@ use cli::{
     ShaderCommands, ThemeCommands,
 };
 use commands::{
-    handle_cache_clean, handle_completions, handle_daemon, handle_input_check, handle_input_run,
-    handle_list, handle_modes_confusion, handle_modes_recent, handle_modes_stats,
+    handle_cache_clean, handle_completions, handle_daemon, handle_input_check, handle_input_doctor,
+    handle_input_run, handle_list, handle_modes_confusion, handle_modes_recent, handle_modes_stats,
     handle_session_list, handle_session_restore, handle_session_restore_file, handle_session_save,
     handle_session_undo, handle_status,
 };
@@ -108,6 +108,10 @@ fn run(cli: &Cli) -> Result<()> {
         Commands::Input {
             command: InputCommands::Run { config },
         } => handle_input_run(config.as_deref()),
+
+        Commands::Input {
+            command: InputCommands::Doctor { watch },
+        } => handle_input_doctor(*watch),
 
         Commands::Modes {
             command: ModesCommands::Recent { count },
