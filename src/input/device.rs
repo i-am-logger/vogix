@@ -29,6 +29,11 @@ use pr4xis_domains::applied::hmi::input::keybindings::{
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
 use std::collections::{HashMap, HashSet};
 
+/// The name of our virtual re-emit device. We must never grab it back, or the
+/// engine would capture its own emitted events; the device filter
+/// ([`super::devfilter`]) shares this exact exclusion.
+pub(crate) const VIRTUAL_NAME: &str = "vogix-input";
+
 /// A side effect the I/O shell should perform.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
@@ -658,10 +663,6 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         ),
     }
 
-    // The name of our virtual re-emit device. We must NOT grab it back (see the
-    // enumerate filter below), or we'd capture our own emitted events.
-    const VIRTUAL_NAME: &str = "vogix-input";
-
     // Build the virtual uinput device FIRST. If this fails (most commonly
     // because we don't have rw on /dev/uinput), we exit before grabbing any
     // real keyboard — the user can keep typing into their login screen / TTY
@@ -691,7 +692,15 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     // restarted — a plausible "keybindings randomly don't work" cause. The
     // proper fix is a udev/inotify monitor that grabs new keyboards as they
     // appear; deferred.
-    let mut devices: Vec<evdev::Device> = evdev::enumerate()
+    // Pick which devices to grab. Two stages, lockout-safe:
+    //   BROAD  — every non-self device advertising a normal key (the universe).
+    //   NARROW — keep only real text keyboards, dropping the YubiKey/audio HID/etc.
+    //            via `DeviceFilter`. The strict filter may only narrow a NON-empty
+    //            set; if it would leave nothing (a misconfigured filter), keep the
+    //            broad set instead — excluding the user's only keyboard is a total
+    //            lockout (`selection`'s fail-safe).
+    let filter = schema.device_filter();
+    let broad: Vec<evdev::Device> = evdev::enumerate()
         .map(|(_, d)| d)
         .filter(|d| {
             d.name() != Some(VIRTUAL_NAME)
@@ -699,6 +708,32 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                     .is_some_and(|k| k.contains(KeyCode::KEY_A))
         })
         .collect();
+    let flags: Vec<bool> = broad.iter().map(|d| filter.is_text_keyboard(d)).collect();
+    let (keep_idx, widened) = super::devfilter::selection(&flags);
+    if widened {
+        log::warn!(
+            "device filter matched no keyboards among {} candidate(s); grabbing all to \
+             avoid lockout — check deviceFilter excludeVendors/excludeNameSubstrings",
+            broad.len()
+        );
+    }
+    let keep: HashSet<usize> = keep_idx.into_iter().collect();
+    let mut devices: Vec<evdev::Device> = Vec::with_capacity(keep.len());
+    for (i, d) in broad.into_iter().enumerate() {
+        // Device identity (name/vendor) is hardware metadata, not keystrokes —
+        // logging it closes the "is this the right device?" diagnosis gap (the
+        // exact confusion of the flaky-keyboard incident) without keylogging.
+        let vendor = d.input_id().vendor();
+        let name = d.name().unwrap_or("?").to_string();
+        if keep.contains(&i) {
+            log::info!("grabbing keyboard {name:?} (vendor {vendor:04x})");
+            devices.push(d);
+        } else {
+            log::info!(
+                "not grabbing {name:?} (vendor {vendor:04x}) — not a text keyboard / excluded"
+            );
+        }
+    }
     if devices.is_empty() {
         return Err(VogixError::Config("no keyboard devices found".into()));
     }

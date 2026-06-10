@@ -27,6 +27,7 @@
 //! caps↓ enters a (validated) mode; caps↑ is `ReleaseHold`, which is always
 //! legal. "Stuck" is not a bug to fix here — it is an unrepresentable state.
 
+pub mod devfilter;
 pub mod device;
 pub mod hypr;
 pub mod keys;

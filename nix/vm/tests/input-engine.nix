@@ -195,8 +195,19 @@ let
         e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_Q, e.KEY_R, e.KEY_Y,
         e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_C, e.KEY_V, e.KEY_X, e.KEY_1,
         e.KEY_LEFT, e.KEY_TAB, e.KEY_ESC, e.KEY_VOLUMEUP,
+        # Enter + home-row letters so it passes the strict text-keyboard floor
+        # (DeviceFilter), exercising the STRICT grab path rather than the fail-safe.
+        e.KEY_ENTER, e.KEY_S, e.KEY_D, e.KEY_F,
     ] }
     ui = UInput(caps, name="vogix-test-kbd")
+
+    # A YubiKey-shaped device: it passes the broad "has KEY_A" filter AND the
+    # keyboard capability floor, but must be EXCLUDED by its Yubico vendor id
+    # (0x1050) so the engine never grabs a security key (device-grab scope fix).
+    yk = { e.EV_KEY: [
+        e.KEY_A, e.KEY_ENTER, e.KEY_LEFTSHIFT, e.KEY_S, e.KEY_D, e.KEY_F, e.KEY_9,
+    ] }
+    ui_yk = UInput(yk, name="YubiKey OTP", vendor=0x1050)
     time.sleep(1)
 
     # 3) Start the engine: scan-based discovery via XDG_RUNTIME_DIR, no HIS.
@@ -264,6 +275,19 @@ let
     if e.KEY_A not in emitted_codes():
         fail(f"plain 'a' must be re-emitted on vogix-input, got {emitted}")
     print("PASS: plain key re-emitted (typing works)")
+
+    # --- Test 1b: a YubiKey (Yubico vendor 0x1050) is NOT grabbed ---
+    # If the engine wrongly grabbed it, a key injected on it would be re-emitted
+    # on vogix-input. It must not be. This ALSO proves the real keyboard passed
+    # the STRICT filter: had it failed, the fail-safe would have grabbed every
+    # candidate (incl. the YubiKey) and KEY_9 would re-emit here.
+    emitted.clear()
+    ui_yk.write(e.EV_KEY, e.KEY_9, 1); ui_yk.syn()
+    ui_yk.write(e.EV_KEY, e.KEY_9, 0); ui_yk.syn()
+    time.sleep(0.4)
+    if e.KEY_9 in emitted_codes():
+        fail("YubiKey (vendor 0x1050) must NOT be grabbed — its key was re-emitted")
+    print("PASS: YubiKey not grabbed (security key left alone)")
 
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
     received.clear()

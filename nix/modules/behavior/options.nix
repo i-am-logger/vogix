@@ -194,6 +194,32 @@ in
                   foreground job. Real Ctrl+C (no Super) still interrupts.
                 '';
               };
+
+              deviceFilter = mkOption {
+                type = types.submodule {
+                  options = {
+                    excludeVendors = mkOption {
+                      type = types.listOf types.int;
+                      default = [ ];
+                      description = "USB vendor ids the engine must NEVER grab (e.g. security keys).";
+                    };
+                    excludeNameSubstrings = mkOption {
+                      type = types.listOf types.str;
+                      default = [ ];
+                      description = "Device-name substrings the engine must never grab (audio HID, consumer-control nodes).";
+                    };
+                  };
+                };
+                default = { };
+                description = ''
+                  Which evdev devices the input engine may OWN. The engine grabs
+                  keyboards exclusively, so it must not grab a YubiKey (it would
+                  break OTP/FIDO typing) or an audio mixer. A safe baseline is
+                  baked into vogix (Yubico and audio HID are always excluded);
+                  these lists ADD to it — they never replace it, so you can't
+                  accidentally re-enable a security-key grab.
+                '';
+              };
             };
           };
         };

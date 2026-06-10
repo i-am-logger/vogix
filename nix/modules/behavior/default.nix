@@ -118,5 +118,9 @@ in
       # the border on a mode change). Theme-derived; set by the home-manager
       # module's modeColors block.
       modeColors = userModes.modeColors or { };
+      # Top-level for the Rust `Schema.device_filter` — which devices the engine
+      # may grab. Empty here = the engine's baked-in safe baseline applies (Yubico
+      # / audio HID excluded); user entries EXTEND that baseline.
+      deviceFilter = effectiveKeybindings.deviceFilter or { };
     };
 }

@@ -16,6 +16,7 @@
 // consumed by the device loop in the next 2b step; allow until that lands.
 #![allow(dead_code)]
 
+use super::devfilter::DeviceFilter;
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
 use pr4xis_domains::applied::hmi::input::keybindings::{RemapSet, macos_remap};
@@ -43,6 +44,11 @@ pub struct Schema {
     /// for mode error — Norman 1981).
     #[serde(default, rename = "modeColors")]
     pub mode_colors: HashMap<String, ModeColor>,
+    /// Device-grab policy: which evdev devices the engine may OWN. Optional;
+    /// its excludes are MERGED on top of the safe baseline so the YubiKey / audio
+    /// HID are dropped even with no config. See [`Schema::device_filter`].
+    #[serde(default, rename = "deviceFilter")]
+    pub device_filter: Option<DeviceFilterSpec>,
 }
 
 /// A mode's border colours (Hyprland `rgb(RRGGBB)` strings).
@@ -52,6 +58,39 @@ pub struct ModeColor {
     pub active: String,
     #[serde(default)]
     pub inactive: String,
+}
+
+/// Optional device-grab policy from the schema (`deviceFilter`). Its excludes
+/// EXTEND the baked-in defaults ([`DeviceFilter::default`]) rather than replacing
+/// them — adding a vendor cannot accidentally re-enable the YubiKey grab.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DeviceFilterSpec {
+    #[serde(default, rename = "excludeVendors")]
+    pub exclude_vendors: Vec<u16>,
+    #[serde(default, rename = "excludeNameSubstrings")]
+    pub exclude_name_substrings: Vec<String>,
+}
+
+impl Schema {
+    /// The effective device-grab filter: the baked-in safe baseline
+    /// ([`DeviceFilter::default`]) PLUS any schema-provided excludes (merge, not
+    /// replace — so a user adding a vendor keeps the Yubico/audio defaults).
+    pub fn device_filter(&self) -> DeviceFilter {
+        let mut f = DeviceFilter::default();
+        if let Some(spec) = &self.device_filter {
+            for v in &spec.exclude_vendors {
+                if !f.exclude_vendors.contains(v) {
+                    f.exclude_vendors.push(*v);
+                }
+            }
+            for s in &spec.exclude_name_substrings {
+                if !f.exclude_name_substrings.contains(s) {
+                    f.exclude_name_substrings.push(s.clone());
+                }
+            }
+        }
+        f
+    }
 }
 
 /// The mode topology: which modes exist and their parent/kind.
@@ -414,6 +453,28 @@ mod tests {
         // No paradigm set → defaults to macOS; the preset supplies the remaps.
         assert_eq!(s.paradigm(), "macos");
         assert!(s.remap_set().remaps.len() >= 6);
+    }
+
+    #[test]
+    fn device_filter_merges_onto_safe_defaults() {
+        // No deviceFilter in the schema → the baked-in baseline still excludes Yubico.
+        assert!(schema().device_filter().exclude_vendors.contains(&0x1050));
+
+        // A user deviceFilter EXTENDS (never replaces) the baseline — adding a
+        // vendor cannot accidentally re-enable the YubiKey/audio grab.
+        let custom = Schema::from_json(
+            r#"{
+              "modeGraph": { "root": "app", "modes": { "app": { "parent": null, "type": "normal" } } },
+              "modes": { "app": { "bindings": {} } },
+              "deviceFilter": { "excludeVendors": [2336], "excludeNameSubstrings": ["FooPad"] }
+            }"#,
+        )
+        .unwrap();
+        let f = custom.device_filter();
+        assert!(f.exclude_vendors.contains(&0x1050), "baseline Yubico kept");
+        assert!(f.exclude_vendors.contains(&2336), "user vendor added");
+        assert!(f.exclude_name_substrings.iter().any(|s| s == "FooPad"));
+        assert!(f.exclude_name_substrings.iter().any(|s| s == "Maonocaster"));
     }
 
     #[test]
