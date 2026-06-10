@@ -19,7 +19,7 @@
 //! them apart — only the vendor (Yubico `0x1050`) and the name reliably do.
 //! Hence vendor/name excludes, not a capability heuristic, are the security-key
 //! discriminator; the capability floor is a secondary signal (a YubiKey's modhex
-//! key set lacks the home-row letters, an audio device has no alpha keys).
+//! key set lacks `KEY_A`, an audio device has no alpha keys at all).
 
 use super::device::VIRTUAL_NAME;
 use evdev::KeyCode;
@@ -27,17 +27,6 @@ use evdev::KeyCode;
 /// Yubico USB vendor id. Security keys type their OTP as a HID keyboard, so they
 /// pass any capability heuristic; only the vendor reliably identifies them.
 const YUBICO_VENDOR: u16 = 0x1050;
-
-/// Home-row letters every real text keyboard carries. A YubiKey (modhex uses
-/// only `c b d e f g h i j k l n r t u v`) lacks `A` and `S`; an audio device has
-/// no alpha keys at all — so requiring these is a cheap secondary keyboard
-/// signal (defence-in-depth behind the vendor/name excludes).
-const HOME_ROW: [KeyCode; 4] = [
-    KeyCode::KEY_A,
-    KeyCode::KEY_S,
-    KeyCode::KEY_D,
-    KeyCode::KEY_F,
-];
 
 /// Any one of these marks a device that can compose chords like a keyboard.
 const MODIFIERS: [KeyCode; 6] = [
@@ -111,11 +100,15 @@ impl DeviceFilter {
 
 /// The compiled capability floor (the libinput-style *definition* of a keyboard,
 /// not user policy): a typing device carries Enter + at least one modifier + the
-/// home-row letters. `EV_REP` and a full `A..Z` block are deliberately NOT
-/// required — some real keyboards (and the VM's virtual keyboard) omit them, and
-/// a YubiKey advertises `EV_REP` anyway, so neither is a reliable signal.
+/// alpha anchor `KEY_A`. KEY_A is the discriminator that matters — every real
+/// keyboard advertises it, while a YubiKey (modhex `c b d e f g h i j k l n r t u
+/// v`, no `a`) and audio/consumer-control HID do not. We require ONLY KEY_A, not
+/// the whole home row: real keyboards advertise the full alpha HID block, so a
+/// stricter all-of-A/S/D/F gate adds no discrimination over KEY_A yet risks
+/// false-excluding an exotic node. `EV_REP` / a full `A..Z` block are likewise
+/// not required (some real keyboards omit them; a YubiKey advertises `EV_REP`).
 fn capability_is_keyboard(has: &impl Fn(KeyCode) -> bool) -> bool {
-    has(KeyCode::KEY_ENTER) && MODIFIERS.iter().any(|m| has(*m)) && HOME_ROW.iter().all(|k| has(*k))
+    has(KeyCode::KEY_ENTER) && MODIFIERS.iter().any(|m| has(*m)) && has(KeyCode::KEY_A)
 }
 
 /// Choose which candidates to grab from a "is this a text keyboard" flag per
@@ -190,6 +183,31 @@ mod tests {
             ),
             "Yubico vendor must be excluded"
         );
+    }
+
+    #[test]
+    fn vendor_exclusion_alone_drops_a_non_yubico_named_device() {
+        // Isolates the VENDOR list: a device whose NAME has no excluded substring
+        // and full keyboard caps must STILL be dropped purely by the 0x1050 vendor
+        // — so a regression that emptied exclude_vendors (keeping names) is caught.
+        let f = DeviceFilter::default();
+        assert!(!f.passes(Some("Generic OTP Token"), 0x1050, has(real_kbd())));
+        // And clearing the vendor list lets that same (name-clean) device through.
+        let f2 = DeviceFilter {
+            exclude_vendors: vec![],
+            ..DeviceFilter::default()
+        };
+        assert!(f2.passes(Some("Generic OTP Token"), 0x1050, has(real_kbd())));
+    }
+
+    #[test]
+    fn keyboard_missing_home_row_keys_still_passes() {
+        // A real keyboard advertises the alpha anchor KEY_A; the floor must not
+        // require the whole home row (S/D/F), so a node with just A + Enter + a
+        // modifier is still grabbed (shrinks the false-exclude surface).
+        let f = DeviceFilter::default();
+        let keys = vec![K::KEY_ENTER, K::KEY_LEFTSHIFT, K::KEY_A];
+        assert!(f.passes(Some("compact keyboard"), 0x1234, has(keys)));
     }
 
     #[test]

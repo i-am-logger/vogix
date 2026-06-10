@@ -200,14 +200,19 @@ fn print_health(s: &health::HealthSnapshot) {
         } else {
             ""
         };
+        // Show every tally so `in` balances against the rest (in = emit +
+        // dispatch + keyword + mode + swallow); omitting keyword/mode made the
+        // line look like a counting bug whenever a mode flip or border paint fired.
         println!(
-            "  {:<34} {:04x}:{:04x}  in={} emit={} dispatch={} swallow={} last-seen={}s ago{}",
+            "  {:<34} {:04x}:{:04x}  in={} emit={} dispatch={} keyword={} mode={} swallow={} last-seen={}s ago{}",
             d.name,
             d.vendor,
             d.product,
             d.counters.events_in,
             d.counters.emitted,
             d.counters.dispatched,
+            d.counters.keyword,
+            d.counters.mode_changes,
             d.counters.swallowed,
             d.silent_ms / 1000,
             silent,

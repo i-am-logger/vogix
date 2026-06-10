@@ -475,6 +475,22 @@ mod tests {
         assert!(f.exclude_vendors.contains(&2336), "user vendor added");
         assert!(f.exclude_name_substrings.iter().any(|s| s == "FooPad"));
         assert!(f.exclude_name_substrings.iter().any(|s| s == "Maonocaster"));
+
+        // The Nix module renders a PRESENT-EMPTY object (`deviceFilter = ... or {}`),
+        // which deserializes to Some(empty) — a DIFFERENT serde path than an absent
+        // key (None). Both must keep the baked-in Yubico exclusion (merge, not replace).
+        let empty = Schema::from_json(
+            r#"{
+              "modeGraph": { "root": "app", "modes": { "app": { "parent": null, "type": "normal" } } },
+              "modes": { "app": { "bindings": {} } },
+              "deviceFilter": {}
+            }"#,
+        )
+        .unwrap();
+        assert!(
+            empty.device_filter().exclude_vendors.contains(&0x1050),
+            "present-empty deviceFilter must still exclude Yubico (the rendered shape)"
+        );
     }
 
     #[test]

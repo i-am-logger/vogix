@@ -90,7 +90,8 @@ let
           ws1 = { key = "1"; action = "workspace, 1"; };
           sendToWs1 = { key = "shift + 1"; action = "movetoworkspace, 1"; };
           toggleFloat = { key = "y"; action = "togglefloating,"; }; # stay (no exitAfter)
-          close = { key = "q"; action = "killactive,"; exitAfter = true; };
+          close = { key = "q"; action = "killactive,"; }; # STAY — matches the shipped exitAfter rework
+          lock = { key = "x"; action = "exec, hyprlock"; exitAfter = true; }; # new surface → exits
           # In-place window management from desktop (the exitAfter rework): the
           # modifier on a direction picks the verb — bare = focus, Shift = move,
           # Ctrl = resize — and Tab toggles split. The quick path; the m/r
@@ -321,7 +322,9 @@ let
         fail(f"health events_in should be > 0 after typing, got {kbd}")
     if snap["stuck_count"] != 0:
         fail(f"health stuck_count should be 0, got {snap['stuck_count']}")
-    if '"code"' in raw or '"keycode"' in raw:
+    # Mirror the unit test's checks: no "code"/"keycode" AND no bare "key" field
+    # ("keyword" is fine — it's not the quoted token '"key"').
+    if '"code"' in raw or '"keycode"' in raw or '"key"' in raw:
         fail("health snapshot must carry NO key identity (no-keylog invariant)")
     print("PASS: health snapshot reflects flow (no keylog)")
 
@@ -354,6 +357,13 @@ let
     tap(e.KEY_A); time.sleep(0.3)
     if e.KEY_A not in emitted_codes():
         fail("after a hotplug remove, the original keyboard must still type")
+    # DIRECTLY verify the slot was freed (not just 'engine alive'): the removed
+    # keyboard must be gone from the health snapshot. A regressed POLLHUP-drop
+    # would leave it present AND spin the loop — this catches both.
+    time.sleep(1.3)  # ensure a snapshot write lands after the drop
+    after = json.loads(open(snap_path).read())
+    if "vogix-hotplug-kbd" in [d["name"] for d in after["devices"]]:
+        fail("removed keyboard still in health slots — POLLHUP drop did not free it")
     print("PASS: hotplug remove is clean (slot freed, original keyboard still types)")
 
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
@@ -477,17 +487,32 @@ let
         fail("after in-place management, caps release must return to app (typing works)")
     print("PASS: in-place move/resize/split from desktop (Shift/Ctrl+dir, Tab)")
 
-    # --- Test 10: exitAfter returns to app WITHOUT a second caps tap ---
+    # --- Test 10: exitAfter — a new-surface action (lock) returns to app ---
+    # Only actions that move attention to a NEW surface keep exitAfter (the rework).
     received.clear(); emitted.clear()
     tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
-    tap(e.KEY_Q, hold=0.03); time.sleep(0.2)             # killactive, exitAfter
-    if "dispatch killactive" not in dispatched():
-        fail(f"q must dispatch 'killactive', got {received}")
+    tap(e.KEY_X, hold=0.03); time.sleep(0.2)             # exec hyprlock, exitAfter
+    if "dispatch exec hyprlock" not in dispatched():
+        fail(f"x (lock) must dispatch 'exec hyprlock', got {received}")
     emitted.clear()
     tap(e.KEY_A, hold=0.03); time.sleep(0.2)
     if e.KEY_A not in emitted_codes():
         fail("exitAfter must return to app (typing works without a 2nd caps tap)")
-    print("PASS: exitAfter (q) returns to app")
+    print("PASS: exitAfter (x → lock) returns to app")
+
+    # --- Test 10b: q (close) STAYS in desktop (the shipped sustained-context model) ---
+    # Window-management actions keep you in the mode so you can keep arranging.
+    received.clear(); emitted.clear()
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # sticky desktop
+    tap(e.KEY_Q, hold=0.03); time.sleep(0.1)             # killactive — STAY (no exitAfter)
+    tap(e.KEY_H, hold=0.03); time.sleep(0.1)             # still in desktop → movefocus
+    d = dispatched()
+    if "dispatch killactive" not in d or "dispatch movefocus l" not in d:
+        fail(f"q must close AND stay in desktop (keep managing), got {received}")
+    if e.KEY_A in emitted_codes():
+        fail("still in desktop after q → 'a' must be swallowed (q did not exit)")
+    tap(e.KEY_CAPSLOCK, hold=0.05); time.sleep(0.1)      # exit
+    print("PASS: q (close) stays in desktop — sustained-context model")
 
     # --- Test 11: stay/chainable binding (y) does NOT exit ---
     received.clear(); emitted.clear()

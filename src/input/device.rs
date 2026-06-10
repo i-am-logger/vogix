@@ -968,23 +968,19 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         {
             win_events = None;
         }
-        // Hotplug: a new /dev/input node appeared → grab it if it's a text
-        // keyboard (reusing the startup predicate), so a reconnected keyboard
-        // works without a service restart.
-        if pollfds[inotify_idx].revents & libc::POLLIN != 0
-            && let Some(ino) = inotify.as_mut()
-        {
-            handle_hotplug(ino, &mut inotify_buf, &filter, &mut slots, &mut router);
-        }
-        // Device fds: map each ready poll entry back to its STABLE slot.
+        // Device fds: map each ready poll entry back to its STABLE slot. Done
+        // BEFORE the hotplug pass below so an unplugged slot is cleared first —
+        // otherwise the path-keyed dedup in handle_hotplug would skip a
+        // replacement keyboard that reused the same /dev/input/eventN within one
+        // poll wakeup (unplug + replug both pending on a single wakeup).
         for j in 0..aux_base {
             let slot = fd_slot[j];
             let revents = pollfds[j].revents;
             // An unplugged grabbed keyboard raises POLLHUP/POLLERR (never POLLIN);
             // left in, poll() would report it ready forever and spin at 100% CPU.
-            // POLLHUP is the AUTHORITATIVE drop signal (reconciled by live fd, not
-            // by a reused devnode): None the slot — the `Grabbed`'s `Device`
-            // ungrabs on Drop — and a future hotplug re-grabs it.
+            // POLLHUP is the AUTHORITATIVE drop signal: None the slot — the
+            // `Grabbed`'s `Device` ungrabs on Drop — so the same-wakeup hotplug
+            // below (and any later one) can re-grab the node.
             if revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
                 if let Some(g) = slots[slot].take() {
                     log::info!(
@@ -1009,11 +1005,25 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             };
             for (code, value) in events {
                 let now = ms(&start);
-                held.on_event(code, value, now);
+                // CapsLock is the mode trigger — consumed by the tap/hold detector
+                // and intentionally HELD for a momentary mode — so exclude it from
+                // stuck-key detection (a held mode is not a stuck key).
+                if !is_capslock(KeyCode(code)) {
+                    held.on_event(code, value, now);
+                }
                 let fx = router.on_key(code, value, now);
                 g.counters.record(&fx, now);
                 execute(&mut vdev, &mut hypr, fx);
             }
+        }
+        // Hotplug: a new /dev/input node appeared → grab it if it's a text
+        // keyboard (reusing the startup predicate), so a reconnected keyboard
+        // works without a service restart. Runs AFTER the drop pass above so a
+        // reused devnode isn't masked by a just-disconnected (stale) slot.
+        if pollfds[inotify_idx].revents & libc::POLLIN != 0
+            && let Some(ino) = inotify.as_mut()
+        {
+            handle_hotplug(ino, &mut inotify_buf, &filter, &mut slots, &mut router);
         }
         // Refresh the health snapshot on a coarse wall-clock interval even under
         // steady typing (the idle branch never fires while keys flow), so `doctor`
@@ -1028,10 +1038,14 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
 }
 
 /// Open + grab a hotplugged `/dev/input` node as a keyboard slot, or `None` if
-/// it isn't a real text keyboard (the SAME `DeviceFilter` predicate as startup)
-/// or can't be opened/grabbed. Best-effort: a reject leaves it ungrabbed (its
-/// keys reach the compositor unremapped — degraded, never a lockout), retried on
-/// the next inotify event.
+/// it isn't a real text keyboard (the same `is_text_keyboard` predicate as
+/// startup) or can't be opened/grabbed. NOTE: unlike startup, this path has no
+/// zero-device fail-safe widening — but it doesn't need one: a reject only leaves
+/// THAT node ungrabbed (its keys reach the compositor unremapped — degraded,
+/// never a lockout), and the relaxed capability floor (Enter + a modifier +
+/// KEY_A) is met by every real keyboard, so a real keyboard is never rejected
+/// here. Best-effort; a transient open/grab failure is retried on the device's
+/// next inotify event (CREATE then ATTRIB).
 fn try_grab_keyboard(
     node: &std::path::Path,
     filter: &super::devfilter::DeviceFilter,
