@@ -155,7 +155,9 @@ rec {
         lockScreen = { key = "super + shift + x"; action = "exec, hyprlock"; description = "Lock screen"; };
 
         # ── Screenshots ──
-        screenshotClip = { key = "print"; action = "exec, grimblast --notify --cursor copy area"; description = "Screenshot → clipboard"; };
+        # --cursor is invalid with the `area` target in current grimblast
+        # ("'-c|--cursor' cannot be used with TARGET 'area'") — region shots omit it.
+        screenshotClip = { key = "print"; action = "exec, grimblast --notify copy area"; description = "Screenshot → clipboard"; };
         screenshotEdit = { key = "shift + print"; action = "exec, grimblast save area - | swappy -f -"; description = "Screenshot → editor"; };
 
         # ── Window state (the yuiop row + q/f/tab/gaps) ──
