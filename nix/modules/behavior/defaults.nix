@@ -6,9 +6,10 @@
 #
 # Philosophy:
 #   - One mode (`app`). Every WM action is a flat `Super`-combo, dispatched by the
-#     vogix input engine to Hyprland. There is NO CapsLock mode, NO move/resize
-#     sub-modes, and NO Super→Ctrl remap — Super is used directly as the WM
-#     modifier, exactly like a plain Hyprland `bind =` config.
+#     vogix input engine to Hyprland. There is NO CapsLock mode and NO move/resize
+#     sub-modes — Super is used directly as the WM modifier, like a plain Hyprland
+#     `bind =` config. The ONE remap is minimal: Super+C/V → copy/paste (terminal-
+#     aware, so native Ctrl+C still aborts); every other Super-letter is a WM bind.
 #   - The modifier on a direction picks the verb:
 #       Super + direction        = focus        (h=left l=right j=up k=down)
 #       Super + Shift + direction = move window  (swapwindow)
@@ -93,24 +94,29 @@ rec {
     modKey = "super";
 
     # Interaction PARADIGM (whole-WM flavour). `default` = the user's own config:
-    # flat Super-combos, NO CapsLock, NO Super→Ctrl remap (remap = "none") — the
-    # pre-vogix Hyprland workflow carried into the engine. windows/mac/emacs are
-    # TODO: to be re-based as flat platform variants (the modal versions were
+    # flat Super-combos, NO CapsLock, and only the minimal Super+C/V copy/paste
+    # remap (remap = "copy-paste") — the pre-vogix Hyprland workflow carried into
+    # the engine. windows/mac/emacs are TODO: to be re-based as flat variants (modal
     # removed with the CapsLock model).
     paradigm = "default";
     paradigms = {
       default = {
-        remap = "none";
+        # copy-paste: Super+C/V → Ctrl+C/V (and Ctrl+Shift+C/V in terminals, so
+        # native Ctrl+C still SIGINTs). Touches ONLY C/V — every other Super-letter
+        # stays a WM bind, and Super stays held for pointer binds (Super+drag/scroll).
+        remap = "copy-paste";
         inherit modes;
       };
     };
 
-    # Window classes treated as terminals for context-aware remaps. Unused while
-    # remap = "none", kept as data for when a remapping paradigm is added.
+    # Window classes treated as terminals for the context-aware copy/paste remap:
+    # there Super+C/V → Ctrl+Shift+C/V (so native Ctrl+C still SIGINTs), vs plain
+    # Ctrl+C/V in GUI apps. POSIX termios: bare Ctrl+C in a terminal = SIGINT.
     terminalClasses = [
       "kitty"
       "org.wezfurlong.wezterm"
       "wezterm"
+      "vogix-console"
       "Alacritty"
       "foot"
       "org.gnome.Console"
@@ -158,7 +164,10 @@ rec {
         terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
         browser = { key = "super + e"; action = "exec, $BROWSER"; description = "Browser"; };
         chrome = { key = "super + shift + e"; action = "exec, google-chrome-stable"; description = "Chrome"; };
-        launcher = { key = "super + space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
+        # walker 2.16.2 REJECTS the -w/-h shorthand (its own --help says "DONT USE
+        # SHORTHAND" — passing them makes walker exit 1 before drawing, so Super+Space
+        # silently did nothing). Use the long --width/--height forms.
+        launcher = { key = "super + space"; action = "exec, walker -p 'Start…' --width 1000 --height 700"; description = "Launcher"; };
         colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
         lockScreen = { key = "super + shift + x"; action = "exec, hyprlock"; description = "Lock screen"; };
 
@@ -233,7 +242,9 @@ rec {
         workspace8 = { key = "super + 8"; action = "workspace, 8"; description = "Workspace 8"; };
         workspace9 = { key = "super + 9"; action = "workspace, 9"; description = "Workspace 9"; };
         workspace10 = { key = "super + 0"; action = "workspace, 10"; description = "Workspace 10"; };
-        workspaceChat = { key = "super + c"; action = "workspace, Chat"; description = "Chat workspace"; };
+        # NB: super+c is intentionally UNBOUND here — it is COPY (the copy-paste
+        # remap above). A bound super+c would take precedence and the remap would
+        # never fire. Super+M still goes to the Music workspace.
         workspaceMusic = { key = "super + m"; action = "workspace, Music"; description = "Music workspace"; };
 
         # ── Adjacent workspace (Super + Ctrl + ←/→ or j/l) ──
@@ -277,8 +288,10 @@ rec {
         volumeDown = { key = "XF86AudioLowerVolume"; action = "exec, pamixer -d 5"; description = "Volume down"; };
         volumeMute = { key = "XF86AudioMute"; action = "exec, pamixer -t"; description = "Toggle mute"; };
         micMute = { key = "XF86AudioMicMute"; action = "exec, pamixer --default-source -t"; description = "Toggle mic"; };
-        brightnessUp = { key = "XF86MonBrightnessUp"; action = "exec, light -A 5"; description = "Brighter"; };
-        brightnessDown = { key = "XF86MonBrightnessDown"; action = "exec, light -U 5"; description = "Dimmer"; };
+        # `light` is not installed on this host; `brightnessctl` is. light's -A/-U
+        # (raise/lower 5%) becomes `set 5%+` / `set 5%-` (note the trailing sign).
+        brightnessUp = { key = "XF86MonBrightnessUp"; action = "exec, brightnessctl set 5%+"; description = "Brighter"; };
+        brightnessDown = { key = "XF86MonBrightnessDown"; action = "exec, brightnessctl set 5%-"; description = "Dimmer"; };
         mediaPlay = { key = "XF86AudioPlay"; action = "exec, playerctl play-pause"; description = "Play/pause"; };
         mediaNext = { key = "XF86AudioNext"; action = "exec, playerctl next"; description = "Next track"; };
         mediaPrev = { key = "XF86AudioPrev"; action = "exec, playerctl previous"; description = "Previous track"; };

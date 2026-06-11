@@ -19,7 +19,9 @@
 use super::devfilter::DeviceFilter;
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
-use pr4xis_domains::applied::hmi::input::keybindings::{RemapSet, macos_remap};
+use pr4xis_domains::applied::hmi::input::keybindings::{
+    Key, KeyCombo, Modifier as PxMod, RemapSet, macos_remap,
+};
 use pr4xis_domains::applied::hmi::input::modes::{ModeGraph, ModeId, ModeProperties};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -250,10 +252,26 @@ impl Schema {
 
     /// The Super-modifier remap set for the selected paradigm — a praxis
     /// [`RemapSet`] (cited + axiom-checkable), not a hand-listed table. `"macos"`
-    /// → [`macos_remap`]; `"none"` (or unknown) → an empty named set.
+    /// → [`macos_remap`] (the full 21-letter Super→Ctrl set); `"copy-paste"` → a
+    /// minimal Super+C/V → Ctrl+C/V set; `"none"` (or unknown) → an empty set.
     pub fn remap_set(&self) -> RemapSet {
         match self.paradigm() {
             "macos" => macos_remap(),
+            // A minimal terminal-aware copy/paste set: Super+C/V → Ctrl+C/V (and
+            // Ctrl+Shift+C/V in terminals, via `terminal_copy_paste_target`).
+            // Unlike the full macOS preset it touches ONLY C/V, so it never shadows
+            // the flat WM Super-letter binds — and the engine keeps re-emitting
+            // Super (super_passthrough) for pointer binds (Super+drag/scroll).
+            "copy-paste" => {
+                let mut rs = RemapSet::new("copy-paste");
+                for c in ['c', 'v'] {
+                    rs.add(
+                        KeyCombo::new(Key::Letter(c)).with_mod(PxMod::Super),
+                        KeyCombo::new(Key::Letter(c)).with_mod(PxMod::Ctrl),
+                    );
+                }
+                rs
+            }
             other => RemapSet::new(other),
         }
     }

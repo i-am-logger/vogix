@@ -158,11 +158,17 @@ impl Router {
         // The remap set comes from the loaded interaction paradigm (a praxis
         // preset, e.g. macos_remap) — cited + axiom-checkable, not a hand table.
         let remaps = schema.remap_set();
-        // With NO remap (the flat default's `remap = none`), Super is not owned for
-        // remapping, so re-emit it to the compositor — that's what lets Hyprland see
-        // Super held for pointer binds (Super+drag/scroll). Under a remap, Super
-        // stays swallowed (the remap synthesizes the target instead).
-        let super_passthrough = remaps.remaps.is_empty();
+        // Re-emit Super (HELD) to the compositor whenever every remap target is a
+        // copy/paste Ctrl(+Shift) chord — those are synthesized as separate taps
+        // (with the held Super briefly masked, see `emit_chord_tap`), so Super can
+        // stay held for pointer binds (Super+drag/scroll). The empty set
+        // (`remap = none`) is vacuously true. The full macOS remap (21 Ctrl
+        // injections) returns false → Super stays swallowed so its synthesized
+        // Ctrls aren't shadowed by a held Super.
+        let super_passthrough = remaps.remaps.iter().all(|r| {
+            matches!(r.to.key, Key::Letter('c') | Key::Letter('v'))
+                && r.to.modifiers == [PxMod::Ctrl]
+        });
 
         Self {
             engine,
@@ -496,7 +502,22 @@ impl Router {
     }
 
     /// Emit a full press+release of a chord (modifiers wrap the base key).
+    ///
+    /// If a re-emitted Super is currently held (`super_passthrough`, kept down for
+    /// pointer binds) and the synthesized chord does NOT itself want Super, briefly
+    /// RELEASE Super around the chord — otherwise the focused app would see e.g.
+    /// Super+Ctrl+C instead of Ctrl+C and would not copy. Super is re-pressed after
+    /// (the user is still physically holding it). When Super is swallowed (the full
+    /// macOS remap, `super_passthrough = false`) this is a no-op.
     fn emit_chord_tap(&self, c: &Chord, fx: &mut Vec<Effect>) {
+        let super_code = modifier_code(Modifier::Super).0;
+        let mask_super = self.super_passthrough && self.mods.sup && !c.mods.sup;
+        if mask_super {
+            fx.push(Effect::Emit {
+                code: super_code,
+                value: 0,
+            });
+        }
         let mut mod_codes = Vec::new();
         if c.mods.ctrl {
             mod_codes.push(modifier_code(Modifier::Ctrl).0);
@@ -523,6 +544,12 @@ impl Router {
         });
         for m in mod_codes.iter().rev() {
             fx.push(Effect::Emit { code: *m, value: 0 });
+        }
+        if mask_super {
+            fx.push(Effect::Emit {
+                code: super_code,
+                value: 1,
+            });
         }
     }
 
@@ -1345,6 +1372,75 @@ mod tests {
                 value: 0
             }],
             "Super release re-emitted too"
+        );
+    }
+
+    // The flat default's "copy-paste" paradigm: Super+C/V → Ctrl+C/V, Super still
+    // re-emitted (held) for pointer binds.
+    const SCHEMA_COPYPASTE: &str = r#"{
+      "modeGraph": { "root": "app", "modes": { "app": { "parent": null, "type": "normal" } }},
+      "keybindings": { "modKey": "super", "paradigm": "copy-paste" },
+      "modes": { "app": { "exit": "escape", "bindings": {
+        "ws1": { "key": "super + 1", "action": "workspace, 1" }
+      }}}
+    }"#;
+
+    fn router_copypaste() -> Router {
+        Router::new(&Schema::from_json(SCHEMA_COPYPASTE).unwrap())
+    }
+
+    #[test]
+    fn copy_paste_remap_keeps_super_held_and_masks_it_for_copy() {
+        let mut r = router_copypaste();
+        // Super still passes through HELD (the C/V-only remap keeps super_passthrough
+        // true) — so Super+drag/scroll pointer binds still resolve.
+        assert_eq!(
+            r.on_key(SUPER, 1, 0),
+            vec![Effect::Emit {
+                code: SUPER,
+                value: 1
+            }],
+            "copy-paste remap must NOT swallow Super (pointer binds need it held)"
+        );
+        // Super+C (GUI) → momentarily RELEASE the held Super, synthesize a CLEAN
+        // Ctrl+C, then re-press Super. Without the mask the app sees Super+Ctrl+C.
+        assert_eq!(
+            r.on_key(C, 1, 10),
+            vec![
+                Effect::Emit {
+                    code: SUPER,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 1
+                },
+                Effect::Emit { code: C, value: 1 },
+                Effect::Emit { code: C, value: 0 },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: SUPER,
+                    value: 1
+                },
+            ],
+            "Super+C → masked Ctrl+C tap (Super released around it)"
+        );
+        // Native Ctrl+C (no Super) is UNTOUCHED — passes through as SIGINT.
+        r.on_key(SUPER, 0, 20);
+        assert_eq!(
+            r.on_key(CTRL, 1, 30),
+            vec![Effect::Emit {
+                code: CTRL,
+                value: 1
+            }]
+        );
+        assert!(
+            r.on_key(C, 1, 31)
+                .contains(&Effect::Emit { code: C, value: 1 }),
+            "bare Ctrl+C passes through native (SIGINT), not remapped"
         );
     }
 

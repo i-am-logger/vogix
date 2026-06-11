@@ -74,8 +74,8 @@ let
     (check "paradigm is the user's own (default)"
       (defaults.keybindings.paradigm == "default"))
 
-    (check "default paradigm uses NO Super remap (Super is the WM modifier)"
-      (defaults.keybindings.paradigms.default.remap == "none"))
+    (check "default paradigm uses the minimal copy-paste remap (Super+C/V only)"
+      (defaults.keybindings.paradigms.default.remap == "copy-paste"))
 
     (check "default paradigm carries the shared (flat) modes"
       (defaults.keybindings.paradigms.default.modes == defaults.modes))
@@ -91,8 +91,8 @@ let
     (check "defaults.keybindings.mouse has moveWindow"
       (defaults.keybindings.mouse ? moveWindow))
 
-    (assertContains "rendered schema JSON carries the remap preset (none)"
-      "none"
+    (assertContains "rendered schema JSON carries the remap preset (copy-paste)"
+      "copy-paste"
       (kbModule.mkSchemaJSON defaults))
 
     (check "rendered schema is NOT modal — no CapsLock submap entry"
@@ -182,9 +182,14 @@ let
       "pseudo,"
       (app.pseudo.action or ""))
 
-    (assertEq "Super+C = Chat workspace"
-      "workspace, Chat"
-      (app.workspaceChat.action or ""))
+    # Super+C is intentionally UNBOUND (it is COPY via the remap) — a bound super+c
+    # would take precedence and the remap would never fire. Super+M stays Music.
+    (check "Super+C is NOT bound (it is copy via the remap)"
+      (!(app ? workspaceChat)
+        && !(builtins.any (b: (b.key or "") == "super + c") (builtins.attrValues app))))
+    (assertEq "Super+M = Music workspace (survives)"
+      "workspace, Music"
+      (app.workspaceMusic.action or ""))
 
     (assertEq "Super+Ctrl+3 = send window to workspace 3"
       "movetoworkspace, 3"
