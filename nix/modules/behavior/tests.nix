@@ -168,8 +168,8 @@ let
       "super + y"
       (app.floatPin.key or ""))
 
-    (assertEq "Super+O = toggle split"
-      "togglesplit,"
+    (assertEq "Super+O = toggle split (dwindle layoutmsg, not a top-level dispatcher)"
+      "layoutmsg, togglesplit"
       (app.toggleSplit.action or ""))
 
     (assertEq "Super+U = toggle group"

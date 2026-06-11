@@ -163,7 +163,9 @@ rec {
         floatPin = { key = "super + y"; action = "exec, hyprctl dispatch togglefloating ; hyprctl dispatch pin"; description = "Float + pin"; };
         fullscreen = { key = "super + f"; action = "fullscreen"; description = "Fullscreen"; };
         pseudo = { key = "super + p"; action = "pseudo,"; description = "Pseudotile"; };
-        toggleSplit = { key = "super + o"; action = "togglesplit,"; description = "Toggle split"; };
+        # togglesplit is a dwindle layout message, not a top-level dispatcher
+        # (the bare `togglesplit` dispatcher was removed from Hyprland).
+        toggleSplit = { key = "super + o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
         toggleGroup = { key = "super + u"; action = "togglegroup,"; description = "Toggle group"; };
         groupCycle = { key = "super + tab"; action = "changegroupactive, f"; description = "Cycle window in group"; };
         gapsOn = { key = "super + shift + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 5;keyword general:gaps_in 6"''; description = "Gaps on"; };

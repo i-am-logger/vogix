@@ -201,7 +201,7 @@ let
     #    engine recognises it as a keyboard). The full set below covers every
     #    key the UX assertions inject.
     caps = { e.EV_KEY: [
-        e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_Q, e.KEY_R, e.KEY_Y,
+        e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_O, e.KEY_Q, e.KEY_R, e.KEY_Y,
         e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_C, e.KEY_V, e.KEY_X, e.KEY_1,
         e.KEY_LEFT, e.KEY_TAB, e.KEY_ESC, e.KEY_VOLUMEUP,
         # Enter + home-row letters so it passes the strict text-keyboard floor
@@ -753,6 +753,11 @@ let
     flat_expect("Super+Y float + pin (yuiop)",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Y, hold=0.03), up(e.KEY_LEFTMETA)),
         "exec hyprctl dispatch togglefloating")
+    # Super+O = toggle split — a dwindle layoutmsg (the bare `togglesplit`
+    # dispatcher was removed from Hyprland); guards against regressing the name.
+    flat_expect("Super+O toggle split (layoutmsg, not bare togglesplit)",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_O, hold=0.03), up(e.KEY_LEFTMETA)),
+        "dispatch layoutmsg togglesplit")
     # Super+1 = workspace 1.
     flat_expect("Super+1 workspace 1",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_1, hold=0.03), up(e.KEY_LEFTMETA)),
