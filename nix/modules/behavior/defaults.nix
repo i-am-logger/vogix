@@ -1,39 +1,32 @@
-# Vogix behavior defaults — Modal desktop UX
+# Vogix behavior defaults — flat Super-combo desktop UX
 #
 # Two sub-domains:
-#   keybindings: modKey, mouse, layers (input config)
-#   modes: app, desktop (+ console infra) — a single, unified WM mode
+#   keybindings: modKey, mouse, paradigm (input config)
+#   modes: app — a single, flat mode (no CapsLock, no sub-modes)
 #
 # Philosophy:
-#   - App mode (default): Super = Command (macOS-like), keys → apps
-#   - Desktop mode: the one WM mode, dual-role CapsLock. HOLD CapsLock = momentary
-#     (acts while held, reverts on release — Raskin's quasimode). TAP CapsLock =
-#     sticky/locked (stays until you tap again; a forgotten sticky self-heals via
-#     idle auto-revert). The active mode is shown by the window border colour, and
-#     Esc is the always-available safety-net exit.
-#   - Console: F12 tmux overlay (infra, passthrough).
+#   - One mode (`app`). Every WM action is a flat `Super`-combo, dispatched by the
+#     vogix input engine to Hyprland. There is NO CapsLock mode, NO move/resize
+#     sub-modes, and NO Super→Ctrl remap — Super is used directly as the WM
+#     modifier, exactly like a plain Hyprland `bind =` config.
+#   - The modifier on a direction picks the verb:
+#       Super + direction        = focus        (h=left l=right j=up k=down)
+#       Super + Shift + direction = move window  (swapwindow)
+#       Ctrl  + Shift + direction = resize window (resizeactive)
+#   - The `yuiop` window-state row:
+#       Super+Q close · Super+Y float+pin · Super+F fullscreen · Super+P pseudo
+#       Super+O togglesplit · Super+U togglegroup · Super+Tab cycle-group
+#   - Workspaces: Super+1..0 (+ C=Chat, M=Music); Super+Ctrl+←/→/j/l switch;
+#     Super+Ctrl+number send window there; Super+Shift+number send silently.
 #
-# Desktop keys — the modifier on a direction picks the verb:
-#   direction (arrows or h/j/k/l) = focus
-#   Shift + direction             = move window
-#   Ctrl  + direction             = resize window
-#   m / r                         = sustained move / resize sub-modes (bare arrows)
-#   Tab                           = toggle split orientation (horizontal/vertical)
-#   number                        = go to workspace
-#   Shift + number                = send window to workspace + follow
-#   q = close   f = toggle fullscreen   y = float   Tab = split   d = dismiss
-#   t = terminal   e = browser   Space = launcher   x = lock
-# You STAY in the mode while managing (toggle/move/resize/close/dismiss); you
-# leave only by tapping CapsLock / Esc, or via an action that opens a new surface
-# (t/e/Space/x). f is a TOGGLE — press it again to un-fullscreen without leaving.
+# Source: the user's own pre-vogix Hyprland config, carried verbatim — git
+# `cce4ddc^:home/gui/hyprland/config/bindings.conf`. The engine stays (device-grab
+# scope, hotplug, `vogix input doctor` observability); it simply loads this flat
+# config. The earlier modal CapsLock model + macOS remap were vogix-era choices
+# that have been removed. windows/mac/emacs paradigms are TODO — to be re-based as
+# flat platform variants.
 _:
 
-let
-  # Console toggle command — used in every mode that supports F12 console access.
-  # Checks if console workspace is visible, starts wezterm+tmux if needed, switches submap.
-  consoleToggleAction = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi";
-in
-# `rec` so a paradigm preset can reference the shared `modes`/`modeGraph` below.
 rec {
   # ── Input settings ──
   input = {
@@ -87,184 +80,36 @@ rec {
   # ── Gestures ──
   gestures = { };
 
-  # ── Keybindings (modal input) ──
+  # ── Keybindings ──
   keybindings = {
     modKey = "super";
-    # Interaction PARADIGM (whole-WM flavour) the user selects. Each paradigm in
-    # `paradigms` below pairs a Super-modifier remap (a praxis RemapSet preset)
-    # with a per-mode WM-navigation binding set. `mkSchemaJSON` resolves the
-    # chosen paradigm into the engine's `modes` + remap. Default `default` = the
-    # user's own preferred config (modal CapsLock→desktop bare-key style).
+
+    # Interaction PARADIGM (whole-WM flavour). `default` = the user's own config:
+    # flat Super-combos, NO CapsLock, NO Super→Ctrl remap (remap = "none") — the
+    # pre-vogix Hyprland workflow carried into the engine. windows/mac/emacs are
+    # TODO: to be re-based as flat platform variants (the modal versions were
+    # removed with the CapsLock model).
     paradigm = "default";
-
-    # WM interaction paradigms. A paradigm = { remap = <praxis RemapSet name>;
-    # modes = <per-mode bindings over vogix's own app/desktop/move/resize>; }.
-    # The user picks one via `paradigm` above and overlays their own bindings via
-    # `programs.vogix.behavior.modes` (recursiveUpdate, per binding name).
     paradigms = {
-      # default: the user's own preferred model — modal CapsLock→desktop, bare
-      # hjkl/arrows. Its bindings ARE the shared `modes` below, so it is the identity.
-      #
-      # Source: the user's own evolved workflow. The original pre-vogix Hyprland
-      # config (git show cce4ddc^:home/gui/hyprland/config/bindings.conf) used
-      # $mainMod = SUPER directly with flat Super-combos and NO Super→Ctrl remap;
-      # the macOS-Command remap and the modal CapsLock→desktop model are deliberate
-      # vogix-era choices (the remap is what justifies the evdev engine). The modal
-      # dynamics are machine-checked in praxis: quasimode-reverts-to-root (Raskin
-      # 2000 §3-2; Norman 1981 mode error) and exit-always-reaches-root (Harel 1987
-      # statecharts) — see pr4xis hmi::input::engine axioms.
       default = {
-        remap = "macos";
+        remap = "none";
         inherit modes;
-      };
-
-      # windows: chorded Win-key navigation IN app mode (no CapsLock needed),
-      # remap = none (Windows uses Ctrl natively for copy/paste). Reuses the
-      # default app bindings (workspaces/media/console) + adds Super-combo WM nav;
-      # the CapsLock modal layer (desktop/move/resize) stays available as a bonus.
-      #
-      # Source: Microsoft, "Keyboard shortcuts in Windows"
-      # (support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec).
-      # Platform-native (verbatim): Alt+Tab = switch windows, Alt+F4 = close,
-      # Win+Ctrl+←/→ = switch virtual desktops (-> workspace ∓1), and Ctrl-native
-      # copy/paste (remap = none). The Super+arrow focus / Super+Shift+arrow move
-      # block is a vogix WM-FLAVOUR convention, NOT Windows-native — Windows binds
-      # Win+arrow to window SNAP, which a tiling WM has no equivalent for; the
-      # tiling-useful focus/move is kept here instead. Win+D (show desktop) is
-      # omitted: Hyprland has no core show-desktop dispatcher to map it faithfully.
-      windows = {
-        remap = "none";
-        modes = {
-          app = {
-            enter = null;
-            exit = "escape";
-            bindings = modes.app.bindings // {
-              winFocusLeft = { key = "super + left"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
-              winFocusDown = { key = "super + down"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
-              winFocusUp = { key = "super + up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
-              winFocusRight = { key = "super + right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
-              winMoveLeft = { key = "super + shift + left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
-              winMoveDown = { key = "super + shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
-              winMoveUp = { key = "super + shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
-              winMoveRight = { key = "super + shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-              # Win+Ctrl+←/→ switch virtual desktops on Windows (MS: "Win+Ctrl+Left/
-              # Right — Switch between virtual desktops"); map to adjacent workspaces.
-              winDesktopPrev = { key = "super + ctrl + left"; action = "workspace, -1"; description = "Previous virtual desktop"; };
-              winDesktopNext = { key = "super + ctrl + right"; action = "workspace, +1"; description = "Next virtual desktop"; };
-              winCycle = { key = "alt + tab"; action = "cyclenext,"; description = "Cycle windows"; };
-              winClose = { key = "super + q"; action = "killactive,"; description = "Close window"; };
-              winCloseAltF4 = { key = "alt + F4"; action = "killactive,"; description = "Close window"; };
-              winFullscreen = { key = "super + f"; action = "fullscreen, 0"; description = "Fullscreen"; };
-              winFloat = { key = "super + shift + space"; action = "togglefloating,"; description = "Toggle floating"; };
-            };
-          };
-          inherit (modes) desktop move resize console;
-        };
-      };
-
-      # mac: Command-key app shortcuts via the macOS Super→Ctrl remap, plus the
-      # native macOS Spaces / app-switch / fullscreen gestures. Tiling focus/move
-      # is via the CapsLock desktop layer (macOS has no chorded window focus).
-      #
-      # Source: Apple, "Mac keyboard shortcuts" (support.apple.com/en-us/102650) +
-      # the macOS HIG (Command is the primary shortcut modifier — the basis for the
-      # Super→Ctrl remap). Platform-native (verbatim): Control+←/→ = move between
-      # Spaces (-> workspace ∓1), Cmd+Tab (Super+Tab → cyclenext), Control+Command+F
-      # (Super+Ctrl+F → fullscreen), and Cmd+C/V/W/Q via remap = macos.
-      mac = {
-        remap = "macos";
-        modes = {
-          app = {
-            enter = null;
-            exit = "escape";
-            bindings = modes.app.bindings // {
-              # macOS Control+←/→ move between Spaces (Apple: "Control-Right/Left
-              # Arrow — move between Spaces"); map to adjacent workspaces. macOS has
-              # no keyboard window-FOCUS convention (that is a tiling concept), so
-              # chorded focus/move are intentionally absent — use the CapsLock
-              # desktop layer for tiling. Mission Control (Control-Up) is omitted:
-              # Hyprland has no core overview dispatcher to map it faithfully.
-              macSpacePrev = { key = "ctrl + left"; action = "workspace, -1"; description = "Previous Space"; };
-              macSpaceNext = { key = "ctrl + right"; action = "workspace, +1"; description = "Next Space"; };
-              macCycle = { key = "super + tab"; action = "cyclenext,"; description = "Cycle windows (Cmd+Tab)"; };
-              macFullscreen = { key = "super + ctrl + f"; action = "fullscreen, 0"; description = "Fullscreen (Cmd+Ctrl+F)"; };
-            };
-          };
-          inherit (modes) desktop move resize console;
-        };
-      };
-
-      # emacs: modal + emacs-flavoured. emacs's Ctrl chords are app-internal, so a
-      # GLOBAL C-x would hijack "cut" everywhere — instead the emacs bindings live
-      # INSIDE the CapsLock desktop mode, where Ctrl-chords are WM nav (not app).
-      # Motion is emacs's C-f/C-b/C-n/C-p; C-x is a PREFIX that enters a transient
-      # command mode — a key SEQUENCE modelled as a mode (C-x then a key). remap =
-      # none (emacs uses Ctrl natively).
-      #
-      # Source: GNU Emacs Manual — Prefix-Keys ("a key sequence whose binding is a
-      # keymap" — exactly the C-x→submap modelling here), Exiting, Other-Window,
-      # Moving-Point (gnu.org/software/emacs/manual/html_node/emacs/). Faithful:
-      # C-x C-c = save-buffers-kill-terminal (close), C-x o = other-window, C-x 0 =
-      # delete-window, C-x 1 = delete-other-windows (maximise). NOTE C-f/C-b/C-n/C-p
-      # are Emacs char/line motion WITHIN a buffer, re-interpreted here as window
-      # focus (a defensible WM re-mapping, not a literal Emacs binding). C-x 2 / C-x
-      # 3 split a buffer view (no exact WM equivalent) → mapped to dwindle preselect.
-      emacs = {
-        remap = "none";
-        # The C-x prefix mode (a sequence = a chord that enters a transient mode).
-        modeGraph = {
-          modes = {
-            emacs-cx = { parent = "app"; type = "submap"; };
-          };
-        };
-        modes = {
-          desktop = {
-            enter = null;
-            exit = "escape";
-            bindings = modes.desktop.bindings // {
-              emacsForward = { key = "ctrl + f"; action = "movefocus, r"; description = "C-f forward (focus right)"; repeat = true; };
-              emacsBack = { key = "ctrl + b"; action = "movefocus, l"; description = "C-b back (focus left)"; repeat = true; };
-              emacsNext = { key = "ctrl + n"; action = "movefocus, d"; description = "C-n next (focus down)"; repeat = true; };
-              emacsPrev = { key = "ctrl + p"; action = "movefocus, u"; description = "C-p previous (focus up)"; repeat = true; };
-              emacsCx = { key = "ctrl + x"; action = "submap, emacs-cx"; description = "C-x prefix"; };
-            };
-          };
-          # After C-x, the next key completes the sequence (emacs window commands).
-          emacs-cx = {
-            enter = null;
-            exit = "escape";
-            bindings = {
-              quit = { key = "ctrl + c"; action = "killactive,"; description = "C-x C-c — close window"; exitAfter = true; };
-              otherWindow = { key = "o"; action = "cyclenext,"; description = "C-x o — other window"; exitAfter = true; };
-              deleteWindow = { key = "0"; action = "killactive,"; description = "C-x 0 — delete window"; exitAfter = true; };
-              maximize = { key = "1"; action = "fullscreen, 0"; description = "C-x 1 — maximise (delete other windows)"; exitAfter = true; };
-              # C-x 2 / C-x 3 split a window (showing the same buffer) — no exact WM
-              # equivalent, so mapped to Hyprland's dwindle preselect (the next window
-              # opens below / to the right), the closest tiling analog of a split.
-              splitBelow = { key = "2"; action = "layoutmsg, preselect d"; description = "C-x 2 — split below (preselect down)"; exitAfter = true; };
-              splitRight = { key = "3"; action = "layoutmsg, preselect r"; description = "C-x 3 — split right (preselect right)"; exitAfter = true; };
-            };
-          };
-          inherit (modes) app;
-          inherit (modes) move resize console;
-        };
       };
     };
 
-    # Window classes treated as terminals for the context-aware Super→Ctrl remap
-    # (copy/paste → Ctrl+Shift+C/V; other remaps suppressed). Loaded as data —
-    # override per host. POSIX termios: bare Ctrl+C in a terminal = SIGINT.
+    # Window classes treated as terminals for context-aware remaps. Unused while
+    # remap = "none", kept as data for when a remapping paradigm is added.
     terminalClasses = [
       "kitty"
       "org.wezfurlong.wezterm"
       "wezterm"
-      "vogix-console"
       "Alacritty"
       "foot"
       "org.gnome.Console"
       "xterm-256color"
     ];
 
+    # Mouse: Super+drag move, Super+right-drag resize (Hyprland `bindm`).
     mouse = {
       moveWindow = {
         button = "mouse:272";
@@ -278,70 +123,83 @@ rec {
       };
     };
 
-    layers = {
-      # ── CapsLock interaction model (the single source of truth) ──
-      #
-      #   caps + a WM key    = MOMENTARY: do the action, return to app when you
-      #                        let go of caps. (caps+→ nudge, caps+q close, …)
-      #   caps clicked alone = STICKY: stay in desktop for several actions;
-      #                        click caps again to leave.
-      #   Esc                = safety net; always returns to app.
-      #
-      # The vogix input engine owns this directly in one process: a dual-role
-      # CapsLock detector (tap vs hold, threshold = tapHoldMs, "tap-hold-press"
-      # so caps+key is always momentary) drives the praxis mode statechart and
-      # dispatches WM actions over the Hyprland control socket. `entersMode` names
-      # the mode CapsLock activates — a tap enters it sticky, a hold enters it
-      # momentary (released on caps-up). No synthetic keysyms and no compositor
-      # submaps are involved. Per-binding exit semantics live on each binding via
-      # `exitAfter` (true = return to app after a one-shot; false = stay/chain).
-      desktopToggle = {
-        hold = "capslock";
-        entersMode = "desktop";
-        tapHoldMs = 250; # lone press released within this = tap (sticky); else hold
-        stickyIdleMs = 30000; # a tapped (locked) mode self-reverts after this idle
-      };
-    };
+    # No interaction layers — CapsLock is just CapsLock (no dual-role mode trigger).
+    layers = { };
   };
 
-  # ── Mode graph — defines mode topology ──
-  # Mirrors the ModeGraph ontology in praxis applied/hmi/input/modes.rs
-  # root: the default mode (Hyprland "reset" submap)
-  # modes: each mode's parent (exit target) and type
-  # Axioms: NoDeadStates, RootReachable, RootNoParent
-  #
-  # Design: a SINGLE WM mode (`desktop`). The old `arrange` and `theme`
-  # sub-modes were removed entirely:
-  #   - arrange folded into desktop — focus = dir, Shift+dir = move,
-  #     Ctrl+dir = resize, Shift+number = send-and-follow. No sub-mode hop.
-  #   - theme dropped — it was used once in two weeks of telemetry; appearance
-  #     switching lives in the `vogix` CLI / brightness keys instead.
-  #
-  # Entering/leaving desktop is dual-role on CapsLock — see the full model on
-  # layers.desktopToggle above. In short: caps+key = momentary (exit on
-  # release), caps clicked alone = sticky toggle, Esc = safety net only.
-  # move/resize are flat sub-modes (parent = app) entered from desktop via m/r.
-  # Each is its own submap so the daemon can give it a distinct semantic border
-  # colour (desktop=active/cyan, move=link/blue, resize=highlight/purple).
+  # ── Mode graph ── a SINGLE flat mode. No sub-modes.
+  # Axioms (praxis applied/hmi/input/modes.rs): NoDeadStates, RootReachable,
+  # RootNoParent — trivially satisfied by one normal root mode.
   modeGraph = {
     root = "app";
     modes = {
       app = { parent = null; type = "normal"; };
-      desktop = { parent = "app"; type = "submap"; };
-      move = { parent = "app"; type = "submap"; };
-      resize = { parent = "app"; type = "submap"; };
-      console = { parent = "app"; type = "passthrough"; };
     };
   };
 
-  # ── Modes (contextual actions) ──
+  # ── Modes ──
   modes = {
-    # App mode: always-available bindings (workspaces, media, mode entry)
+    # The one mode: apps + window management, all flat Super-combos. Carried
+    # verbatim from the user's pre-vogix Hyprland config
+    # (git cce4ddc^:home/gui/hyprland/config/bindings.conf).
     app = {
       enter = null;
       exit = "escape";
       bindings = {
-        # ── Workspaces ──
+        # ── Launch ──
+        terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
+        browser = { key = "super + e"; action = "exec, $BROWSER"; description = "Browser"; };
+        chrome = { key = "super + shift + e"; action = "exec, google-chrome-stable"; description = "Chrome"; };
+        launcher = { key = "super + space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
+        colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
+        lockScreen = { key = "super + shift + x"; action = "exec, hyprlock"; description = "Lock screen"; };
+
+        # ── Screenshots ──
+        screenshotClip = { key = "print"; action = "exec, grimblast --notify --cursor copy area"; description = "Screenshot → clipboard"; };
+        screenshotEdit = { key = "shift + print"; action = "exec, grimblast save area - | swappy -f -"; description = "Screenshot → editor"; };
+
+        # ── Window state (the yuiop row + q/f/tab/gaps) ──
+        closeWindow = { key = "super + q"; action = "killactive,"; description = "Close window"; };
+        floatPin = { key = "super + y"; action = "exec, hyprctl dispatch togglefloating ; hyprctl dispatch pin"; description = "Float + pin"; };
+        fullscreen = { key = "super + f"; action = "fullscreen"; description = "Fullscreen"; };
+        pseudo = { key = "super + p"; action = "pseudo,"; description = "Pseudotile"; };
+        toggleSplit = { key = "super + o"; action = "togglesplit,"; description = "Toggle split"; };
+        toggleGroup = { key = "super + u"; action = "togglegroup,"; description = "Toggle group"; };
+        groupCycle = { key = "super + tab"; action = "changegroupactive, f"; description = "Cycle window in group"; };
+        gapsOn = { key = "super + shift + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 5;keyword general:gaps_in 6"''; description = "Gaps on"; };
+        gapsOff = { key = "super + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 0;keyword general:gaps_in 0"''; description = "Gaps off"; };
+
+        # ── Focus (Super + direction; j = up, k = down — non-vim, your original) ──
+        focusLeft = { key = "super + h"; action = "movefocus, l"; description = "Focus left"; };
+        focusRight = { key = "super + l"; action = "movefocus, r"; description = "Focus right"; };
+        focusUp = { key = "super + j"; action = "movefocus, u"; description = "Focus up"; };
+        focusDown = { key = "super + k"; action = "movefocus, d"; description = "Focus down"; };
+        focusLeftArrow = { key = "super + left"; action = "movefocus, l"; description = "Focus left"; };
+        focusRightArrow = { key = "super + right"; action = "movefocus, r"; description = "Focus right"; };
+        focusUpArrow = { key = "super + up"; action = "movefocus, u"; description = "Focus up"; };
+        focusDownArrow = { key = "super + down"; action = "movefocus, d"; description = "Focus down"; };
+
+        # ── Move window (Super + Shift + direction → swapwindow) ──
+        swapLeft = { key = "super + shift + h"; action = "swapwindow, l"; description = "Move window left"; };
+        swapRight = { key = "super + shift + l"; action = "swapwindow, r"; description = "Move window right"; };
+        swapUp = { key = "super + shift + j"; action = "swapwindow, u"; description = "Move window up"; };
+        swapDown = { key = "super + shift + k"; action = "swapwindow, d"; description = "Move window down"; };
+        swapLeftArrow = { key = "super + shift + left"; action = "swapwindow, l"; description = "Move window left"; };
+        swapRightArrow = { key = "super + shift + right"; action = "swapwindow, r"; description = "Move window right"; };
+        swapUpArrow = { key = "super + shift + up"; action = "swapwindow, u"; description = "Move window up"; };
+        swapDownArrow = { key = "super + shift + down"; action = "swapwindow, d"; description = "Move window down"; };
+
+        # ── Resize window (Ctrl + Shift + direction → resizeactive; repeats) ──
+        resizeLeft = { key = "ctrl + shift + h"; action = "resizeactive, -30 0"; description = "Narrower"; repeat = true; };
+        resizeRight = { key = "ctrl + shift + l"; action = "resizeactive, 30 0"; description = "Wider"; repeat = true; };
+        resizeUp = { key = "ctrl + shift + j"; action = "resizeactive, 0 -30"; description = "Shorter"; repeat = true; };
+        resizeDown = { key = "ctrl + shift + k"; action = "resizeactive, 0 30"; description = "Taller"; repeat = true; };
+        resizeLeftArrow = { key = "ctrl + shift + left"; action = "resizeactive, -30 0"; description = "Narrower"; repeat = true; };
+        resizeRightArrow = { key = "ctrl + shift + right"; action = "resizeactive, 30 0"; description = "Wider"; repeat = true; };
+        resizeUpArrow = { key = "ctrl + shift + up"; action = "resizeactive, 0 -30"; description = "Shorter"; repeat = true; };
+        resizeDownArrow = { key = "ctrl + shift + down"; action = "resizeactive, 0 30"; description = "Taller"; repeat = true; };
+
+        # ── Workspaces (Super + number; C = Chat, M = Music) ──
         workspace1 = { key = "super + 1"; action = "workspace, 1"; description = "Workspace 1"; };
         workspace2 = { key = "super + 2"; action = "workspace, 2"; description = "Workspace 2"; };
         workspace3 = { key = "super + 3"; action = "workspace, 3"; description = "Workspace 3"; };
@@ -352,206 +210,55 @@ rec {
         workspace8 = { key = "super + 8"; action = "workspace, 8"; description = "Workspace 8"; };
         workspace9 = { key = "super + 9"; action = "workspace, 9"; description = "Workspace 9"; };
         workspace10 = { key = "super + 0"; action = "workspace, 10"; description = "Workspace 10"; };
+        workspaceChat = { key = "super + c"; action = "workspace, Chat"; description = "Chat workspace"; };
+        workspaceMusic = { key = "super + m"; action = "workspace, Music"; description = "Music workspace"; };
 
-        # ── Quick access ──
-        terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
-        launcher = { key = "super + space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
+        # ── Adjacent workspace (Super + Ctrl + ←/→ or j/l) ──
+        wsPrev = { key = "super + ctrl + left"; action = "workspace, -1"; description = "Previous workspace"; };
+        wsNext = { key = "super + ctrl + right"; action = "workspace, +1"; description = "Next workspace"; };
+        wsPrevJ = { key = "super + ctrl + j"; action = "workspace, -1"; description = "Previous workspace"; };
+        wsNextL = { key = "super + ctrl + l"; action = "workspace, +1"; description = "Next workspace"; };
 
-        # ── Audio ──
+        # ── Send window to workspace (Super + Ctrl + number) ──
+        moveToWs1 = { key = "super + ctrl + 1"; action = "movetoworkspace, 1"; description = "Send window to workspace 1"; };
+        moveToWs2 = { key = "super + ctrl + 2"; action = "movetoworkspace, 2"; description = "Send window to workspace 2"; };
+        moveToWs3 = { key = "super + ctrl + 3"; action = "movetoworkspace, 3"; description = "Send window to workspace 3"; };
+        moveToWs4 = { key = "super + ctrl + 4"; action = "movetoworkspace, 4"; description = "Send window to workspace 4"; };
+        moveToWs5 = { key = "super + ctrl + 5"; action = "movetoworkspace, 5"; description = "Send window to workspace 5"; };
+        moveToWs6 = { key = "super + ctrl + 6"; action = "movetoworkspace, 6"; description = "Send window to workspace 6"; };
+        moveToWs7 = { key = "super + ctrl + 7"; action = "movetoworkspace, 7"; description = "Send window to workspace 7"; };
+        moveToWs8 = { key = "super + ctrl + 8"; action = "movetoworkspace, 8"; description = "Send window to workspace 8"; };
+        moveToWs9 = { key = "super + ctrl + 9"; action = "movetoworkspace, 9"; description = "Send window to workspace 9"; };
+        moveToWs10 = { key = "super + ctrl + 0"; action = "movetoworkspace, 10"; description = "Send window to workspace 10"; };
+
+        # ── Send window to adjacent workspace (Super + Ctrl + Shift + ←/→ or j/l) ──
+        sendWsPrev = { key = "super + ctrl + shift + left"; action = "movetoworkspace, -1"; description = "Send window ← workspace"; };
+        sendWsNext = { key = "super + ctrl + shift + right"; action = "movetoworkspace, +1"; description = "Send window → workspace"; };
+        sendWsPrevJ = { key = "super + ctrl + shift + j"; action = "movetoworkspace, -1"; description = "Send window ← workspace"; };
+        sendWsNextL = { key = "super + ctrl + shift + l"; action = "movetoworkspace, +1"; description = "Send window → workspace"; };
+
+        # ── Send window to workspace silently (Super + Shift + number) ──
+        moveSilent1 = { key = "super + shift + 1"; action = "movetoworkspacesilent, 1"; description = "Send window to workspace 1 (silent)"; };
+        moveSilent2 = { key = "super + shift + 2"; action = "movetoworkspacesilent, 2"; description = "Send window to workspace 2 (silent)"; };
+        moveSilent3 = { key = "super + shift + 3"; action = "movetoworkspacesilent, 3"; description = "Send window to workspace 3 (silent)"; };
+        moveSilent4 = { key = "super + shift + 4"; action = "movetoworkspacesilent, 4"; description = "Send window to workspace 4 (silent)"; };
+        moveSilent5 = { key = "super + shift + 5"; action = "movetoworkspacesilent, 5"; description = "Send window to workspace 5 (silent)"; };
+        moveSilent6 = { key = "super + shift + 6"; action = "movetoworkspacesilent, 6"; description = "Send window to workspace 6 (silent)"; };
+        moveSilent7 = { key = "super + shift + 7"; action = "movetoworkspacesilent, 7"; description = "Send window to workspace 7 (silent)"; };
+        moveSilent8 = { key = "super + shift + 8"; action = "movetoworkspacesilent, 8"; description = "Send window to workspace 8 (silent)"; };
+        moveSilent9 = { key = "super + shift + 9"; action = "movetoworkspacesilent, 9"; description = "Send window to workspace 9 (silent)"; };
+        moveSilent10 = { key = "super + shift + 0"; action = "movetoworkspacesilent, 10"; description = "Send window to workspace 10 (silent)"; };
+
+        # ── Audio / brightness / media (XF86) ──
         volumeUp = { key = "XF86AudioRaiseVolume"; action = "exec, pamixer -i 5"; description = "Volume up"; };
         volumeDown = { key = "XF86AudioLowerVolume"; action = "exec, pamixer -d 5"; description = "Volume down"; };
         volumeMute = { key = "XF86AudioMute"; action = "exec, pamixer -t"; description = "Toggle mute"; };
         micMute = { key = "XF86AudioMicMute"; action = "exec, pamixer --default-source -t"; description = "Toggle mic"; };
-
-        # ── Screen brightness ──
-        brightnessUp = { key = "XF86MonBrightnessUp"; action = "exec, light -A 5"; description = "Screen brighter"; };
-        brightnessDown = { key = "XF86MonBrightnessDown"; action = "exec, light -U 5"; description = "Screen dimmer"; };
-
-        # ── Peripheral brightness (OpenRGB) ──
-        peripheralBrightnessUp = { key = "XF86KbdBrightnessUp"; action = "exec, openrgb --brightness +10"; description = "Peripherals brighter"; };
-        peripheralBrightnessDown = { key = "XF86KbdBrightnessDown"; action = "exec, openrgb --brightness -10"; description = "Peripherals dimmer"; };
-
-        # ── Media ──
+        brightnessUp = { key = "XF86MonBrightnessUp"; action = "exec, light -A 5"; description = "Brighter"; };
+        brightnessDown = { key = "XF86MonBrightnessDown"; action = "exec, light -U 5"; description = "Dimmer"; };
         mediaPlay = { key = "XF86AudioPlay"; action = "exec, playerctl play-pause"; description = "Play/pause"; };
         mediaNext = { key = "XF86AudioNext"; action = "exec, playerctl next"; description = "Next track"; };
         mediaPrev = { key = "XF86AudioPrev"; action = "exec, playerctl previous"; description = "Previous track"; };
-
-        # ── Screenshot ──
-        screenshotClip = { key = "print"; action = "exec, grimblast --notify copy area"; description = "Screenshot → clipboard"; };
-        screenshotEdit = { key = "shift + print"; action = "exec, grimblast save area - | swappy -f -"; description = "Screenshot → editor"; };
-
-        # ── Help ──
-        help = { key = "super + slash"; action = "exec, vogix-modes-global"; description = "Show keybindings"; };
-
-        # ── System console (fullscreen tmux overlay, available everywhere) ──
-        console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
-
-        # Desktop mode is entered by CapsLock itself — the engine reads
-        # `keybindings.layers.desktopToggle.entersMode` (tap = sticky, hold =
-        # momentary). No keysym-bridge entry binding is needed.
-      };
-    };
-
-    # Desktop mode (caps) — the WM hub. Border = active/cyan (set by daemon).
-    #   arrows / hjkl = focus
-    #   m = enter MOVE sub-mode (blue), r = enter RESIZE sub-mode (purple)
-    #   numbers = workspace, Shift+number = send window there + follow
-    # Hold CapsLock the whole time you work here; release to return to app.
-    desktop = {
-      enter = null;
-      exit = "escape";
-      bindings = {
-        # ── Focus: direction (arrows + hjkl), repeats while held ──
-        focusLeft = { key = "h"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
-        focusDown = { key = "j"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
-        focusUp = { key = "k"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
-        focusRight = { key = "l"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
-        focusLeftArrow = { key = "left"; action = "movefocus, l"; description = "Focus left"; repeat = true; };
-        focusDownArrow = { key = "down"; action = "movefocus, d"; description = "Focus down"; repeat = true; };
-        focusUpArrow = { key = "up"; action = "movefocus, u"; description = "Focus up"; repeat = true; };
-        focusRightArrow = { key = "right"; action = "movefocus, r"; description = "Focus right"; repeat = true; };
-
-        # ── Move (Shift+dir) / Resize (Ctrl+dir): the modifier on a direction
-        # picks the verb (bare = focus, Shift = move, Ctrl = resize). The quick,
-        # in-place path; for a sustained session, enter the m/r sub-modes below
-        # (same arrows, no modifier held).
-        moveLeft = { key = "shift + h"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
-        moveDown = { key = "shift + j"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
-        moveUp = { key = "shift + k"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
-        moveRight = { key = "shift + l"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-        moveLeftArrow = { key = "shift + left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
-        moveDownArrow = { key = "shift + down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
-        moveUpArrow = { key = "shift + up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
-        moveRightArrow = { key = "shift + right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-        resizeLeft = { key = "ctrl + h"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
-        resizeDown = { key = "ctrl + j"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
-        resizeUp = { key = "ctrl + k"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
-        resizeRight = { key = "ctrl + l"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
-        resizeLeftArrow = { key = "ctrl + left"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
-        resizeDownArrow = { key = "ctrl + down"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
-        resizeUpArrow = { key = "ctrl + up"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
-        resizeRightArrow = { key = "ctrl + right"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
-
-        # ── Sustained MOVE / RESIZE sub-modes (m / r): arrows with no modifier,
-        # for arranging a window over many keystrokes. Border recolours per mode. ──
-        enterMove = { key = "m"; action = "submap, move"; description = "Move-window mode"; };
-        enterResize = { key = "r"; action = "submap, resize"; description = "Resize-window mode"; };
-
-        # ── Workspaces: number = go there ──
-        workspace1 = { key = "1"; action = "workspace, 1"; description = "Workspace 1"; };
-        workspace2 = { key = "2"; action = "workspace, 2"; description = "Workspace 2"; };
-        workspace3 = { key = "3"; action = "workspace, 3"; description = "Workspace 3"; };
-        workspace4 = { key = "4"; action = "workspace, 4"; description = "Workspace 4"; };
-        workspace5 = { key = "5"; action = "workspace, 5"; description = "Workspace 5"; };
-        workspace6 = { key = "6"; action = "workspace, 6"; description = "Workspace 6"; };
-        workspace7 = { key = "7"; action = "workspace, 7"; description = "Workspace 7"; };
-        workspace8 = { key = "8"; action = "workspace, 8"; description = "Workspace 8"; };
-        workspace9 = { key = "9"; action = "workspace, 9"; description = "Workspace 9"; };
-        workspace10 = { key = "0"; action = "workspace, 10"; description = "Workspace 10"; };
-        workspaceNext = { key = "n"; action = "workspace, +1"; description = "Next workspace"; };
-        workspacePrev = { key = "p"; action = "workspace, -1"; description = "Previous workspace"; };
-
-        # ── Send window to workspace AND follow it: Shift + number ──
-        sendToWs1 = { key = "shift + 1"; action = "movetoworkspace, 1"; description = "Send window to ws 1 + follow"; };
-        sendToWs2 = { key = "shift + 2"; action = "movetoworkspace, 2"; description = "Send window to ws 2 + follow"; };
-        sendToWs3 = { key = "shift + 3"; action = "movetoworkspace, 3"; description = "Send window to ws 3 + follow"; };
-        sendToWs4 = { key = "shift + 4"; action = "movetoworkspace, 4"; description = "Send window to ws 4 + follow"; };
-        sendToWs5 = { key = "shift + 5"; action = "movetoworkspace, 5"; description = "Send window to ws 5 + follow"; };
-        sendToWs6 = { key = "shift + 6"; action = "movetoworkspace, 6"; description = "Send window to ws 6 + follow"; };
-        sendToWs7 = { key = "shift + 7"; action = "movetoworkspace, 7"; description = "Send window to ws 7 + follow"; };
-        sendToWs8 = { key = "shift + 8"; action = "movetoworkspace, 8"; description = "Send window to ws 8 + follow"; };
-        sendToWs9 = { key = "shift + 9"; action = "movetoworkspace, 9"; description = "Send window to ws 9 + follow"; };
-        sendToWs10 = { key = "shift + 0"; action = "movetoworkspace, 10"; description = "Send window to ws 10 + follow"; };
-
-        # ── Window state ──
-        # exitAfter RULE: a mode is a sustained context — you leave it by tapping
-        # CapsLock or Esc, NOT by doing things in it. So `exitAfter` is set ONLY
-        # for actions that move your attention to a NEW surface (launch an app,
-        # lock the screen). Window-management actions — toggle fullscreen/float/
-        # split, close, resize, dismiss, switch workspace — STAY so you can keep
-        # arranging. (fullscreen is a TOGGLE: f on, f off, without leaving.)
-        closeWindow = { key = "q"; action = "killactive,"; description = "Close window"; };
-        fullscreen = { key = "f"; action = "fullscreen"; description = "Toggle fullscreen"; };
-        toggleFloat = { key = "y"; action = "togglefloating,"; description = "Float (yank from tiling)"; };
-        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split (horizontal/vertical)"; };
-
-        # ── Quick launches (auto-exit desktop so you can use the app) ──
-        openTerminal = { key = "t"; action = "exec, $TERMINAL"; description = "Terminal"; exitAfter = true; };
-        openBrowser = { key = "e"; action = "exec, $BROWSER"; description = "Browser"; exitAfter = true; };
-        openLauncher = { key = "space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; exitAfter = true; };
-
-        # Dismiss = a quick management action, stays. Lock moves to a new surface.
-        dismissNotification = { key = "d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
-        dismissAll = { key = "shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all"; };
-        lock = { key = "x"; action = "exec, hyprlock"; description = "Lock screen"; exitAfter = true; };
-
-        # ── Console + history ──
-        console = { key = "F12"; action = consoleToggleAction; description = "System console"; };
-        undoSession = { key = "u"; action = "exec, vogix session undo"; description = "Undo last window change"; };
-
-        help = { key = "slash"; action = "exec, vogix-modes-desktop"; description = "Show keybindings"; };
-
-        # Exits are owned by the engine: tap CapsLock toggles sticky off, releasing
-        # a held CapsLock leaves a momentary mode, and Esc is the safety-net exit.
-      };
-    };
-
-    # Move-window sub-mode (entered with 'm' from desktop). Border = link/blue.
-    # arrows / hjkl move the active window; Esc / click-caps / release-caps exit.
-    move = {
-      enter = "m";
-      exit = "escape";
-      bindings = {
-        moveLeft = { key = "h"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
-        moveDown = { key = "j"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
-        moveUp = { key = "k"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
-        moveRight = { key = "l"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-        moveLeftArrow = { key = "left"; action = "movewindow, l"; description = "Move window left"; repeat = true; };
-        moveDownArrow = { key = "down"; action = "movewindow, d"; description = "Move window down"; repeat = true; };
-        moveUpArrow = { key = "up"; action = "movewindow, u"; description = "Move window up"; repeat = true; };
-        moveRightArrow = { key = "right"; action = "movewindow, r"; description = "Move window right"; repeat = true; };
-
-        toResize = { key = "r"; action = "submap, resize"; description = "Switch to resize mode"; };
-        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split (horizontal/vertical)"; };
-        help = { key = "slash"; action = "exec, vogix-modes-move"; description = "Show keybindings"; };
-      };
-    };
-
-    # Resize-window sub-mode (entered with 'r' from desktop). Border = highlight/purple.
-    # arrows / hjkl resize the active window (grow toward the arrow); Esc exits.
-    resize = {
-      enter = "r";
-      exit = "escape";
-      bindings = {
-        resizeLeft = { key = "h"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
-        resizeDown = { key = "j"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
-        resizeUp = { key = "k"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
-        resizeRight = { key = "l"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
-        resizeLeftArrow = { key = "left"; action = "resizeactive, -40 0"; description = "Narrower"; repeat = true; };
-        resizeDownArrow = { key = "down"; action = "resizeactive, 0 40"; description = "Taller"; repeat = true; };
-        resizeUpArrow = { key = "up"; action = "resizeactive, 0 -40"; description = "Shorter"; repeat = true; };
-        resizeRightArrow = { key = "right"; action = "resizeactive, 40 0"; description = "Wider"; repeat = true; };
-
-        toMove = { key = "m"; action = "submap, move"; description = "Switch to move mode"; };
-        toggleSplit = { key = "tab"; action = "layoutmsg, togglesplit"; description = "Toggle split (horizontal/vertical)"; };
-        help = { key = "slash"; action = "exec, vogix-modes-resize"; description = "Show keybindings"; };
-      };
-    };
-
-    # Console mode: system terminal overlay (tmux)
-    # Keys pass through to tmux — only F12/Escape exit the mode
-    # NO catchall — unlike other modes, unbound keys go to the terminal
-    console = {
-      enter = null;
-      # Single exec binding: toggle workspace (starts close animation), delay, then reset submap.
-      # The sleep ensures the Hyprland slide-out animation completes before submap resets.
-      # Without the delay, submap reset fires in the same frame and kills the animation.
-      bindings = {
-        exitConsole = {
-          key = "F12";
-          action = "exec, hyprctl dispatch togglespecialworkspace console && sleep 0.3 && hyprctl dispatch submap reset && hyprctl --batch 'keyword general:col.active_border rgb(585b70) ; keyword general:col.inactive_border rgb(313244)'";
-          description = "Close console";
-        };
       };
     };
   };

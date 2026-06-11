@@ -144,7 +144,7 @@ in
               paradigm = mkOption {
                 type = types.str;
                 default = "default";
-                description = "Selected interaction paradigm (whole-WM flavour) — a key in `paradigms`. Resolves to that paradigm's per-mode bindings + Super remap. Default \"default\" = the user's own modal CapsLock→desktop config.";
+                description = "Selected interaction paradigm (whole-WM flavour) — a key in `paradigms`. Resolves to that paradigm's per-mode bindings + Super remap. Default \"default\" = the user's own flat Super-combo config (no CapsLock, no Super→Ctrl remap).";
               };
 
               paradigms = mkOption {

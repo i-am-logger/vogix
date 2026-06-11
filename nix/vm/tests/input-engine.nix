@@ -31,14 +31,13 @@ let
   # parses, so a mistyped/unknown key that the router would silently drop fails
   # the suite instead of vanishing.
   behaviorReal = import ../../modules/behavior { inherit (pkgs) lib; inherit pkgs; };
+  # The REAL shipped default — the user's flat Super-combo config (one app mode,
+  # no CapsLock, no Super→Ctrl remap). Proven end-to-end below: it loads + parses
+  # + passes the graph/remap axioms (`vogix input check`), and its signature
+  # gestures (Super+Shift move, Ctrl+Shift resize) actually dispatch. The modal
+  # testSchema above still exercises the engine's modal CAPABILITY (sub-modes,
+  # CapsLock, remap) — retained for power users / future paradigms.
   realDefaultsJson = behaviorReal.mkSchemaJSON { };
-  # Each shipped interaction paradigm rendered from the REAL module, so every
-  # paradigm is proven end-to-end in the VM (not just at eval): the schema loads,
-  # all bindings parse + axioms hold (`vogix input check`), and the paradigm's
-  # signature gesture actually dispatches (the behavioural section in the driver).
-  paradigmWindowsJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "windows"; }; };
-  paradigmMacJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "mac"; }; };
-  paradigmEmacsJson = behaviorReal.mkSchemaJSON { keybindings = { paradigm = "emacs"; }; };
 
   # A fixed ENGINE-NATIVE schema so the behavioural assertions are deterministic.
   # Mirrors the shape `defaults.nix` renders (real-config parsing is covered by
@@ -685,10 +684,11 @@ let
         fail("first engine must keep working after a second instance is rejected")
     print("PASS: single-instance guard — 2nd engine refused, 1st intact + typing works")
 
-    # ── Paradigm behavioural coverage: every shipped paradigm proven end-to-end ──
-    # The tests above ran the engine on the default (modal) schema. Now restart it
-    # on each REAL rendered paradigm schema and prove its signature gesture fires
-    # the right WM dispatch — chorded nav that bypasses the CapsLock layer.
+    # ── Flat default behavioural coverage: the SHIPPED default proven end-to-end ──
+    # The tests above ran the engine on the modal testSchema (the engine's modal
+    # CAPABILITY). Now restart it on the REAL rendered default — the user's flat
+    # Super-combo config — and prove its signature gestures dispatch: NO CapsLock,
+    # NO sub-modes, just flat Super-combos. This is what ships.
     def vogix_dev():
         for path in list_devices():
             try:
@@ -698,71 +698,65 @@ let
                 continue
         return None
 
-    def paradigm_dispatch(label, config, inject, expect):
-        global proc
-        proc.terminate()
-        try:
-            proc.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        # The uinput device is created BEFORE the grab, so "device present" alone
-        # doesn't mean ready. Wait for the OLD engine's device to disappear first,
-        # so we don't mistake the stale device for the new engine and inject early.
-        for _ in range(50):
-            if vogix_dev() is None:
-                break
-            time.sleep(0.1)
-        proc = subprocess.Popen(
-            ["vogix", "input", "run", "--config", config],
-            env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        )
-        for _ in range(60):
-            if vogix_dev() is not None:
-                break
-            if proc.poll() is not None:
-                fail(label + ": engine exited early:\n" + (proc.stdout.read() if proc.stdout else ""))
-            time.sleep(0.25)
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    # The uinput device is created BEFORE the grab, so "device present" alone
+    # doesn't mean ready. Wait for the OLD engine's device to disappear first.
+    for _ in range(50):
         if vogix_dev() is None:
-            fail(label + ": vogix-input device not found (engine didn't grab)")
-        time.sleep(1.0)  # let the keyboard grab settle before injecting
+            break
+        time.sleep(0.1)
+    proc = subprocess.Popen(
+        ["vogix", "input", "run", "--config", "/etc/vogix-real-defaults.json"],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    for _ in range(60):
+        if vogix_dev() is not None:
+            break
+        if proc.poll() is not None:
+            fail("flat default: engine exited early:\n" + (proc.stdout.read() if proc.stdout else ""))
+        time.sleep(0.25)
+    if vogix_dev() is None:
+        fail("flat default: vogix-input device not found (engine didn't grab)")
+    time.sleep(1.0)  # let the keyboard grab settle before injecting
+
+    def flat_expect(label, inject, expect):
         # After Test 18 the live compositor mock is testsig2 (received2); the
         # restarted engine re-discovers the newest-live socket, so assert there.
         received2.clear()
         inject()
         time.sleep(0.4)
         if expect not in " ".join(received2):
-            fail(label + ": expected dispatch " + repr(expect) + ", got " + repr(received2))
-        print("PASS: paradigm " + label)
+            fail("flat default — " + label + ": expected " + repr(expect) + ", got " + repr(received2))
+        print("PASS: flat default — " + label)
 
-    # windows: chorded Super+Left → focus left (no CapsLock; remap = none).
-    paradigm_dispatch(
-        "windows — Super+Left dispatches movefocus",
-        "/etc/vogix-paradigm-windows.json",
-        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_LEFT, hold=0.03), up(e.KEY_LEFTMETA)),
-        "dispatch movefocus l",
-    )
-    # mac: native Control+Left → previous Space (workspace -1); the faithful macOS
-    # Spaces gesture (Super+Tab=Cmd+Tab cycle is also bound, covered by check).
-    paradigm_dispatch(
-        "mac — Control+Left dispatches workspace (Spaces)",
-        "/etc/vogix-paradigm-mac.json",
-        lambda: (down(e.KEY_LEFTCTRL), tap(e.KEY_LEFT, hold=0.03), up(e.KEY_LEFTCTRL)),
-        "dispatch workspace -1",
-    )
-    # emacs: a key SEQUENCE — CapsLock-tap → desktop, then C-x (prefix mode), then
-    # C-c completes it → close window. Proves sequences = chord-triggered modes.
-    def emacs_cxcc():
-        tap(e.KEY_CAPSLOCK, hold=0.05)  # tap → sticky desktop
-        time.sleep(0.15)
-        down(e.KEY_LEFTCTRL); tap(e.KEY_X, hold=0.03); up(e.KEY_LEFTCTRL)  # C-x → emacs-cx
-        time.sleep(0.1)
-        down(e.KEY_LEFTCTRL); tap(e.KEY_C, hold=0.03); up(e.KEY_LEFTCTRL)  # C-c → close
-    paradigm_dispatch(
-        "emacs — C-x C-c sequence dispatches killactive",
-        "/etc/vogix-paradigm-emacs.json",
-        emacs_cxcc,
-        "dispatch killactive",
-    )
+    # Super+H = focus left (bare Super+dir focuses; your j=up/k=down scheme).
+    flat_expect("Super+H focus left",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_H, hold=0.03), up(e.KEY_LEFTMETA)),
+        "dispatch movefocus l")
+    # Super+Shift+H = MOVE window left (swapwindow) — "move is super + shift".
+    flat_expect("Super+Shift+H move window left (swapwindow)",
+        lambda: (down(e.KEY_LEFTMETA), down(e.KEY_LEFTSHIFT), tap(e.KEY_H, hold=0.03), up(e.KEY_LEFTSHIFT), up(e.KEY_LEFTMETA)),
+        "dispatch swapwindow l")
+    # Ctrl+Shift+H = RESIZE narrower (resizeactive) — "resize is ctrl + shift".
+    flat_expect("Ctrl+Shift+H resize narrower (resizeactive)",
+        lambda: (down(e.KEY_LEFTCTRL), down(e.KEY_LEFTSHIFT), tap(e.KEY_H, hold=0.03), up(e.KEY_LEFTSHIFT), up(e.KEY_LEFTCTRL)),
+        "dispatch resizeactive -30 0")
+    # Super+Q = close window (flat, no mode).
+    flat_expect("Super+Q close window",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Q, hold=0.03), up(e.KEY_LEFTMETA)),
+        "dispatch killactive")
+    # Super+Y = float + pin (the yuiop row).
+    flat_expect("Super+Y float + pin (yuiop)",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Y, hold=0.03), up(e.KEY_LEFTMETA)),
+        "exec hyprctl dispatch togglefloating")
+    # Super+1 = workspace 1.
+    flat_expect("Super+1 workspace 1",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_1, hold=0.03), up(e.KEY_LEFTMETA)),
+        "dispatch workspace 1")
 
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';
@@ -774,9 +768,6 @@ pkgs.testers.nixosTest {
   nodes.machine = _: {
     environment.etc."vogix-test-schema.json".text = testSchema;
     environment.etc."vogix-real-defaults.json".text = realDefaultsJson;
-    environment.etc."vogix-paradigm-windows.json".text = paradigmWindowsJson;
-    environment.etc."vogix-paradigm-mac.json".text = paradigmMacJson;
-    environment.etc."vogix-paradigm-emacs.json".text = paradigmEmacsJson;
     # Reference the flake's vogix build directly (the `pkgs` in scope here is the
     # outer test pkgs, which carries no vogix overlay; an overlay would only land
     # on the machine's own pkgs arg). pyenv/evtest come from the plain pkgs.
@@ -797,12 +788,9 @@ pkgs.testers.nixosTest {
     machine.succeed("modprobe uinput || true")
     machine.wait_until_succeeds("test -e /dev/uinput")
 
-    # Every shipped paradigm's schema must load + parse + pass the graph/remap
-    # axioms (an unknown key would otherwise be silently dropped by the router).
+    # The shipped flat default must load + parse + pass the graph/remap axioms
+    # (an unknown key would otherwise be silently dropped by the router).
     print(machine.succeed("vogix input check --config /etc/vogix-real-defaults.json"))
-    print(machine.succeed("vogix input check --config /etc/vogix-paradigm-windows.json"))
-    print(machine.succeed("vogix input check --config /etc/vogix-paradigm-mac.json"))
-    print(machine.succeed("vogix input check --config /etc/vogix-paradigm-emacs.json"))
 
     print(machine.succeed("${pyenv}/bin/python3 ${driver}"))
   '';
