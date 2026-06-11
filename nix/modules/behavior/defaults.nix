@@ -27,6 +27,14 @@
 # flat platform variants.
 _:
 
+let
+  # F12 system console: toggle the `console` Hyprland special workspace and lazily
+  # launch a wezterm + tmux session in it. This is a plain exec (NOT an engine mode
+  # switch) — the engine stays in `app`, which re-emits unbound keys, so typing
+  # reaches tmux. Toggling again hides it; the `grep -q vogix-console ||` guard
+  # avoids relaunching an already-running session.
+  consoleToggleAction = "exec, hyprctl dispatch togglespecialworkspace console; hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console";
+in
 rec {
   # ── Input settings ──
   input = {
@@ -172,6 +180,17 @@ rec {
         groupCycle = { key = "super + tab"; action = "changegroupactive, f"; description = "Cycle window in group"; };
         gapsOn = { key = "super + shift + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 5;keyword general:gaps_in 6"''; description = "Gaps on"; };
         gapsOff = { key = "super + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 0;keyword general:gaps_in 0"''; description = "Gaps off"; };
+
+        # ── System (console, notifications, undo, help) ──
+        # These were vogix-era features (not in the pre-vogix original) the user
+        # relies on. Modal `d`/`u` were bare keys in the CapsLock desktop mode; the
+        # flat config has no such mode, so they are Super-combos here (super+u is
+        # taken by toggleGroup → undo is super+z).
+        console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
+        dismissNotification = { key = "super + d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
+        dismissAll = { key = "super + shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all notifications"; };
+        undoSession = { key = "super + z"; action = "exec, vogix session undo"; description = "Undo last window change"; };
+        help = { key = "super + slash"; action = "exec, vogix-modes-global"; description = "Show keybindings"; };
 
         # ── Focus (Super + direction; j = up, k = down — non-vim, your original) ──
         focusLeft = { key = "super + h"; action = "movefocus, l"; description = "Focus left"; };

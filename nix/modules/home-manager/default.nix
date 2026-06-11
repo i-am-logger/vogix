@@ -257,19 +257,12 @@ in
           keybindings = lib.mkDefault behaviorDefaults.keybindings;
           modes = {
             app = lib.mkDefault behaviorDefaults.modes.app;
-            desktop = lib.mkDefault behaviorDefaults.modes.desktop;
 
-            # Derive mode border colors from vogix semantic theme.
-            #
-            # Modes are NOT statuses — using `warning` / `danger` / `notice`
-            # for navigation modes is a category error: those slots are
-            # reserved for actual conditions (errors, alerts), and overloading
-            # them desensitises the user to real status colors.
-            #
-            # Mode colors should come from neutral or accent slots:
-            #   app       → foreground-border  (base04, muted neutral)
-            #   desktop   → link               (base0D, blue accent — the WM mode)
-            #   console   → foreground-comment (base03, muted — passthrough)
+            # Derive the app-mode border color from the vogix semantic theme.
+            # Modes are NOT statuses — navigation modes use neutral/accent slots,
+            # never warning/danger/notice (those are reserved for real conditions).
+            # The flat default is a single `app` mode (no CapsLock sub-modes), so
+            # only `app` needs a colour.
             modeColors =
               let
                 colors = cfg.colors or { };
@@ -278,25 +271,6 @@ in
               {
                 app = {
                   active = toRgb (colors.foreground-border or "585b70");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                desktop = {
-                  active = toRgb (colors.active or "89dceb");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                # Sub-modes get distinct accent borders so the active mode is
-                # always visible (the cure for mode error): move = blue, resize
-                # = purple, matching the prior daemon's semantic slots.
-                move = {
-                  active = toRgb (colors.link or "89b4fa");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                resize = {
-                  active = toRgb (colors.highlight or "cba6f7");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                console = {
-                  active = toRgb (colors.foreground-comment or "6c7086");
                   inactive = toRgb (colors.background-selection or "313244");
                 };
               };

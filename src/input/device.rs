@@ -7,12 +7,16 @@
 //! is hard-coded. [`run`] is the thin I/O shell: it grabs the real keyboard,
 //! creates a uinput device, and pumps events through the router.
 //!
-//! Modifier policy (the one pragmatic simplification): the mod key (Super) is
-//! swallowed — vogix owns every Super-combo (remaps + app bindings). Shift/Ctrl/
-//! Alt pass through (so typing and app shortcuts work) and are tracked for chord
-//! matching. A bound chord swallows its *base* key; in catchall (`submap`) modes
-//! every unbound key is swallowed too; in passthrough modes unbound keys are
-//! re-emitted. CapsLock is never emitted — it is the mode trigger.
+//! Modifier policy: Shift/Ctrl/Alt always pass through (so typing and app
+//! shortcuts work) and are tracked for chord matching. Super is conditional —
+//! when a remap paradigm is active (macOS Super→Ctrl) it is SWALLOWED (vogix owns
+//! every Super-combo; the remap synthesizes the target). When no remap is active
+//! (`remap = none`, the flat default) Super is RE-EMITTED so Hyprland sees it held
+//! for pointer binds (Super+drag/scroll). Either way the *base* key of a bound or
+//! unmapped Super-combo is swallowed, so no compositor keyboard bind double-fires.
+//! In catchall (`submap`) modes every unbound key is swallowed too; in passthrough
+//! modes unbound keys are re-emitted. CapsLock is never emitted — it is the mode
+//! trigger.
 
 use super::health;
 use super::keys::{
@@ -95,6 +99,12 @@ pub struct Router {
     sticky_idle_ms: u64,
     caps_target: Option<ModeId>,
     root: ModeId,
+    /// Re-emit Super to the compositor instead of swallowing it. True when no
+    /// remap paradigm is active (`remap = none`, the flat default) — so Hyprland
+    /// sees Super held and pointer binds resolve (Super+drag move/resize,
+    /// Super+scroll). False under a remap (macOS Super→Ctrl), where Super stays
+    /// hidden and the remap synthesizes the target.
+    super_passthrough: bool,
 }
 
 impl Router {
@@ -148,6 +158,11 @@ impl Router {
         // The remap set comes from the loaded interaction paradigm (a praxis
         // preset, e.g. macos_remap) — cited + axiom-checkable, not a hand table.
         let remaps = schema.remap_set();
+        // With NO remap (the flat default's `remap = none`), Super is not owned for
+        // remapping, so re-emit it to the compositor — that's what lets Hyprland see
+        // Super held for pointer binds (Super+drag/scroll). Under a remap, Super
+        // stays swallowed (the remap synthesizes the target instead).
+        let super_passthrough = remaps.remaps.is_empty();
 
         Self {
             engine,
@@ -156,6 +171,7 @@ impl Router {
             bindings,
             catchall,
             remaps,
+            super_passthrough,
             terminal_classes: schema.terminal_classes.iter().cloned().collect(),
             active_class: None,
             mode_colors: schema
@@ -311,12 +327,22 @@ impl Router {
             self.enter_momentary(&mut fx);
         }
 
-        // Modifier keys: track state; Super is swallowed, others pass through.
+        // Modifier keys: track state; re-emit. Shift/Ctrl/Alt always pass through.
+        // Super is conditional: when NO remap paradigm is active (`super_passthrough`
+        // — the flat default's `remap = none`), re-emit Super so it reaches Hyprland
+        // HELD and compositor-side POINTER binds resolve — `bindm` Super+drag
+        // (move/resize) and Super+scroll workspace cycling, which the engine cannot
+        // serve itself (it grabs keyboards only, not the pointer). Keyboard Super-
+        // combos stay vogix-owned either way: the *base* key of a bound/unmapped
+        // Super-combo is swallowed below, so Hyprland sees Super held but no base
+        // key, and no Hyprland keyboard bind double-fires. When a remap IS active
+        // (e.g. macOS Super→Ctrl), Super stays SWALLOWED — the remap synthesizes the
+        // target (Ctrl…) and Hyprland must never see the raw Super.
         if let Some(m) = modifier_of(key) {
             if value != 2 {
                 self.mods.set(m, value == 1);
             }
-            if m != Modifier::Super {
+            if m != Modifier::Super || self.super_passthrough {
                 fx.push(Effect::Emit { code, value });
             }
             return fx;
@@ -1268,6 +1294,58 @@ mod tests {
 
     fn router() -> Router {
         Router::new(&Schema::from_json(SCHEMA).unwrap())
+    }
+
+    // A flat, NO-remap schema (the shipped default's shape): paradigm "none" → an
+    // empty remap set → Super is re-emitted (passthrough), not swallowed.
+    const SCHEMA_NO_REMAP: &str = r#"{
+      "modeGraph": { "root": "app", "modes": { "app": { "parent": null, "type": "normal" } }},
+      "keybindings": { "modKey": "super", "paradigm": "none" },
+      "modes": { "app": { "exit": "escape", "bindings": {
+        "ws1": { "key": "super + 1", "action": "workspace, 1" }
+      }}}
+    }"#;
+
+    fn router_no_remap() -> Router {
+        Router::new(&Schema::from_json(SCHEMA_NO_REMAP).unwrap())
+    }
+
+    #[test]
+    fn super_reemitted_when_no_remap_active() {
+        // Flat default (paradigm "none"): Super passes THROUGH to the compositor so
+        // Hyprland sees it held for pointer binds (Super+drag move/resize,
+        // Super+scroll) — contrast `router()` (macOS remap) where Super is swallowed.
+        let mut r = router_no_remap();
+        assert_eq!(
+            r.on_key(SUPER, 1, 0),
+            vec![Effect::Emit {
+                code: SUPER,
+                value: 1
+            }],
+            "no remap → Super re-emitted (held) for compositor pointer binds"
+        );
+        // A bound Super-combo still dispatches AND swallows its base key, so no
+        // Hyprland keyboard bind double-fires (Hyprland sees Super held, no base key).
+        let one = KeyCode::KEY_1.0;
+        let fx = r.on_key(one, 1, 10);
+        assert!(
+            fx.iter()
+                .any(|e| matches!(e, Effect::Dispatch(s) if s == "workspace, 1")),
+            "super+1 dispatches the bound action, got {fx:?}"
+        );
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::Emit { code, .. } if *code == one)),
+            "the base key is swallowed (not emitted) — no double-fire, got {fx:?}"
+        );
+        assert_eq!(
+            r.on_key(SUPER, 0, 20),
+            vec![Effect::Emit {
+                code: SUPER,
+                value: 0
+            }],
+            "Super release re-emitted too"
+        );
     }
 
     const CAPS: u16 = KeyCode::KEY_CAPSLOCK.0;

@@ -203,7 +203,7 @@ let
     caps = { e.EV_KEY: [
         e.KEY_A, e.KEY_CAPSLOCK, e.KEY_H, e.KEY_M, e.KEY_O, e.KEY_Q, e.KEY_R, e.KEY_Y,
         e.KEY_LEFTMETA, e.KEY_LEFTSHIFT, e.KEY_LEFTCTRL, e.KEY_C, e.KEY_V, e.KEY_X, e.KEY_1,
-        e.KEY_LEFT, e.KEY_TAB, e.KEY_ESC, e.KEY_VOLUMEUP,
+        e.KEY_LEFT, e.KEY_TAB, e.KEY_ESC, e.KEY_VOLUMEUP, e.KEY_Z, e.KEY_SLASH, e.KEY_F12,
         # Enter + home-row letters so it passes the strict text-keyboard floor
         # (DeviceFilter), exercising the STRICT grab path rather than the fail-safe.
         e.KEY_ENTER, e.KEY_S, e.KEY_D, e.KEY_F,
@@ -762,6 +762,25 @@ let
     flat_expect("Super+1 workspace 1",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_1, hold=0.03), up(e.KEY_LEFTMETA)),
         "dispatch workspace 1")
+
+    # ── Restored vogix-era features (F12 console, dismiss, undo, help) ──
+    # F12 = toggle the tmux console overlay (a plain exec; app re-emits so typing
+    # reaches tmux). Bare key, no modifier.
+    flat_expect("F12 system console",
+        lambda: tap(e.KEY_F12, hold=0.03),
+        "exec hyprctl dispatch togglespecialworkspace console")
+    # Super+D / Super+Shift+D = dismiss notification(s) (makoctl).
+    flat_expect("Super+D dismiss notification",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_D, hold=0.03), up(e.KEY_LEFTMETA)),
+        "exec makoctl dismiss")
+    # Super+Z = undo last window change (super+u is taken by toggleGroup).
+    flat_expect("Super+Z session undo",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Z, hold=0.03), up(e.KEY_LEFTMETA)),
+        "exec vogix session undo")
+    # Super+/ = show keybindings (the help popup script).
+    flat_expect("Super+slash help popup",
+        lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_SLASH, hold=0.03), up(e.KEY_LEFTMETA)),
+        "exec vogix-modes-global")
 
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';

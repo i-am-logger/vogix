@@ -29,6 +29,8 @@ let
   # ── Test data ──
   fullConfig = kbModule.mkGeneratorConfig defaults;
   hyprConfig = kbModule.mkHyprlandConfig defaults;
+  helpScripts = kbModule.mkHelpScripts defaults;
+  globalHelp = kbModule.mkGlobalHelpScript defaults;
 
   app = defaults.modes.app.bindings;
 
@@ -195,6 +197,29 @@ let
     # === Super+letter is INTENTIONAL here (no macOS remap) ===
     (check "the flat scheme uses Super+letter directly as WM binds"
       (lib.hasInfix "SUPER, q" (lib.concatStringsSep "\n" hyprConfig.settings.bind)))
+
+    # === Help popups GENERATE (previously untested) ===
+    (check "mkHelpScripts produces a help script for the app mode"
+      (helpScripts ? app))
+    (check "mkGlobalHelpScript produces a global help script (non-null)"
+      (globalHelp != null))
+
+    # === Restored vogix-era features (F12 console / dismiss / undo / help) ===
+    (assertEq "F12 = toggle system console"
+      "Toggle system console"
+      (app.console.description or ""))
+    (assertEq "Super+D = dismiss notification (makoctl)"
+      "exec, makoctl dismiss"
+      (app.dismissNotification.action or ""))
+    (assertEq "Super+Shift+D = dismiss all"
+      "exec, makoctl dismiss --all"
+      (app.dismissAll.action or ""))
+    (assertEq "Super+Z = session undo (super+u is taken by toggleGroup)"
+      "super + z"
+      (app.undoSession.key or ""))
+    (assertEq "Super+/ = show keybindings (help popup)"
+      "exec, vogix-modes-global"
+      (app.help.action or ""))
   ];
 
   # ══════════════════════════════════════════════
