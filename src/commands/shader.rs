@@ -39,6 +39,36 @@ pub fn maybe_apply_shader(config: &Config, state: &State) -> Result<()> {
     Ok(())
 }
 
+/// Re-apply the shader after a Hyprland config reload WITHOUT regenerating it.
+///
+/// A config reload resets `decoration:screen_shader`, but the generated GLSL is
+/// still on disk. Re-point hyprctl at the existing file rather than regenerating
+/// from theme colors — regeneration needs `theme_sources`, which isn't present in
+/// every config (notably the daemon's `Config::load()`). Only if the file is
+/// missing do we fall back to a full regenerate.
+pub fn reapply_existing_shader(config: &Config, state: &State) -> Result<()> {
+    let should_enable = match &state.shader {
+        ShaderState::On { .. } => true,
+        ShaderState::Off => false,
+        ShaderState::Auto => config.shader.as_ref().is_some_and(|sc| sc.enabled),
+    };
+
+    if !should_enable {
+        let _ = shader::disable();
+        return Ok(());
+    }
+
+    let path = shader::generator::shader_dir()?.join("monochromatic.glsl");
+    if path.exists() {
+        shader::hyprctl::set_shader(&path)?;
+        log::debug!("Re-applied existing shader: {}", path.display());
+        Ok(())
+    } else {
+        // No pre-generated shader on disk — fall back to a full (re)generate.
+        maybe_apply_shader(config, state)
+    }
+}
+
 /// Load theme colors for the current theme/variant/scheme from source files.
 pub fn load_current_theme_colors(
     config: &Config,

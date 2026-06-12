@@ -10,6 +10,8 @@
 //! On SIGTERM (shutdown/reboot): final save before exit.
 
 use crate::commands::session::{handle_session_restore, handle_session_save, session_path};
+use crate::commands::shader::reapply_existing_shader;
+use crate::config::Config;
 use crate::errors::Result;
 use crate::state::State;
 use log::{error, info, warn};
@@ -83,6 +85,19 @@ pub fn handle_daemon() -> Result<()> {
         std::env::var("SSH_AUTH_SOCK").ok(),
         std::env::var("XDG_RUNTIME_DIR").ok(),
     );
+
+    // Re-apply the current theme's shader on start. When the daemon restarts
+    // (e.g. a switch that updates vogix itself), it lands in a Hyprland whose
+    // screen_shader was just reset by the config reload, so restore it here.
+    // reapply_existing_shader respects ShaderState (no-op / disable when off).
+    match (Config::load(), State::load()) {
+        (Ok(config), Ok(state)) => {
+            if let Err(e) = reapply_existing_shader(&config, &state) {
+                warn!("Applying shader on daemon start failed: {}", e);
+            }
+        }
+        _ => warn!("Could not load config/state to apply shader on daemon start"),
+    }
 
     // Set up SIGTERM handler for clean shutdown (reboot/poweroff)
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -253,8 +268,28 @@ pub fn handle_daemon() -> Result<()> {
             "submap" => {
                 mode_tracker.record(payload);
             }
-            // Compositor shutting down — save immediately
-            "configreloaded" | "monitorremoved" => {
+            // Hyprland reloaded its config (e.g. on `nixos-rebuild switch`). The
+            // reload resets `decoration:screen_shader` to the static config value
+            // (empty) — wiping the monochromatic shader vogix applied dynamically
+            // via hyprctl. Re-apply the current theme's shader so it survives the
+            // switch; also save the session.
+            "configreloaded" => {
+                info!("Compositor event ({}), saving + re-applying shader", event);
+                handle_session_save("autosave").ok();
+                last_save = Instant::now();
+                match (Config::load(), State::load()) {
+                    (Ok(config), Ok(state)) => {
+                        if let Err(e) = reapply_existing_shader(&config, &state) {
+                            error!("Re-applying shader after config reload failed: {}", e);
+                        }
+                    }
+                    _ => {
+                        error!("Could not load config/state to re-apply shader after config reload")
+                    }
+                }
+            }
+            // Monitor removed — save immediately (shader is global, unaffected).
+            "monitorremoved" => {
                 info!("Compositor event ({}), saving immediately", event);
                 handle_session_save("autosave").ok();
                 last_save = Instant::now();
