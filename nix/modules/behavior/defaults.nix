@@ -163,12 +163,14 @@ rec {
         # ── Launch ──
         terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
         browser = { key = "super + e"; action = "exec, $BROWSER"; description = "Browser"; };
-        # walker 2.16.2 REJECTS the -w/-h shorthand (its own --help says "DONT USE
-        # SHORTHAND" — passing them makes walker exit 1 before drawing, so Super+Space
-        # silently did nothing). Use the long --width/--height forms.
-        launcher = { key = "super + space"; action = "exec, walker -p 'Start…' --width 1000 --height 700"; description = "Launcher"; };
+        # Launcher + locker are environment choices, not vogix's — consume the
+        # command from the environment (like $TERMINAL/$BROWSER above) instead of
+        # hardcoding a tool. The host exports $LAUNCHER/$LOCKER (mynixos does this
+        # from environment.launcher/locker); the `:-` fallback keeps vogix usable
+        # standalone. Appearance lives in the tool's own config, so it's just the bin.
+        launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-walker}"; description = "Launcher"; };
         colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
-        lockScreen = { key = "super + shift + x"; action = "exec, hyprlock"; description = "Lock screen"; };
+        lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-hyprlock}"; description = "Lock screen"; };
 
         # ── Screenshots ──
         # --cursor is invalid with the `area` target in current grimblast
