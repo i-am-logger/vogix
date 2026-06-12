@@ -130,7 +130,7 @@
 
       # Overlay to make vogix available in pkgs
       overlays.default = _final: prev: {
-        inherit (self.packages.${prev.system}) vogix;
+        inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix;
       };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
