@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 /// The whole loaded schema (mirrors `programs.vogix.keybindings` + `modeGraph`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Schema {
-    #[serde(rename = "modeGraph")]
+    #[serde(rename = "modeGraph", default)]
     pub mode_graph: ModeGraphSpec,
     pub modes: HashMap<String, ModeSpec>,
     #[serde(default)]
@@ -98,7 +98,7 @@ impl Schema {
 }
 
 /// The mode topology: which modes exist and their parent/kind.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ModeGraphSpec {
     pub root: String,
     pub modes: HashMap<String, ModeNode>,
@@ -238,10 +238,34 @@ impl Schema {
         Self::from_json(&text)
     }
 
-    /// Parse from a JSON string.
+    /// Parse from a JSON string, then resolve the selected paradigm.
     pub fn from_json(text: &str) -> Result<Self> {
-        serde_json::from_str(text)
-            .map_err(|e| VogixError::Config(format!("input schema parse error: {e}")))
+        let mut schema: Self = serde_json::from_str(text)
+            .map_err(|e| VogixError::Config(format!("input schema parse error: {e}")))?;
+        schema.resolve_paradigm();
+        Ok(schema)
+    }
+
+    /// Resolve the selected paradigm's WM-nav modes into the schema.
+    ///
+    /// New-format schemas omit the mode graph + paradigm nav and carry only the
+    /// `paradigm` selection name + the user's overlay modes; the engine projects
+    /// the paradigm's `BindingSet` (see [`super::catalog`]) here and merges it
+    /// UNDER the overlay (the user's own bindings win on a name collision). Legacy
+    /// schemas ship a full mode graph and are left untouched.
+    fn resolve_paradigm(&mut self) {
+        if !self.mode_graph.modes.is_empty() {
+            return;
+        }
+        if let Some((graph, nav_modes)) = super::catalog::resolve_paradigm(self.paradigm()) {
+            for (mode, nav) in nav_modes {
+                let entry = self.modes.entry(mode).or_default();
+                for (name, binding) in nav.bindings {
+                    entry.bindings.entry(name).or_insert(binding);
+                }
+            }
+            self.mode_graph = graph;
+        }
     }
 
     /// The CapsLock tap↔hold threshold (ms), from the dual-role layer.
@@ -264,7 +288,7 @@ impl Schema {
     /// → [`macos_remap`] (the full 21-letter Super→Ctrl set); `"copy-paste"` → a
     /// minimal Super+C/V → Ctrl+C/V set; `"none"` (or unknown) → an empty set.
     pub fn remap_set(&self) -> RemapSet {
-        match self.paradigm() {
+        match super::catalog::paradigm_remap(self.paradigm()) {
             "macos" => macos_remap(),
             // A minimal terminal-aware copy/paste set: Super+C/V → Ctrl+C/V (and
             // Ctrl+Shift+C/V in terminals, via `terminal_copy_paste_target`).
