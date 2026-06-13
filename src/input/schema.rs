@@ -19,6 +19,7 @@
 // blanket allow over the whole module.
 
 use super::devfilter::DeviceFilter;
+use super::keys::{Chord, parse_chord};
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
 use pr4xis_domains::applied::hmi::input::keybindings::{
@@ -246,26 +247,51 @@ impl Schema {
         Ok(schema)
     }
 
-    /// Resolve the selected paradigm's WM-nav modes into the schema.
+    /// Resolve the selected paradigm's modes into the schema.
     ///
     /// New-format schemas omit the mode graph + paradigm nav and carry only the
     /// `paradigm` selection name + the user's overlay modes; the engine projects
-    /// the paradigm's `BindingSet` (see [`super::catalog`]) here and merges it
-    /// UNDER the overlay (the user's own bindings win on a name collision). Legacy
-    /// schemas ship a full mode graph and are left untouched.
+    /// the paradigm's global `BindingSet` (see [`super::catalog`]) here and merges
+    /// it UNDER the overlay. The overlay (the user's own launch/system/media keys)
+    /// WINS collisions — both by binding NAME and by CHORD: a paradigm is global,
+    /// but "I just do my own", so selecting e.g. `i3` cannot steal `Super+D` from
+    /// the user's dismiss binding. Legacy schemas ship a full mode graph and are
+    /// left untouched.
     fn resolve_paradigm(&mut self) {
         if !self.mode_graph.modes.is_empty() {
             return;
         }
-        if let Some((graph, nav_modes)) = super::catalog::resolve_paradigm(self.paradigm()) {
-            for (mode, nav) in nav_modes {
-                let entry = self.modes.entry(mode).or_default();
-                for (name, binding) in nav.bindings {
-                    entry.bindings.entry(name).or_insert(binding);
+        let Some((graph, nav_modes)) = super::catalog::resolve_paradigm(self.paradigm()) else {
+            return;
+        };
+        // The chords the OVERLAY already claims, per mode (the overlay is whatever
+        // the schema authored before resolution). A nav binding whose chord the
+        // overlay owns in the same mode is dropped — without this, the two would
+        // collide in the router's per-mode `Chord` map and the winner would be
+        // nondeterministic (HashMap iteration order).
+        let overlay_chords: HashMap<String, std::collections::HashSet<Chord>> = self
+            .modes
+            .iter()
+            .map(|(mode, spec)| {
+                let chords = spec.bindings.values().filter_map(|b| parse_chord(&b.key));
+                (mode.clone(), chords.collect())
+            })
+            .collect();
+
+        for (mode, nav) in nav_modes {
+            let claimed = overlay_chords.get(&mode);
+            let entry = self.modes.entry(mode).or_default();
+            for (name, binding) in nav.bindings {
+                if let Some(claimed) = claimed
+                    && let Some(chord) = parse_chord(&binding.key)
+                    && claimed.contains(&chord)
+                {
+                    continue; // overlay owns this chord here — it wins
                 }
+                entry.bindings.entry(name).or_insert(binding);
             }
-            self.mode_graph = graph;
         }
+        self.mode_graph = graph;
     }
 
     /// The CapsLock tap↔hold threshold (ms), from the dual-role layer.

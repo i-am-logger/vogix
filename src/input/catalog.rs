@@ -12,18 +12,22 @@
 //! can't represent (`super+slash`, `XF86Audio*`, `print`) — live in the vogix-side
 //! OVERLAY, layered on top of whichever paradigm is selected.
 use pr4xis_domains::applied::hmi::input::keybindings::{
-    Action, BindingSet, Key, KeyCombo, Modifier,
+    Action, BindingSet, Key, KeyCombo, Modifier, cua_preset, emacs_preset, i3_preset,
 };
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
 
 use std::collections::HashMap;
 
-use super::paradigm::{Topology, project};
+use super::paradigm::{ModeTopo, Topology, project};
 use super::schema::{ModeGraphSpec, ModeSpec};
 
 use Modifier::{Ctrl, Shift, Super};
 
-/// Resolve a paradigm SELECTION name into its WM-nav `(modeGraph, modes)`.
+/// Resolve a paradigm SELECTION name into its `(modeGraph, modes)` — the global
+/// interaction model the engine materializes. Every entry is SYSTEM-WIDE: select
+/// `cua` and `Ctrl+C` is globally copy, `i3` and `Super+hjkl` drives the WM. The
+/// user's own launch/system/media keys are the OVERLAY, merged on top by the
+/// engine ([`super::schema::Schema::resolve_paradigm`]).
 ///
 /// Returns `None` for names that are NOT a known paradigm selection — notably the
 /// legacy remap-name `paradigm` values (`"copy-paste"`/`"macos"`/`"none"`), whose
@@ -31,7 +35,12 @@ use Modifier::{Ctrl, Shift, Super};
 /// engine only resolves when the schema omits its mode graph (the new format).
 pub fn resolve_paradigm(name: &str) -> Option<(ModeGraphSpec, HashMap<String, ModeSpec>)> {
     match name {
+        // vogix-authored: the house default (the user's live WM-nav layout).
         "vogix" => Some(project(&vogix_nav_preset(), &VOGIX_TOPO)),
+        // praxis-sourced presets, projected through a vogix-authored topology.
+        "i3" => Some(project(&i3_preset(), &I3_TOPO)),
+        "cua" => Some(project(&cua_preset(), &CUA_TOPO)),
+        "emacs" => Some(project(&emacs_preset(), &EMACS_TOPO)),
         _ => None,
     }
 }
@@ -51,6 +60,36 @@ pub const VOGIX_TOPO: Topology = Topology {
     root: "app",
     root_kind: "passthrough",
     modes: &[],
+};
+
+/// `cua` (the IBM/Windows shortcut standard) is single-mode chorded: Ctrl/Alt
+/// shortcuts over a passthrough `app` root (unbound keys type normally).
+pub const CUA_TOPO: Topology = Topology {
+    root: "app",
+    root_kind: "passthrough",
+    modes: &[],
+};
+
+/// `emacs` is single-mode chorded: Ctrl/Meta prefixes over a passthrough `app`
+/// root. (`C-x`-style multi-key prefixes aren't in the praxis preset.)
+pub const EMACS_TOPO: Topology = Topology {
+    root: "app",
+    root_kind: "passthrough",
+    modes: &[],
+};
+
+/// `i3` is a tiling-WM paradigm: a passthrough `app` root (Super-chorded
+/// focus/move/workspace) plus a `resize` SUBMAP — `Super+r` enters it, `hjkl`
+/// resize (catchall swallows other keys), `Escape` exits. The submode + its
+/// enter/exit are the topology praxis's flat `BindingSet` cannot express.
+pub const I3_TOPO: Topology = Topology {
+    root: "app",
+    root_kind: "passthrough",
+    modes: &[ModeTopo {
+        name: "resize",
+        parent: "app",
+        kind: "submap",
+    }],
 };
 
 /// Build a [`KeyCombo`] from modifiers + a key.
@@ -482,5 +521,95 @@ mod tests {
             resolved, live,
             "engine-resolved vogix must equal the live layout (modulo the help binding)"
         );
+    }
+
+    // ── praxis-sourced paradigms (global, projected via a vogix topology) ──
+
+    #[test]
+    fn cua_resolves_as_a_global_ctrl_shortcut_layer() {
+        let (graph, modes) = project(&cua_preset(), &CUA_TOPO);
+        assert_eq!(graph.root, "app");
+        let app = modes.get("app").expect("app mode");
+        assert_eq!(app.bindings["copy"].key, "ctrl + c");
+        assert_eq!(app.bindings["copy"].action, "exec, wl-copy");
+        assert_eq!(app.bindings["quit"].key, "alt + F4");
+        assert_eq!(app.bindings["switch_window"].action, "cyclenext,");
+    }
+
+    #[test]
+    fn emacs_resolves_with_ctrl_meta_movement() {
+        let (graph, modes) = project(&emacs_preset(), &EMACS_TOPO);
+        assert_eq!(graph.root, "app");
+        let app = modes.get("app").expect("app mode");
+        assert_eq!(app.bindings["forward_char"].key, "ctrl + f");
+        assert_eq!(app.bindings["forward_char"].action, "movefocus, r");
+        assert_eq!(app.bindings["forward_word"].key, "alt + f");
+        assert_eq!(app.bindings["cancel"].action, "submap, reset");
+    }
+
+    #[test]
+    fn i3_resolves_with_a_resize_submap() {
+        let (graph, modes) = project(&i3_preset(), &I3_TOPO);
+        assert_eq!(graph.root, "app");
+        assert_eq!(graph.modes["resize"].parent.as_deref(), Some("app"));
+        assert_eq!(graph.modes["resize"].kind.as_deref(), Some("submap"));
+
+        let app = modes.get("app").expect("app mode");
+        assert_eq!(app.bindings["focus_left"].key, "super + h");
+        assert_eq!(app.bindings["focus_left"].action, "movefocus, l");
+        assert_eq!(app.bindings["enter_resize"].action, "submap, resize");
+
+        let resize = modes.get("resize").expect("resize mode");
+        assert_eq!(resize.bindings["resize_h"].action, "resizeactive, -30 0");
+        assert!(resize.bindings["resize_h"].repeat);
+        assert_eq!(resize.bindings["exit_resize"].action, "submap, reset");
+    }
+
+    #[test]
+    fn i3_mode_graph_validates_under_the_praxis_axioms() {
+        use crate::input::schema::Schema;
+        // The engine derives the praxis ModeGraph from the resolved topology; the
+        // app + resize-submap graph must satisfy the same axioms the vogix one does.
+        let json = r#"{
+            "keybindings": { "paradigm": "i3" },
+            "modes": { "app": { "bindings": {} } }
+        }"#;
+        let schema = Schema::from_json(json).expect("i3 resolves");
+        assert!(
+            schema.build_mode_graph().validate().is_empty(),
+            "i3 (app + resize submap) must satisfy the praxis mode-graph axioms"
+        );
+    }
+
+    #[test]
+    fn overlay_wins_chord_collision_when_selecting_i3() {
+        use crate::input::keys::parse_chord;
+        use crate::input::schema::Schema;
+        // i3 binds Super+D = launcher; the overlay binds Super+D = dismiss (a
+        // DIFFERENT name — so only the chord collides, isolating the chord policy).
+        // Global paradigm, but the user's own key wins: Super+D stays dismiss and
+        // i3's colliding launcher is dropped; i3's non-colliding nav stays.
+        let json = r#"{
+            "keybindings": { "paradigm": "i3" },
+            "modes": { "app": { "bindings": {
+                "dismiss": { "key": "super + d", "action": "exec, makoctl dismiss" }
+            } } }
+        }"#;
+        let schema = Schema::from_json(json).expect("i3 + overlay resolves");
+        let app = &schema.modes["app"].bindings;
+
+        let super_d = parse_chord("super + d").unwrap();
+        let on_super_d: Vec<&str> = app
+            .values()
+            .filter(|b| parse_chord(&b.key) == Some(super_d))
+            .map(|b| b.action.as_str())
+            .collect();
+        assert_eq!(
+            on_super_d,
+            vec!["exec, makoctl dismiss"],
+            "the overlay owns Super+D; i3's launcher-on-Super+D was dropped"
+        );
+        // i3 nav that doesn't collide with the overlay survives.
+        assert_eq!(app["focus_left"].action, "movefocus, l");
     }
 }
