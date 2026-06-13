@@ -402,4 +402,34 @@ mod tests {
         assert_eq!(app.bindings["focus_l"].key, "super + h", "nav merged in");
         assert_eq!(app.bindings["workspace_10"].action, "workspace, 10");
     }
+
+    /// The byte-identical guard: every projected `vogix` nav binding must have an
+    /// identical action in the deployed live layout, matched by PARSED chord (so
+    /// modifier order in the string is irrelevant). Catches any mistranslation
+    /// before the engine-resolved `vogix` can replace the Nix-resolved one.
+    #[test]
+    fn vogix_nav_is_byte_identical_to_live_layout() {
+        use crate::input::keys::parse_chord;
+        use crate::input::schema::Schema;
+
+        // Deployed schema (old format → from_json does NOT re-resolve; loaded as-is).
+        let live = Schema::from_json(include_str!("../../tests/fixtures/vogix-input.json"))
+            .expect("fixture parses");
+        let live_app = &live.modes["app"].bindings;
+
+        let (_, nav) = project(&vogix_nav_preset(), &VOGIX_TOPO);
+        for b in nav["app"].bindings.values() {
+            let chord =
+                parse_chord(&b.key).unwrap_or_else(|| panic!("nav chord {:?} parses", b.key));
+            let lb = live_app
+                .values()
+                .find(|lb| parse_chord(&lb.key).as_ref() == Some(&chord))
+                .unwrap_or_else(|| panic!("live layout has no binding for nav {:?}", b.key));
+            assert_eq!(
+                lb.action, b.action,
+                "nav {:?}: live action {:?} != preset action {:?}",
+                b.key, lb.action, b.action
+            );
+        }
+    }
 }
