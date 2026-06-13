@@ -777,10 +777,11 @@ let
     flat_expect("Super+Z session undo",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Z, hold=0.03), up(e.KEY_LEFTMETA)),
         "exec vogix session undo")
-    # Super+/ = show keybindings (the help popup script).
+    # Super+/ = show keybindings. Help is now an ENGINE view (`vogix input keys`
+    # materializes from the resolved schema), replacing the build-time Nix script.
     flat_expect("Super+slash help popup",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_SLASH, hold=0.03), up(e.KEY_LEFTMETA)),
-        "exec vogix-modes-global")
+        "exec vogix input keys")
 
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';

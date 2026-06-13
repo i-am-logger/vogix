@@ -1,8 +1,17 @@
-# Behavior module tests — flat Super-combo scheme
+# Behavior module tests — engine-resolved `vogix` paradigm + overlay
 #
 # Run with: nix eval --impure -f nix/modules/behavior/tests.nix --apply 'f: f {}'
 # Returns: { passed = <count>; failed = []; } on success
-# Throws on failure with details
+# Throws on failure with details (every assertion is FORCED — see `allTests`).
+#
+# Scope after the flip: defaults.nix no longer encodes the WM-navigation. It
+# carries only the user's OVERLAY (launch/system/media) plus the paradigm
+# SELECTION (`paradigm = "vogix"`); the engine resolves the selection into the
+# nav modes + mode graph (guarded byte-for-byte by the Rust side,
+# `src/input/catalog.rs::engine_resolved_vogix_equals_the_live_layout`). So these
+# tests guard the NIX contract: the overlay content, and that `mkSchemaJSON`
+# emits {paradigm, overlay} with NO modeGraph (its absence is what triggers
+# engine resolution) and no nav leak.
 { pkgs ? import <nixpkgs> { }
 , lib ? pkgs.lib
 }:
@@ -26,18 +35,25 @@ let
     if lib.hasInfix needle haystack then { inherit name; passed = true; }
     else throw "FAILED: ${name} — '${needle}' not found in output";
 
+  assertExcludes = name: needle: haystack:
+    if !(lib.hasInfix needle haystack) then { inherit name; passed = true; }
+    else throw "FAILED: ${name} — '${needle}' unexpectedly present in output";
+
   # ── Test data ──
   fullConfig = kbModule.mkGeneratorConfig defaults;
   hyprConfig = kbModule.mkHyprlandConfig defaults;
-  helpScripts = kbModule.mkHelpScripts defaults;
-  globalHelp = kbModule.mkGlobalHelpScript defaults;
+  schemaJSON = kbModule.mkSchemaJSON defaults;
 
+  # The OVERLAY (launch/system/media). The WM-nav is NOT here — the engine
+  # resolves it from `keybindings.paradigm`.
   app = defaults.modes.app.bindings;
+  appBinds = builtins.attrValues app;
+  hasAction = needle: builtins.any (b: lib.hasInfix needle (b.action or "")) appBinds;
 
   # ── Tests ──
 
   tests = [
-    # === Mode graph — a SINGLE flat mode ===
+    # === Mode graph — the overlay root only (a SINGLE flat `app` mode) ===
     (check "defaults.modeGraph exists"
       (defaults ? modeGraph))
 
@@ -45,7 +61,7 @@ let
       "app"
       defaults.modeGraph.root)
 
-    (assertEq "modeGraph has exactly 1 mode (app — flat, no sub-modes)"
+    (assertEq "modeGraph has exactly 1 mode (app — the overlay root)"
       1
       (builtins.length (builtins.attrNames defaults.modeGraph.modes)))
 
@@ -56,7 +72,7 @@ let
       "normal"
       defaults.modeGraph.modes.app.type)
 
-    # The modal sub-modes are gone (folded into flat Super-combos).
+    # The paradigm's sub-modes (if any) are resolved by the engine, never here.
     (check "modeGraph has no desktop / move / resize / console sub-modes"
       (!(defaults.modeGraph.modes ? desktop)
         && !(defaults.modeGraph.modes ? move)
@@ -70,33 +86,45 @@ let
     (check "defaults.modes has ONLY the app mode"
       (builtins.attrNames defaults.modes == [ "app" ]))
 
-    # === Keybindings — flat, no CapsLock, no remap ===
-    (check "paradigm is the user's own (default)"
-      (defaults.keybindings.paradigm == "default"))
+    # === Keybindings — paradigm SELECTION, engine owns the catalog ===
+    (assertEq "paradigm is the house default (vogix)"
+      "vogix"
+      defaults.keybindings.paradigm)
 
-    (check "default paradigm uses the minimal copy-paste remap (Super+C/V only)"
-      (defaults.keybindings.paradigms.default.remap == "copy-paste"))
-
-    (check "default paradigm carries the shared (flat) modes"
-      (defaults.keybindings.paradigms.default.modes == defaults.modes))
+    (check "the `paradigms` catalog is GONE (the engine owns it now)"
+      (!(defaults.keybindings ? paradigms)))
 
     (check "no CapsLock / dual-role interaction layer"
       (defaults.keybindings.layers == { }))
 
-    (check "the windows/mac/emacs paradigms are not present (TODO: flat variants)"
-      (!(defaults.keybindings.paradigms ? windows)
-        && !(defaults.keybindings.paradigms ? mac)
-        && !(defaults.keybindings.paradigms ? emacs)))
-
     (check "defaults.keybindings.mouse has moveWindow"
       (defaults.keybindings.mouse ? moveWindow))
 
-    (assertContains "rendered schema JSON carries the remap preset (copy-paste)"
-      "copy-paste"
-      (kbModule.mkSchemaJSON defaults))
+    # === Schema emission — the FLIP contract (mirror of catalog.rs) ===
+    (assertContains "rendered schema selects the vogix paradigm"
+      ''"paradigm":"vogix"''
+      schemaJSON)
 
-    (check "rendered schema is NOT modal — no CapsLock submap entry"
-      (!(lib.hasInfix "submap" (kbModule.mkSchemaJSON defaults))))
+    (assertExcludes "rendered schema OMITS modeGraph (its absence triggers engine resolution)"
+      "modeGraph"
+      schemaJSON)
+
+    (assertExcludes "rendered schema carries no inline remap (the engine resolves vogix→copy-paste)"
+      "copy-paste"
+      schemaJSON)
+
+    (assertExcludes "rendered schema is NOT modal — no submap entry"
+      "submap"
+      schemaJSON)
+
+    # The overlay is the user's own non-paradigm keys — NOT the WM nav.
+    (assertExcludes "no WM-nav (movefocus) leaks into the emitted overlay"
+      "movefocus"
+      schemaJSON)
+
+    (assertExcludes "no WM-nav (workspace) leaks into the emitted overlay"
+      ''"workspace,''
+      schemaJSON)
 
     # === Generator config ===
     (check "fullConfig.modes has app (root mode)"
@@ -108,7 +136,7 @@ let
     (check "fullConfig has mouse"
       (fullConfig ? mouse))
 
-    # === Hyprland generator ===
+    # === Hyprland generator — the engine-OFF fallback (overlay only) ===
     (check "hyprland settings has bind"
       (hyprConfig.settings ? bind))
 
@@ -122,8 +150,19 @@ let
       2
       (builtins.length hyprConfig.settings.bindm))
 
-    (check "the flat app emits a full keymap (>40 binds)"
-      (builtins.length hyprConfig.settings.bind > 40))
+    # The fallback is the OVERLAY (launch/system/media), NOT the full keymap —
+    # the WM nav lives in the engine. So it is small (the recovery surface), not
+    # the >40-bind layout the old encode-in-Nix scheme produced.
+    (check "the fallback is the overlay, not the full keymap (< 40 binds)"
+      (builtins.length hyprConfig.settings.bind < 40))
+
+    # Recovery: Super+Return + the launcher are enough to restart vogix-input if
+    # the engine ever fails to start.
+    (check "fallback keeps the terminal recovery bind (Super+Return)"
+      (lib.hasInfix "exec, $TERMINAL" (lib.concatStringsSep "\n" hyprConfig.settings.bind)))
+
+    (check "fallback keeps the launcher recovery bind"
+      (lib.hasInfix "LAUNCHER" (lib.concatStringsSep "\n" hyprConfig.settings.bind)))
 
     # No sub-modes anywhere — the engine owns input, and there are no submaps.
     (check "extraConfig has no desktop / move / resize submap"
@@ -137,94 +176,59 @@ let
     (check "NO bindr anywhere"
       (!(lib.hasInfix "bindr" hyprConfig.extraConfig)))
 
-    # === Semantic consistency — the flat scheme, verbatim from bindings.conf ===
-    (assertEq "Super+Q = close window"
-      "super + q"
-      (app.closeWindow.key or ""))
+    # === Overlay content — the REAL job of defaults.nix now ===
+    (assertEq "Launch: Super+Return = terminal ($TERMINAL)"
+      "exec, $TERMINAL"
+      (app.terminal.action or ""))
+    (assertEq "Launch: Super+Return key"
+      "super + return"
+      (app.terminal.key or ""))
+    (assertEq "Launch: Super+E = browser ($BROWSER)"
+      "exec, $BROWSER"
+      (app.browser.action or ""))
+    (assertEq "Launch: Super+Space = launcher (env $LAUNCHER, walker fallback)"
+      "exec, \${LAUNCHER:-walker}"
+      (app.launcher.action or ""))
 
-    (assertEq "Super+H = focus left (j=up, k=down — non-vim)"
-      "movefocus, l"
-      (app.focusLeft.action or ""))
+    # Help is now an ENGINE view — `vogix input keys` materializes from the
+    # resolved schema (this overlay + the paradigm nav), replacing the Nix script.
+    (assertEq "System: Super+/ = show keybindings (engine view)"
+      "exec, vogix input keys"
+      (app.help.action or ""))
+    (assertEq "System: Super+/ key"
+      "super + slash"
+      (app.help.key or ""))
 
-    (assertEq "Super+J = focus UP (your original, not vim)"
-      "movefocus, u"
-      (app.focusUp.action or ""))
-
-    (assertEq "Super+Shift+H = MOVE window left (swapwindow)"
-      "swapwindow, l"
-      (app.swapLeft.action or ""))
-
-    (assertEq "Super+Shift+H key is super + shift + h"
-      "super + shift + h"
-      (app.swapLeft.key or ""))
-
-    (assertEq "Ctrl+Shift+L = RESIZE wider (resizeactive)"
-      "resizeactive, 30 0"
-      (app.resizeRight.action or ""))
-
-    (assertEq "Ctrl+Shift+L key is ctrl + shift + l"
-      "ctrl + shift + l"
-      (app.resizeRight.key or ""))
-
-    (assertEq "Super+Y = float + pin (the yuiop row)"
-      "super + y"
-      (app.floatPin.key or ""))
-
-    (assertEq "Super+O = toggle split (dwindle layoutmsg, not a top-level dispatcher)"
-      "layoutmsg, togglesplit"
-      (app.toggleSplit.action or ""))
-
-    (assertEq "Super+U = toggle group"
-      "togglegroup,"
-      (app.toggleGroup.action or ""))
-
-    (assertEq "Super+P = pseudotile"
-      "pseudo,"
-      (app.pseudo.action or ""))
-
-    # Super+C is intentionally UNBOUND (it is COPY via the remap) — a bound super+c
-    # would take precedence and the remap would never fire. Super+M stays Music.
-    (check "Super+C is NOT bound (it is copy via the remap)"
-      (!(app ? workspaceChat)
-        && !(builtins.any (b: (b.key or "") == "super + c") (builtins.attrValues app))))
-    (assertEq "Super+M = Music workspace (survives)"
-      "workspace, Music"
-      (app.workspaceMusic.action or ""))
-
-    (assertEq "Super+Ctrl+3 = send window to workspace 3"
-      "movetoworkspace, 3"
-      (app.moveToWs3.action or ""))
-
-    (assertEq "Super+Shift+3 = send window to workspace 3 (silent)"
-      "movetoworkspacesilent, 3"
-      (app.moveSilent3.action or ""))
-
-    # === Super+letter is INTENTIONAL here (no macOS remap) ===
-    (check "the flat scheme uses Super+letter directly as WM binds"
-      (lib.hasInfix "SUPER, q" (lib.concatStringsSep "\n" hyprConfig.settings.bind)))
-
-    # === Help popups GENERATE (previously untested) ===
-    (check "mkHelpScripts produces a help script for the app mode"
-      (helpScripts ? app))
-    (check "mkGlobalHelpScript produces a global help script (non-null)"
-      (globalHelp != null))
-
-    # === Restored vogix-era features (F12 console / dismiss / undo / help) ===
-    (assertEq "F12 = toggle system console"
+    (assertEq "System: F12 = toggle system console"
       "Toggle system console"
       (app.console.description or ""))
-    (assertEq "Super+D = dismiss notification (makoctl)"
+    (assertEq "System: Super+D = dismiss notification (makoctl)"
       "exec, makoctl dismiss"
       (app.dismissNotification.action or ""))
-    (assertEq "Super+Shift+D = dismiss all"
+    (assertEq "System: Super+Shift+D = dismiss all"
       "exec, makoctl dismiss --all"
       (app.dismissAll.action or ""))
-    (assertEq "Super+Z = session undo (super+u is taken by toggleGroup)"
+    (assertEq "System: Super+Z = session undo"
       "super + z"
       (app.undoSession.key or ""))
-    (assertEq "Super+/ = show keybindings (help popup)"
-      "exec, vogix-modes-global"
-      (app.help.action or ""))
+    (assertEq "System: Print = screenshot → clipboard"
+      "exec, grimblast --notify copy area"
+      (app.screenshotClip.action or ""))
+
+    (assertEq "Media: XF86AudioRaiseVolume = volume up"
+      "XF86AudioRaiseVolume"
+      (app.volumeUp.key or ""))
+    (assertEq "Media: XF86MonBrightnessUp = brighter"
+      "exec, brightnessctl set 5%+"
+      (app.brightnessUp.action or ""))
+
+    # === The nav is the ENGINE's job — it must NOT be in the overlay ===
+    (check "no focus/move/resize WM-nav action leaks into the overlay"
+      (!(hasAction "movefocus") && !(hasAction "swapwindow") && !(hasAction "resizeactive")))
+    (check "no workspace-switch nav leaks into the overlay"
+      (!(hasAction "workspace, ") && !(hasAction "movetoworkspace")))
+    (check "no window-state nav (close/fullscreen/pseudo) leaks into the overlay"
+      (!(app ? closeWindow) && !(app ? floatPin) && !(app ? toggleGroup)))
   ];
 
   # ══════════════════════════════════════════════
@@ -247,7 +251,7 @@ let
     )
     allModes)
 
-  # ── P3: All submap references resolve (flat scheme has none, but stays honest) ──
+  # ── P3: All submap references resolve (overlay has none, but stays honest) ──
   ++ (lib.concatMap
     (modeName:
       let
@@ -298,8 +302,10 @@ let
     defaults.modeGraph.modes);
 
   allTests = tests ++ propertyTests;
-  results = map (t: t) allTests;
-  passed = builtins.length results;
+  # FORCE every assertion: a failing check/assertEq THROWS, so deepSeq makes the
+  # eval fail loudly. (The old `map (t: t)` + `length` only counted unforced
+  # thunks — it never actually evaluated an assertion, so it always "passed".)
+  passed = builtins.deepSeq allTests (builtins.length allTests);
 
 in
 {

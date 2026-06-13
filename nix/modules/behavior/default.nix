@@ -1,16 +1,18 @@
 # Vogix behavior module
 #
-# Wires behavior options to generators (hyprland, help).
+# Wires behavior options to the Hyprland generator (the engine-off fallback).
+# Help is no longer generated here: it is an ENGINE view (`vogix input keys`,
+# materialized from the resolved schema) — the single-materializer architecture
+# means nothing re-encodes a per-mode help script in Nix.
 # Imported by the home-manager module.
-{ lib, pkgs ? null }:
+#
+# `pkgs` is accepted (and ignored via `...`) for call-site compatibility — the
+# help generator that needed it is gone; only `lib` is used now.
+{ lib, ... }:
 
 let
   defaults = import ./defaults.nix { };
   hyprlandGen = import ./generators/hyprland.nix { inherit lib; };
-  helpGen =
-    if pkgs != null
-    then import ./generators/help.nix { inherit lib pkgs; }
-    else null;
   optionsModule = import ./options.nix { inherit lib; };
 
   # Build the flat config that generators expect from the new nested structure
@@ -50,19 +52,6 @@ in
   # Generate Hyprland config
   mkHyprlandConfig = behaviorCfg:
     hyprlandGen.generate (mkGeneratorConfig behaviorCfg);
-
-  # Generate per-mode help scripts
-  mkHelpScripts = behaviorCfg:
-    if helpGen != null then
-      helpGen.mkAllHelpScripts ((mkGeneratorConfig behaviorCfg).modes or { })
-    else
-      { };
-
-  mkGlobalHelpScript = behaviorCfg:
-    if helpGen != null then
-      helpGen.mkGlobalHelpScript ((mkGeneratorConfig behaviorCfg).modes or { })
-    else
-      null;
 
   # Render the behavior config to the JSON shape `src/input/schema.rs` expects.
   # The Rust side reads this via `Schema::load()` from

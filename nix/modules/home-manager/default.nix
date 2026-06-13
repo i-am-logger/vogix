@@ -242,48 +242,35 @@ in
     # Behavior: generate the hyprland config
     # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
     # to avoid infinite recursion between config definition and evaluation)
-    (
-      let
-        # Generate help scripts for each mode
-        helpScripts = behaviorModule.mkHelpScripts behaviorCfg;
-        globalHelpScript = behaviorModule.mkGlobalHelpScript behaviorCfg;
+    {
+      # Merge defaults into behavior config
+      programs.vogix.behavior = {
+        keybindings = lib.mkDefault behaviorDefaults.keybindings;
+        modes = {
+          app = lib.mkDefault behaviorDefaults.modes.app;
 
-        helpScriptPackages = builtins.attrValues helpScripts
-          ++ (lib.optional (globalHelpScript != null) globalHelpScript);
-      in
-      {
-        # Merge defaults into behavior config
-        programs.vogix.behavior = {
-          keybindings = lib.mkDefault behaviorDefaults.keybindings;
-          modes = {
-            app = lib.mkDefault behaviorDefaults.modes.app;
-
-            # Derive the app-mode border color from the vogix semantic theme.
-            # Modes are NOT statuses — navigation modes use neutral/accent slots,
-            # never warning/danger/notice (those are reserved for real conditions).
-            # The flat default is a single `app` mode (no CapsLock sub-modes), so
-            # only `app` needs a colour.
-            modeColors =
-              let
-                colors = cfg.colors or { };
-                toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
-              in
-              {
-                app = {
-                  active = toRgb (colors.foreground-border or "585b70");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
+          # Derive the app-mode border color from the vogix semantic theme.
+          # Modes are NOT statuses — navigation modes use neutral/accent slots,
+          # never warning/danger/notice (those are reserved for real conditions).
+          # The flat default is a single `app` mode (no CapsLock sub-modes), so
+          # only `app` needs a colour.
+          modeColors =
+            let
+              colors = cfg.colors or { };
+              toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
+            in
+            {
+              app = {
+                active = toRgb (colors.foreground-border or "585b70");
+                inactive = toRgb (colors.background-selection or "313244");
               };
-          };
-
-          # Generated outputs for downstream consumption
-          generatedHyprland = behaviorModule.mkHyprlandConfig behaviorCfg;
+            };
         };
 
-        # Install help scripts
-        home.packages = helpScriptPackages;
-      }
-    )
+        # Generated outputs for downstream consumption
+        generatedHyprland = behaviorModule.mkHyprlandConfig behaviorCfg;
+      };
+    }
 
     {
       # Install vogix binary
