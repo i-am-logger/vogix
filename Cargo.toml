@@ -36,14 +36,15 @@ glob = "0.3"
 thiserror = "2.0"
 
 # Ontology-driven rule enforcement (github-pinned, hermetic for Nix).
-# Pinned to the `pr4xis-v0.23.0` tag. The `[lints]` blocks are now inlined
-# per-crate on master (the earlier `[lints] workspace = true` form broke
-# crate2nix's vendor step — each crate unpacks into a separate /nix/store
-# path with no workspace root, so the inheritance failed). Kept a git dep
-# (not crates.io) because `pr4xis-domains` is `publish = false`; a tag pin
-# cleanly absorbs the in-repo version skew (pr4xis 0.23.0, domains 0.22.0).
-pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", tag = "pr4xis-v0.23.0" }
-pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", tag = "pr4xis-v0.23.0" }
+# Pinned to praxis master @ rev 523bcb57 (post-#169 operators/wh-questions) —
+# binding to master now that that PR has landed, which unblocks the vogix
+# upstream push. `[lints]` are inlined per-crate (the earlier `[lints]
+# workspace = true` form broke crate2nix's vendor step — each crate unpacks
+# into a separate /nix/store path with no workspace root). Kept a git dep
+# (not crates.io) because `pr4xis-domains` is `publish = false`; a rev pin
+# cleanly absorbs the in-repo version skew (domains 0.22.0). Bump the rev to advance.
+pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "523bcb5771d8cad1fb810fce47d70b95c57178dc" }
+pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "523bcb5771d8cad1fb810fce47d70b95c57178dc" }
 
 # Date/time for state timestamps
 chrono = "0.4"
