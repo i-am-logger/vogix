@@ -149,6 +149,10 @@ pub fn key_name_to_code(name: &str) -> Option<KeyCode> {
         "right" => K::KEY_RIGHT,
         "up" => K::KEY_UP,
         "down" => K::KEY_DOWN,
+        // PageUp/PageDown: GNOME's workspace-switch chords (the `linux` paradigm);
+        // render_combo emits these from praxis `NamedKey::PageUp`/`PageDown`.
+        "pageup" => K::KEY_PAGEUP,
+        "pagedown" => K::KEY_PAGEDOWN,
         "return" | "enter" => K::KEY_ENTER,
         "space" => K::KEY_SPACE,
         "tab" => K::KEY_TAB,

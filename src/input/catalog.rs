@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use super::paradigm::{ModeTopo, Topology, project};
 use super::schema::{ModeGraphSpec, ModeSpec};
 
-use Modifier::{Ctrl, Shift, Super};
+use Modifier::{Alt, Ctrl, Shift, Super};
 
 /// Resolve a paradigm SELECTION name into its `(modeGraph, modes)` — the global
 /// interaction model the engine materializes. Every entry is SYSTEM-WIDE: select
@@ -42,6 +42,11 @@ pub fn resolve_paradigm(name: &str) -> Option<(ModeGraphSpec, HashMap<String, Mo
         "cua" => Some(project(&cua_preset(), &CUA_TOPO)),
         "emacs" => Some(project(&emacs_preset(), &EMACS_TOPO)),
         "vim" => Some(project(&vim_preset(), &VIM_TOPO)),
+        // vogix-authored desktop paradigms (praxis has no preset yet — these are
+        // written in the praxis mold so they can move into praxis later).
+        "windows" => Some(project(&windows_nav_preset(), &WINDOWS_TOPO)),
+        "macos" => Some(project(&macos_nav_preset(), &MACOS_TOPO)),
+        "linux" => Some(project(&linux_nav_preset(), &LINUX_TOPO)),
         _ => None,
     }
 }
@@ -106,6 +111,28 @@ pub const VIM_TOPO: Topology = Topology {
         parent: "normal",
         kind: "passthrough",
     }],
+};
+
+/// The desktop paradigms (`windows`/`macos`/`linux`) are single-mode chorded, like
+/// `cua`: one passthrough `app` root (Super/Ctrl/Alt chords; unbound keys pass on).
+pub const WINDOWS_TOPO: Topology = Topology {
+    root: "app",
+    root_kind: "passthrough",
+    modes: &[],
+};
+
+/// See [`WINDOWS_TOPO`]. `macos` pairs this with the `macos` remap (Cmd-feel).
+pub const MACOS_TOPO: Topology = Topology {
+    root: "app",
+    root_kind: "passthrough",
+    modes: &[],
+};
+
+/// See [`WINDOWS_TOPO`]. `linux` = mainstream GNOME (floating, Super-based).
+pub const LINUX_TOPO: Topology = Topology {
+    root: "app",
+    root_kind: "passthrough",
+    modes: &[],
 };
 
 /// Build a [`KeyCombo`] from modifiers + a key.
@@ -410,6 +437,343 @@ pub fn vogix_nav_preset() -> BindingSet {
     bs
 }
 
+/// `windows` — Microsoft Windows 11 global window & virtual-desktop keyboard
+/// conventions, projected to Hyprland. Single passthrough `app` mode, NO remap
+/// (Windows uses Ctrl natively for the clipboard). Hyprland has no snap / maximize
+/// / minimize, so those conventions are ADAPTED to the nearest real dispatcher
+/// (snap → directional `movewindow`, maximize → `fullscreen`); Win+D / Win+M /
+/// Win+Tab are omitted (no Hyprland show-desktop / minimize / overview). Win+1..9
+/// (natively a taskbar-app launcher) is treated as virtual-desktop N.
+///
+/// Source: Microsoft Support, "Keyboard shortcuts in Windows".
+pub fn windows_nav_preset() -> BindingSet {
+    use pr4xis_domains::applied::hmi::input::keybindings::NamedKey;
+    let mut bs = BindingSet::new("windows");
+    let app = ModeId::new("app");
+    let mut add = |mods: &[Modifier], key: Key, name: &str, desc: &str, cmd: &str| {
+        bs.add(
+            combo(mods, key),
+            app.clone(),
+            Action::new(name, desc, cmd),
+            false,
+        );
+    };
+
+    // Window switch (Alt+Tab) + close (Alt+F4) — faithful.
+    add(
+        &[Alt],
+        Key::Named(NamedKey::Tab),
+        "switch_window",
+        "Switch window",
+        "cyclenext,",
+    );
+    add(
+        &[Alt, Shift],
+        Key::Named(NamedKey::Tab),
+        "switch_window_prev",
+        "Switch window (reverse)",
+        "cyclenext, prev",
+    );
+    add(
+        &[Alt],
+        Key::Function(4),
+        "close",
+        "Close window",
+        "killactive,",
+    );
+
+    // Snap (Win+←/→) + maximize (Win+↑) — adapted (no snap/maximize in Hyprland).
+    add(
+        &[Super],
+        Key::Named(NamedKey::Left),
+        "snap_left",
+        "Snap window left",
+        "movewindow, l",
+    );
+    add(
+        &[Super],
+        Key::Named(NamedKey::Right),
+        "snap_right",
+        "Snap window right",
+        "movewindow, r",
+    );
+    add(
+        &[Super],
+        Key::Named(NamedKey::Up),
+        "maximize",
+        "Maximize window",
+        "fullscreen",
+    );
+
+    // Move window (Win+Shift+arrows: monitor/stretch/restore) — adapted to a
+    // directional move (Hyprland has no monitor-move / vertical-stretch / restore).
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::Left),
+        "move_left",
+        "Move window left",
+        "movewindow, l",
+    );
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::Right),
+        "move_right",
+        "Move window right",
+        "movewindow, r",
+    );
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::Up),
+        "move_up",
+        "Move window up",
+        "movewindow, u",
+    );
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::Down),
+        "move_down",
+        "Move window down",
+        "movewindow, d",
+    );
+
+    // Virtual desktops: Ctrl+Win+←/→ switch; Win+1..9 → desktop N.
+    add(
+        &[Super, Ctrl],
+        Key::Named(NamedKey::Left),
+        "desktop_prev",
+        "Previous virtual desktop",
+        "workspace, -1",
+    );
+    add(
+        &[Super, Ctrl],
+        Key::Named(NamedKey::Right),
+        "desktop_next",
+        "Next virtual desktop",
+        "workspace, +1",
+    );
+    for n in 1u8..=9 {
+        add(
+            &[Super],
+            Key::Number(n),
+            &format!("workspace_{n}"),
+            "Virtual desktop",
+            &format!("workspace, {n}"),
+        );
+    }
+    bs
+}
+
+/// `macos` — Apple macOS global Mission Control / Spaces / window conventions,
+/// projected to Hyprland. Pairs with the `macos` remap (the Cmd-feel: Super+letter
+/// → Ctrl+letter) for app shortcuts; the window verbs here (Cmd+W/Q/H/M) are
+/// BOUND, so they take precedence over the remap for those letters (bindings win —
+/// see `device.rs`), while the rest of Cmd+letter remaps to Ctrl. Spaces / Mission
+/// Control are natively Ctrl-based (not remapped), and Cmd+Tab uses NamedKey Tab
+/// (also untouched). Hyprland has no Mission Control / hide / minimize, so those
+/// are ADAPTED (overview / hidden+minimized special workspaces).
+///
+/// Source: Apple Support, "Mac keyboard shortcuts" & "Use Mission Control".
+pub fn macos_nav_preset() -> BindingSet {
+    use pr4xis_domains::applied::hmi::input::keybindings::NamedKey;
+    let mut bs = BindingSet::new("macos");
+    let app = ModeId::new("app");
+    let mut add = |mods: &[Modifier], key: Key, name: &str, desc: &str, cmd: &str| {
+        bs.add(
+            combo(mods, key),
+            app.clone(),
+            Action::new(name, desc, cmd),
+            false,
+        );
+    };
+
+    // Spaces: Ctrl+←/→ + Ctrl+1..9 (native Ctrl — untouched by the Cmd remap).
+    add(
+        &[Ctrl],
+        Key::Named(NamedKey::Left),
+        "workspace_prev",
+        "Previous Space",
+        "workspace, -1",
+    );
+    add(
+        &[Ctrl],
+        Key::Named(NamedKey::Right),
+        "workspace_next",
+        "Next Space",
+        "workspace, +1",
+    );
+    for n in 1u8..=9 {
+        add(
+            &[Ctrl],
+            Key::Number(n),
+            &format!("workspace_{n}"),
+            "Space",
+            &format!("workspace, {n}"),
+        );
+    }
+    // Mission Control (Ctrl+↑) — adapted to an `overview` special workspace.
+    add(
+        &[Ctrl],
+        Key::Named(NamedKey::Up),
+        "mission_control",
+        "Mission Control",
+        "togglespecialworkspace, overview",
+    );
+
+    // Window switch (Cmd+Tab) — Tab is not a letter, so not remapped.
+    add(
+        &[Super],
+        Key::Named(NamedKey::Tab),
+        "switch_window",
+        "Switch window",
+        "cyclenext,",
+    );
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::Tab),
+        "switch_window_prev",
+        "Switch window (reverse)",
+        "cyclenext, prev",
+    );
+
+    // Window verbs (Cmd+W/Q/H/M) — bound, so they win over the remap for w/q/h/m.
+    add(
+        &[Super],
+        Key::Letter('w'),
+        "close_window",
+        "Close window",
+        "killactive,",
+    );
+    add(
+        &[Super],
+        Key::Letter('q'),
+        "quit",
+        "Quit app",
+        "killactive,",
+    );
+    add(
+        &[Super],
+        Key::Letter('h'),
+        "hide",
+        "Hide window",
+        "movetoworkspacesilent, special:hidden",
+    );
+    add(
+        &[Super],
+        Key::Letter('m'),
+        "minimize",
+        "Minimize window",
+        "movetoworkspacesilent, special:minimized",
+    );
+    // Fullscreen (Ctrl+Cmd+F) — two modifiers, so not remapped.
+    add(
+        &[Ctrl, Super],
+        Key::Letter('f'),
+        "fullscreen",
+        "Toggle fullscreen",
+        "fullscreen",
+    );
+    bs
+}
+
+/// `linux` — mainstream GNOME Shell global window conventions, projected to
+/// Hyprland. Single passthrough `app` mode, NO remap (native Ctrl). The faithful
+/// workspace verbs are the relative Super+PageUp/PageDown pair; GNOME's per-index
+/// Super+1..9 is app-LAUNCH (`switch-to-application-N`), NOT workspace switching,
+/// so it is deliberately omitted (it would belong in the user's overlay). Hyprland
+/// has no snap / maximize / minimize, so tile / maximize / hide are ADAPTED.
+///
+/// Source: GNOME Shell defaults (`org.gnome.desktop.wm.keybindings`).
+pub fn linux_nav_preset() -> BindingSet {
+    use pr4xis_domains::applied::hmi::input::keybindings::NamedKey;
+    let mut bs = BindingSet::new("linux");
+    let app = ModeId::new("app");
+    let mut add = |mods: &[Modifier], key: Key, name: &str, desc: &str, cmd: &str| {
+        bs.add(
+            combo(mods, key),
+            app.clone(),
+            Action::new(name, desc, cmd),
+            false,
+        );
+    };
+
+    // Workspaces: Super+PageUp/PageDown switch; Super+Shift+PageUp/Down move window.
+    add(
+        &[Super],
+        Key::Named(NamedKey::PageUp),
+        "workspace_prev",
+        "Previous workspace",
+        "workspace, -1",
+    );
+    add(
+        &[Super],
+        Key::Named(NamedKey::PageDown),
+        "workspace_next",
+        "Next workspace",
+        "workspace, +1",
+    );
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::PageUp),
+        "move_to_prev",
+        "Move window ← workspace",
+        "movetoworkspace, -1",
+    );
+    add(
+        &[Super, Shift],
+        Key::Named(NamedKey::PageDown),
+        "move_to_next",
+        "Move window → workspace",
+        "movetoworkspace, +1",
+    );
+
+    // Window switch (Alt+Tab) + close (Alt+F4) — faithful.
+    add(
+        &[Alt],
+        Key::Named(NamedKey::Tab),
+        "switch_window",
+        "Switch window",
+        "cyclenext,",
+    );
+    add(
+        &[Alt],
+        Key::Function(4),
+        "kill",
+        "Close window",
+        "killactive,",
+    );
+
+    // Maximize (Super+↑ → fullscreen) + tile (Super+←/→) + hide (Super+H) — adapted.
+    add(
+        &[Super],
+        Key::Named(NamedKey::Up),
+        "fullscreen",
+        "Maximize window",
+        "fullscreen",
+    );
+    add(
+        &[Super],
+        Key::Named(NamedKey::Left),
+        "tile_left",
+        "Tile window left",
+        "movewindow, l",
+    );
+    add(
+        &[Super],
+        Key::Named(NamedKey::Right),
+        "tile_right",
+        "Tile window right",
+        "movewindow, r",
+    );
+    add(
+        &[Super],
+        Key::Letter('h'),
+        "hide",
+        "Hide window",
+        "movetoworkspacesilent, special",
+    );
+    bs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,5 +1055,90 @@ mod tests {
             schema.build_mode_graph().validate().is_empty(),
             "vim (normal root + insert submode) must satisfy the praxis axioms"
         );
+    }
+
+    // ── vogix-authored desktop paradigms (windows / macos / linux) ──
+
+    #[test]
+    fn windows_resolves_with_snap_and_virtual_desktops() {
+        let (graph, modes) = project(&windows_nav_preset(), &WINDOWS_TOPO);
+        assert_eq!(graph.root, "app");
+        let app = modes.get("app").expect("app mode");
+        assert_eq!(app.bindings["switch_window"].action, "cyclenext,");
+        assert_eq!(app.bindings["close"].action, "killactive,");
+        assert_eq!(app.bindings["snap_left"].action, "movewindow, l");
+        assert_eq!(app.bindings["maximize"].action, "fullscreen");
+        assert_eq!(app.bindings["desktop_next"].action, "workspace, +1");
+        assert_eq!(app.bindings["workspace_1"].action, "workspace, 1");
+        // WM-nav only — no app-launch leaked into the paradigm.
+        assert!(!app.bindings.contains_key("launcher"));
+    }
+
+    #[test]
+    fn macos_resolves_and_selects_the_cmd_feel_remap() {
+        use crate::input::schema::Schema;
+        let (graph, modes) = project(&macos_nav_preset(), &MACOS_TOPO);
+        assert_eq!(graph.root, "app");
+        let app = modes.get("app").expect("app mode");
+        assert_eq!(app.bindings["workspace_prev"].action, "workspace, -1");
+        assert_eq!(
+            app.bindings["mission_control"].action,
+            "togglespecialworkspace, overview"
+        );
+        assert_eq!(app.bindings["close_window"].action, "killactive,");
+        assert_eq!(app.bindings["fullscreen"].action, "fullscreen");
+
+        // The macos paradigm selects the praxis macos_remap (the Cmd-feel). The
+        // bound window verbs (Cmd+W/Q/H/M) take precedence over it; the rest of
+        // Super+letter remaps to Ctrl.
+        let schema = Schema::from_json(
+            r#"{ "keybindings": { "paradigm": "macos" }, "modes": { "app": { "bindings": {} } } }"#,
+        )
+        .expect("macos resolves");
+        assert!(
+            schema.remap_set().remaps.len() >= 6,
+            "macos paradigm uses the full Cmd-feel remap"
+        );
+    }
+
+    #[test]
+    fn linux_resolves_with_pageup_pagedown_workspace_nav() {
+        use crate::input::keys::parse_chord;
+        let (graph, modes) = project(&linux_nav_preset(), &LINUX_TOPO);
+        assert_eq!(graph.root, "app");
+        let app = modes.get("app").expect("app mode");
+        // The GNOME PageUp/PageDown workspace verbs — the chord must PARSE (the gap
+        // in keys.rs that would otherwise silently drop them).
+        assert_eq!(app.bindings["workspace_prev"].key, "super + pageup");
+        assert!(parse_chord("super + pageup").is_some(), "pageup must parse");
+        assert_eq!(app.bindings["workspace_next"].action, "workspace, +1");
+        assert_eq!(app.bindings["move_to_prev"].action, "movetoworkspace, -1");
+        assert_eq!(app.bindings["tile_left"].action, "movewindow, l");
+        // GNOME's Super+1..9 is app-LAUNCH, deliberately omitted (overlay scope).
+        assert!(!app.bindings.contains_key("workspace_1"));
+    }
+
+    #[test]
+    fn desktop_paradigms_parse_and_validate() {
+        use crate::input::schema::Schema;
+        // Every desktop paradigm's chords must PARSE (else they'd be silently
+        // dropped when the router is built), and its derived mode graph must
+        // satisfy the praxis axioms.
+        for name in ["windows", "macos", "linux"] {
+            let json = format!(
+                r#"{{ "keybindings": {{ "paradigm": "{name}" }}, "modes": {{ "app": {{ "bindings": {{}} }} }} }}"#
+            );
+            let schema =
+                Schema::from_json(&json).unwrap_or_else(|e| panic!("{name} resolves: {e}"));
+            assert!(
+                schema.unparseable_bindings().is_empty(),
+                "{name} has unparseable chords: {:?}",
+                schema.unparseable_bindings()
+            );
+            assert!(
+                schema.build_mode_graph().validate().is_empty(),
+                "{name} mode graph must satisfy the praxis axioms"
+            );
+        }
     }
 }
