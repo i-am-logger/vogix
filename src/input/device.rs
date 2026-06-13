@@ -752,12 +752,9 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     // capture the very events it re-emits (a feedback loop that drops all
     // passthrough — caught by the VM test's "plain key re-emitted" assertion).
     //
-    // LIMITATION (tracked): enumeration happens ONCE at startup. A keyboard
-    // hot-plugged after the engine starts is not grabbed, so its keys reach the
-    // compositor unremapped (no Super-swallow, no modes) until the service is
-    // restarted — a plausible "keybindings randomly don't work" cause. The
-    // proper fix is a udev/inotify monitor that grabs new keyboards as they
-    // appear; deferred.
+    // Initial enumeration happens once here at startup; keyboards hot-plugged
+    // afterwards are picked up by the inotify monitor below (see "Hotplug:"),
+    // which grabs them without a service restart.
     // Pick which devices to grab. Two stages, lockout-safe:
     //   BROAD  — every non-self device advertising a normal key (the universe).
     //   NARROW — keep only real text keyboards, dropping the YubiKey/audio HID/etc.

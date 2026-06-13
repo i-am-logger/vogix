@@ -12,9 +12,11 @@
 //! The JSON mirrors the Nix attrset 1:1, so the source of truth stays in one
 //! place. Nothing here decides *which* modes or keys exist — that is all data.
 
-// Several loaded fields (bindings' key/exitAfter/repeat, remaps, modKey, …) are
-// consumed by the device loop in the next 2b step; allow until that lands.
-#![allow(dead_code)]
+// The schema mirrors the Nix keybinding attrset 1:1 (see the module docs above),
+// so a few fields are authored + serialized for the NixOS generator layer but not
+// read back by the Rust engine (which derives them from the praxis ontology).
+// Those carry a targeted `#[allow(dead_code)]` at their definition rather than a
+// blanket allow over the whole module.
 
 use super::devfilter::DeviceFilter;
 use crate::config::Config;
@@ -117,7 +119,9 @@ pub struct ModeNode {
 /// A mode's contextual bindings.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ModeSpec {
+    // Schema-only: the engine enters modes via bindings' `entersMode`.
     #[serde(default)]
+    #[allow(dead_code)]
     pub enter: Option<String>,
     #[serde(default)]
     pub exit: Option<String>,
@@ -138,14 +142,19 @@ pub struct Binding {
     /// Re-run the action on key auto-repeat (focus/move/resize).
     #[serde(default)]
     pub repeat: bool,
+    /// Human-facing label, mirrored from the Nix attrset; not read by the engine.
     #[serde(default)]
+    #[allow(dead_code)]
     pub description: Option<String>,
 }
 
 /// Input-layer settings (mod key + CapsLock layer params).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Keybindings {
+    // Consumed by the Nix generator (`modKey`); the Rust engine derives the
+    // Super modifier from the praxis ontology, so it is unread here.
     #[serde(default, rename = "modKey")]
+    #[allow(dead_code)]
     pub mod_key: Option<String>,
     #[serde(default)]
     pub layers: HashMap<String, Layer>,

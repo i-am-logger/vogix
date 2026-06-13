@@ -133,13 +133,11 @@ in
   };
 
   # https://devenv.sh/outputs/
-  # NOTE: hermetic crate2nix build is DEFERRED while vogix depends on local
-  # praxis via a path dep (unpinned, for dev). Vendoring praxis into the sandbox
-  # works up to a wall: crate2nix resolves pr4xis-domains' ALL features, whose
-  # optional deps (lopdf/xsd-parser/rustls via pdf/codegen/fetch) rely on praxis's
-  # `[patch.crates-io]` forks that don't apply cross-workspace. Re-enable once
-  # praxis is consumed as a proper crate (git rev / crates.io) — see input-engine
-  # notes. Dev/cargo (`devenv shell -- cargo …`) works against ../praxis today.
+  # Hermetic crate2nix build of vogix against the pinned git-tag praxis
+  # (pr4xis-v0.23.0, see Cargo.toml). Both earlier blockers are resolved: praxis
+  # is a git-tag dep (not a path dep), and its `[lints]` are inlined per-crate so
+  # crate2nix's per-crate vendor step no longer needs a workspace root. The
+  # Windows-only crates are nulled below — they never build on Linux.
   outputs =
     {
       vogix = config.languages.rust.import ./. {
