@@ -143,32 +143,20 @@ in
 
               paradigm = mkOption {
                 type = types.str;
-                default = "default";
-                description = "Selected interaction paradigm (whole-WM flavour) — a key in `paradigms`. Resolves to that paradigm's per-mode bindings + Super remap. Default \"default\" = the user's own flat Super-combo config (no CapsLock, no Super→Ctrl remap).";
-              };
+                default = "vogix";
+                description = ''
+                  Selected interaction paradigm — the GLOBAL, system-wide keybinding
+                  model the input engine materializes. The catalog lives in the
+                  engine (`src/input/catalog.rs`), NOT here: the engine resolves this
+                  name into the paradigm's modes + mode graph and merges your own
+                  launch/system/media OVERLAY (the `modes` below) on top.
 
-              paradigms = mkOption {
-                type = types.attrsOf (types.submodule {
-                  options = {
-                    remap = mkOption {
-                      type = types.str;
-                      default = "macos";
-                      description = "praxis RemapSet preset for the Super modifier (\"macos\" → macos_remap(); \"none\" → no remap).";
-                    };
-                    modes = mkOption {
-                      type = types.attrsOf types.anything;
-                      default = { };
-                      description = "Per-mode WM-navigation bindings for this paradigm (same shape as `modes`), over vogix's app/desktop/move/resize.";
-                    };
-                    modeGraph = mkOption {
-                      type = types.attrsOf types.anything;
-                      default = { };
-                      description = "Optional mode-graph extension for this paradigm (e.g. a `{ modes.emacs-cx = { parent; type = \"submap\"; }; }` prefix mode for key sequences). Merged onto the shared topology.";
-                    };
-                  };
-                });
-                default = { };
-                description = "Interaction-paradigm presets (vim/windows/mac/…). The user picks one via `paradigm` and overlays their own bindings via `modes`.";
+                  Available: "vogix" (the house default — the user's own WM-nav
+                  layout), "cua", "emacs", "i3", "vim", "windows", "macos", "linux".
+                  Each is global: e.g. "cua" makes Ctrl+C copy everywhere, "macos"
+                  applies the Cmd-feel Super→Ctrl remap, "i3"/"vim" drive the WM by
+                  their own conventions.
+                '';
               };
 
               mouse = mkOption {
