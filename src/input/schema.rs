@@ -264,6 +264,19 @@ impl Schema {
         let Some((graph, nav_modes)) = super::catalog::resolve_paradigm(self.paradigm()) else {
             return;
         };
+        // Re-home the overlay onto the paradigm's ROOT mode. The overlay (the
+        // user's own always-global keys) is authored under "app"; a paradigm whose
+        // root isn't "app" (vim→"normal", tmux→"tmux-prefix") would otherwise
+        // strand it in a mode the graph never reaches. No-op when root == "app".
+        if graph.root != "app"
+            && let Some(overlay) = self.modes.remove("app")
+        {
+            self.modes
+                .entry(graph.root.clone())
+                .or_default()
+                .bindings
+                .extend(overlay.bindings);
+        }
         // The chords the OVERLAY already claims, per mode (the overlay is whatever
         // the schema authored before resolution). A nav binding whose chord the
         // overlay owns in the same mode is dropped — without this, the two would

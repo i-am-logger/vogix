@@ -12,7 +12,7 @@
 //! can't represent (`super+slash`, `XF86Audio*`, `print`) — live in the vogix-side
 //! OVERLAY, layered on top of whichever paradigm is selected.
 use pr4xis_domains::applied::hmi::input::keybindings::{
-    Action, BindingSet, Key, KeyCombo, Modifier, cua_preset, emacs_preset, i3_preset,
+    Action, BindingSet, Key, KeyCombo, Modifier, cua_preset, emacs_preset, i3_preset, vim_preset,
 };
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
 
@@ -41,6 +41,7 @@ pub fn resolve_paradigm(name: &str) -> Option<(ModeGraphSpec, HashMap<String, Mo
         "i3" => Some(project(&i3_preset(), &I3_TOPO)),
         "cua" => Some(project(&cua_preset(), &CUA_TOPO)),
         "emacs" => Some(project(&emacs_preset(), &EMACS_TOPO)),
+        "vim" => Some(project(&vim_preset(), &VIM_TOPO)),
         _ => None,
     }
 }
@@ -89,6 +90,21 @@ pub const I3_TOPO: Topology = Topology {
         name: "resize",
         parent: "app",
         kind: "submap",
+    }],
+};
+
+/// `vim` is MODAL — its root isn't `app`: `normal` is the catchall root (`hjkl`
+/// nav; unbound keys are swallowed, never typed), and `i` enters the `insert`
+/// SUBMODE (passthrough — keys type through), `Escape` returns. Because the root
+/// is `normal`, the engine re-homes the user's overlay onto it (see
+/// [`super::schema::Schema::resolve_paradigm`]) so the global keys stay reachable.
+pub const VIM_TOPO: Topology = Topology {
+    root: "normal",
+    root_kind: "submap",
+    modes: &[ModeTopo {
+        name: "insert",
+        parent: "normal",
+        kind: "passthrough",
     }],
 };
 
@@ -611,5 +627,69 @@ mod tests {
         );
         // i3 nav that doesn't collide with the overlay survives.
         assert_eq!(app["focus_left"].action, "movefocus, l");
+    }
+
+    // ── modal paradigm: vim (root is `normal`, not `app`) ──
+
+    #[test]
+    fn vim_resolves_as_modal_normal_insert() {
+        let (graph, modes) = project(&vim_preset(), &VIM_TOPO);
+        assert_eq!(
+            graph.root, "normal",
+            "vim's root is the catchall normal mode"
+        );
+        assert_eq!(graph.modes["insert"].parent.as_deref(), Some("normal"));
+        assert_eq!(graph.modes["insert"].kind.as_deref(), Some("passthrough"));
+
+        let normal = modes.get("normal").expect("normal mode");
+        assert_eq!(normal.bindings["move_left"].key, "h");
+        assert_eq!(normal.bindings["move_left"].action, "movefocus, l");
+        assert_eq!(normal.bindings["enter_insert"].action, "submap, insert");
+
+        let insert = modes.get("insert").expect("insert mode");
+        assert_eq!(insert.bindings["exit_insert"].action, "submap, reset");
+    }
+
+    #[test]
+    fn overlay_rehomes_to_paradigm_root_for_vim() {
+        use crate::input::schema::Schema;
+        // vim's root is `normal`, not `app`. The user's overlay (authored under
+        // `app`) must re-home onto `normal` so the global keys stay reachable —
+        // otherwise they'd sit in an `app` mode the vim graph never enters.
+        let json = r#"{
+            "keybindings": { "paradigm": "vim" },
+            "modes": { "app": { "bindings": {
+                "launcher": { "key": "super + space", "action": "exec, walker" }
+            } } }
+        }"#;
+        let schema = Schema::from_json(json).expect("vim + overlay resolves");
+        assert_eq!(schema.mode_graph.root, "normal");
+        assert!(
+            !schema.modes.contains_key("app"),
+            "the orphan `app` overlay mode is gone — it re-homed onto `normal`"
+        );
+        let normal = &schema.modes["normal"].bindings;
+        assert_eq!(
+            normal["launcher"].action, "exec, walker",
+            "overlay re-homed onto the vim root"
+        );
+        assert_eq!(
+            normal["move_left"].action, "movefocus, l",
+            "vim nav present"
+        );
+    }
+
+    #[test]
+    fn vim_mode_graph_validates_under_the_praxis_axioms() {
+        use crate::input::schema::Schema;
+        let json = r#"{
+            "keybindings": { "paradigm": "vim" },
+            "modes": { "app": { "bindings": {} } }
+        }"#;
+        let schema = Schema::from_json(json).expect("vim resolves");
+        assert!(
+            schema.build_mode_graph().validate().is_empty(),
+            "vim (normal root + insert submode) must satisfy the praxis axioms"
+        );
     }
 }
