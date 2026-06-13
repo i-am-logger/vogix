@@ -120,6 +120,17 @@ pub enum InputCommands {
         #[arg(long)]
         watch: bool,
     },
+    /// Show the keybindings of the resolved input schema (the live paradigm's
+    /// nav merged with the overlay), materialized from the engine's single
+    /// resolved schema — the engine-side replacement for the Nix help scripts.
+    Keys {
+        /// Print the help text to stdout instead of showing it via walker/notify-send.
+        #[arg(long)]
+        print: bool,
+        /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

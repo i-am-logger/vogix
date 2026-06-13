@@ -89,6 +89,72 @@ pub fn handle_input_check(config: Option<&str>) -> Result<()> {
     }
 }
 
+/// `vogix input help` — show the resolved schema's keybindings.
+///
+/// Materialized from the single resolved [`Schema`] (the selected paradigm's nav
+/// merged with the user overlay), so it reflects whatever paradigm is active —
+/// the engine-side replacement for the build-time Nix `vogix-modes-*` scripts.
+/// The paradigm is loaded once and every view (dispatch, help, Hyprland fallback)
+/// materialises from it; nothing re-encodes the keymap.
+pub fn handle_input_help(print: bool, config: Option<&str>) -> Result<()> {
+    let schema = load_schema(config)?;
+    let text = format_help(&schema);
+    if print {
+        println!("{text}");
+        return Ok(());
+    }
+    // Searchable walker menu if present, else a desktop notification.
+    if pipe_to("walker", &["--dmenu", "-p", "Keybindings"], &text).is_err() {
+        let _ = std::process::Command::new("notify-send")
+            .args(["-t", "10000", "Keybindings", &text])
+            .status();
+    }
+    Ok(())
+}
+
+/// Format the root mode's described keybindings as sorted `KEY  description`
+/// columns — mirrors the old Nix help generator's output.
+fn format_help(schema: &Schema) -> String {
+    let mode = schema
+        .modes
+        .get(&schema.mode_graph.root)
+        .or_else(|| schema.modes.get("app"));
+    let mut lines: Vec<String> = mode
+        .map(|m| {
+            m.bindings
+                .values()
+                .filter_map(|b| {
+                    let desc = b.description.as_deref().filter(|d| !d.is_empty())?;
+                    Some(format!("{:<20} {desc}", format_key(&b.key)))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    lines.sort();
+    lines.join("\n")
+}
+
+/// Display form of a chord: `super + `/`modKey + ` → `Super+`, then uppercased.
+fn format_key(key: &str) -> String {
+    key.replace("modKey + ", "Super+")
+        .replace("super + ", "Super+")
+        .to_uppercase()
+}
+
+/// Pipe `input` to a spawned `cmd args` via stdin (errors if the binary is absent).
+fn pipe_to(cmd: &str, args: &[&str], input: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(cmd).args(args).stdin(Stdio::piped()).spawn()?;
+    child
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(input.as_bytes())?;
+    child.wait()?;
+    Ok(())
+}
+
 /// Verify the loaded paradigm's remap set against the praxis keybinding axioms.
 /// Returns the names of any that fail (empty = all hold).
 fn remap_axiom_failures(schema: &Schema) -> Vec<String> {
@@ -217,5 +283,35 @@ fn print_health(s: &health::HealthSnapshot) {
             d.silent_ms / 1000,
             silent,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::schema::Schema;
+
+    #[test]
+    fn help_materializes_from_the_resolved_schema() {
+        // New format: overlay + paradigm name; the engine resolves the nav, and
+        // the help is materialized from that single resolved schema.
+        let json = r#"{
+            "keybindings": { "paradigm": "vogix" },
+            "modes": { "app": { "bindings": {
+                "launcher": { "key": "super + space", "action": "exec, walker", "description": "Launcher" }
+            } } }
+        }"#;
+        let help = format_help(&Schema::from_json(json).expect("resolve"));
+        assert!(help.contains("Launcher"), "overlay binding shown: {help}");
+        assert!(
+            help.to_uppercase().contains("SUPER+H"),
+            "resolved nav binding shown: {help}"
+        );
+    }
+
+    #[test]
+    fn format_key_collapses_super_and_uppercases() {
+        assert_eq!(format_key("super + shift + h"), "SUPER+SHIFT + H");
+        assert_eq!(format_key("modKey + tab"), "SUPER+TAB");
     }
 }
