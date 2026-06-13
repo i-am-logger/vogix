@@ -432,4 +432,55 @@ mod tests {
             );
         }
     }
+
+    /// The full flip proof: the engine-resolved `vogix` (the new-format overlay +
+    /// the resolved nav) equals the deployed live layout by chord→action. Guards
+    /// the defaults.nix split — no nav left in the overlay, no overlay binding lost.
+    #[test]
+    fn engine_resolved_vogix_equals_the_live_layout() {
+        use crate::input::schema::Schema;
+        use std::collections::BTreeMap;
+
+        // Chord (modifier-order-independent) → action, for the app mode.
+        fn norm_map(s: &Schema) -> BTreeMap<String, String> {
+            s.modes["app"]
+                .bindings
+                .values()
+                .map(|b| {
+                    let mut parts: Vec<&str> = b.key.split(" + ").collect();
+                    parts.sort_unstable();
+                    (parts.join(" + "), b.action.clone())
+                })
+                .collect()
+        }
+
+        let mut resolved = norm_map(
+            &Schema::from_json(include_str!(
+                "../../tests/fixtures/vogix-input-overlay.json"
+            ))
+            .expect("new-format overlay resolves"),
+        );
+        let mut live = norm_map(
+            &Schema::from_json(include_str!("../../tests/fixtures/vogix-input.json"))
+                .expect("live fixture"),
+        );
+
+        // The ONE intended change of the flip: the help binding now invokes the
+        // engine view (`vogix input keys`) instead of the build-time Nix script.
+        let help = "slash + super".to_string();
+        assert_eq!(
+            resolved.remove(&help).as_deref(),
+            Some("exec, vogix input keys")
+        );
+        assert_eq!(
+            live.remove(&help).as_deref(),
+            Some("exec, vogix-modes-global")
+        );
+
+        // Every other binding — all nav + overlay — is byte-identical.
+        assert_eq!(
+            resolved, live,
+            "engine-resolved vogix must equal the live layout (modulo the help binding)"
+        );
+    }
 }

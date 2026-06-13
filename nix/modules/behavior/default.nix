@@ -80,37 +80,27 @@ in
       effectiveKeybindings = mergeOr
         (behaviorCfg.keybindings or { })
         defaults.keybindings;
-      # Resolve the selected interaction PARADIGM (whole-WM flavour) into the
-      # engine's two inputs: the per-mode base bindings and the Super remap name.
-      # The user's `behavior.modes` overlays on top of the paradigm's modes.
-      paradigmName = effectiveKeybindings.paradigm or "default";
-      paradigms = effectiveKeybindings.paradigms or { };
-      # Fail loudly on an unknown paradigm — a silent fallback would ship an empty
-      # binding set (no desktop nav), the exact footgun the seam must avoid.
-      selected = paradigms.${paradigmName} or (throw
-        "vogix: unknown keybindings.paradigm \"${paradigmName}\" — known paradigms: ${toString (builtins.attrNames paradigms)}");
-      # A paradigm may EXTEND the mode graph with extra modes (e.g. an emacs C-x
-      # PREFIX mode — a key sequence is a chord that enters a transient mode whose
-      # next chord completes it). Merge those onto the shared topology.
-      baseModeGraph = behaviorCfg.modeGraph or defaults.modeGraph;
-      modeGraph = baseModeGraph // {
-        modes = baseModeGraph.modes // (selected.modeGraph.modes or { });
-      };
-      paradigmModes = selected.modes or { };
-      effectiveModes = lib.mapAttrs
-        (name: _:
-          mergeOr (userModes.${name} or { }) (paradigmModes.${name} or { })
-        )
-        modeGraph.modes;
-      # The engine reads `keybindings.paradigm` as the REMAP name; the flavour's
-      # remap fills it. `paradigms`/`paradigm` themselves aren't engine inputs.
+      # Emit only the paradigm SELECTION NAME + the user's OVERLAY modes. The
+      # engine resolves the name into the WM-nav modes (the paradigm's BindingSet,
+      # e.g. vogix_nav_preset) + the mode graph, and merges the overlay on top
+      # (see src/input/{catalog,schema}.rs). Resolution lives in the engine — a
+      # paradigm is loaded once and every view (dispatch, help, Hyprland fallback)
+      # is materialized from it; nothing re-encodes the nav here. We deliberately
+      # do NOT emit `modeGraph`: its absence is what tells the engine to resolve.
+      paradigmName = effectiveKeybindings.paradigm or "vogix";
+      # The overlay = the user's own bindings (launch/system/media), `defaults.modes`
+      # merged with `behaviorCfg.modes`. The paradigm NAV is NOT here.
+      overlayModes = lib.mapAttrs
+        (name: dm: mergeOr (userModes.${name} or { }) dm)
+        defaults.modes;
+      # `paradigm` carries the selection name to the engine; the legacy `paradigms`
+      # catalog is gone (the engine owns the catalog now).
       engineKeybindings =
-        (builtins.removeAttrs effectiveKeybindings [ "paradigms" "paradigm" ])
-        // { paradigm = selected.remap or "macos"; };
+        (builtins.removeAttrs effectiveKeybindings [ "paradigms" ])
+        // { paradigm = paradigmName; };
     in
     builtins.toJSON {
-      inherit modeGraph;
-      modes = effectiveModes;
+      modes = overlayModes;
       keybindings = engineKeybindings;
       # Top-level for the Rust `Schema.terminal_classes` (context-aware remap).
       terminalClasses = effectiveKeybindings.terminalClasses or [ ];
