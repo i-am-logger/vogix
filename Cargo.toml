@@ -36,15 +36,15 @@ glob = "0.3"
 thiserror = "2.0"
 
 # Ontology-driven rule enforcement (github-pinned, hermetic for Nix).
-# Pinned to praxis master @ rev 523bcb57 (post-#169 operators/wh-questions) —
-# binding to master now that that PR has landed, which unblocks the vogix
-# upstream push. `[lints]` are inlined per-crate (the earlier `[lints]
+# Pinned to the praxis 0.24.0 RELEASE tag (was master @ 523bcb57 = 0.23.1+4;
+# 0.24.0 releases that line, so this is the un-pin from a floating master rev to
+# a stable tag). `[lints]` are inlined per-crate (the earlier `[lints]
 # workspace = true` form broke crate2nix's vendor step — each crate unpacks
 # into a separate /nix/store path with no workspace root). Kept a git dep
-# (not crates.io) because `pr4xis-domains` is `publish = false`; a rev pin
-# cleanly absorbs the in-repo version skew (domains 0.22.0). Bump the rev to advance.
-pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "523bcb5771d8cad1fb810fce47d70b95c57178dc" }
-pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "523bcb5771d8cad1fb810fce47d70b95c57178dc" }
+# (not crates.io) because `pr4xis-domains` is `publish = false`; the tag pin
+# cleanly absorbs the in-repo version skew. Bump the tag to advance.
+pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", tag = "pr4xis-v0.24.0" }
+pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", tag = "pr4xis-v0.24.0" }
 
 # Date/time for state timestamps
 chrono = "0.4"

@@ -16,6 +16,17 @@ rustPlatform.buildRustPackage {
 
   cargoLock = {
     lockFile = ../../Cargo.lock;
+    # praxis is a git dependency (publish=false workspace); buildRustPackage
+    # needs the fetched-source hash. cargo's vendoring fetches the whole praxis
+    # repo, so `version.workspace = true` resolves against its workspace root —
+    # the reason this (buildRustPackage) builds where crate2nix's per-crate
+    # vendor could not. All praxis crates share one git source ⇒ one hash.
+    outputHashes = {
+      "pr4xis-0.24.0" = "sha256-GdHAKg+1pvT0KTgoVJn/QuD9vs7yt7HSQZjG6hfeNvw=";
+      "pr4xis-derive-0.24.0" = "sha256-GdHAKg+1pvT0KTgoVJn/QuD9vs7yt7HSQZjG6hfeNvw=";
+      "pr4xis-domains-0.24.0" = "sha256-GdHAKg+1pvT0KTgoVJn/QuD9vs7yt7HSQZjG6hfeNvw=";
+      "pr4xis-runtime-0.24.0" = "sha256-GdHAKg+1pvT0KTgoVJn/QuD9vs7yt7HSQZjG6hfeNvw=";
+    };
   };
 
   nativeBuildInputs = [

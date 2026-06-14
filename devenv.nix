@@ -132,31 +132,12 @@ in
     clippy.enable = true;
   };
 
-  # https://devenv.sh/outputs/
-  # Hermetic crate2nix build of vogix against the pinned git-tag praxis
-  # (pr4xis-v0.23.0, see Cargo.toml). Both earlier blockers are resolved: praxis
-  # is a git-tag dep (not a path dep), and its `[lints]` are inlined per-crate so
-  # crate2nix's per-crate vendor step no longer needs a workspace root. The
-  # Windows-only crates are nulled below — they never build on Linux.
-  outputs =
-    {
-      vogix = config.languages.rust.import ./. {
-        # Override to skip Windows-specific dependencies
-        crateOverrides = pkgs.defaultCrateOverrides // {
-          # Skip all Windows-specific crates
-          windows-sys = _attrs: null;
-          windows-core = _attrs: null;
-          windows-targets = _attrs: null;
-          windows_x86_64_gnu = _attrs: null;
-          windows_x86_64_msvc = _attrs: null;
-          windows_i686_gnu = _attrs: null;
-          windows_i686_msvc = _attrs: null;
-          windows_aarch64_msvc = _attrs: null;
-          windows_aarch64_gnullvm = _attrs: null;
-          anstyle-wincon = _attrs: null;
-        };
-      };
-    };
+  # NOTE: the Nix PACKAGE build of vogix is no longer here. It moved to nixpkgs'
+  # standard `buildRustPackage` (nix/packages/vogix.nix, wired in flake.nix),
+  # because praxis 0.24.0 adopted `version.workspace = true` and crate2nix's
+  # per-crate vendor step can't resolve a workspace-inherited version (no
+  # workspace root), whereas cargo's vendoring fetches the whole praxis repo and
+  # resolves it. devenv stays for the dev shell + treefmt + git-hooks + tasks.
 
   # https://devenv.sh/tasks/
   tasks = {
