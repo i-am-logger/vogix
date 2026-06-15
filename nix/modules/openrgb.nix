@@ -8,7 +8,6 @@ let
     ;
 
   cfg = config.vogix.openrgb;
-  inherit (config.vogix.hardware) motherboard;
 
   qmkDevicesJson =
     if cfg.qmkDevices != [ ] then {
@@ -56,19 +55,11 @@ in
   };
 
   config = mkIf cfg.enable {
-    # OpenRGB service with auto-detected motherboard type
-    services.hardware.openrgb = {
-      enable = true;
-    } // lib.optionalAttrs (motherboard != null) {
-      inherit motherboard;
-    };
-
-    # SMBus access for DDR5 RGB, motherboard RGB, GPU RGB
-    boot.kernelModules = [ "i2c-dev" "i2c-piix4" ];
-    boot.kernelParams = [ "acpi_enforce_resources=lax" ];
-
-    # Theme apply: set all DRAM devices to monochromatic base
-    vogix.hardware.themeApply.dram-rgb = "openrgb -d 'ENE DRAM' -m static -c {{base01}}";
+    # Base OpenRGB SDK server. The SMBus/i2c specifics (chipset type, i2c
+    # drivers, acpi_enforce_resources) live in the dram-rgb module, so USB-only
+    # consumers like the keychron keyboard don't drag in DRAM/SMBus dependencies
+    # they never use.
+    services.hardware.openrgb.enable = true;
 
     # Merge QMK device list into OpenRGB server config before starting
     systemd.services.openrgb = mkIf (cfg.qmkDevices != [ ]) {

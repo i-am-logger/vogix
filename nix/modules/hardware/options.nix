@@ -82,6 +82,20 @@ in
       };
     };
 
+    dram-rgb = {
+      enable = mkEnableOption "addressable RGB on the DDR5 memory modules (ENE DRAM controllers) via OpenRGB's SMBus (i2c) interface";
+
+      colorSlot = mkOption {
+        type = types.str;
+        default = "base01";
+        description = ''
+          Vogix palette slot used to colour the DRAM RGB.
+          Defaults to base01 (surface) for a subtle, monochromatic base.
+          See vogix16.nix for the semantic slot map.
+        '';
+      };
+    };
+
     themeApply = mkOption {
       type = types.attrsOf types.str;
       default = { };
