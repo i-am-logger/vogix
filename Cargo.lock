@@ -1226,8 +1226,8 @@ dependencies = [
 
 [[package]]
 name = "pr4xis"
-version = "0.24.0"
-source = "git+https://github.com/i-am-logger/pr4xis.git?tag=pr4xis-v0.24.0#9db0a15f03d68566e832204fdf9962e62a89fe20"
+version = "0.25.0"
+source = "git+https://github.com/i-am-logger/pr4xis.git?rev=425a34f898943c68a98f3901bd68039c52cf503d#425a34f898943c68a98f3901bd68039c52cf503d"
 dependencies = [
  "hashbrown",
  "linkme",
@@ -1240,8 +1240,8 @@ dependencies = [
 
 [[package]]
 name = "pr4xis-derive"
-version = "0.24.0"
-source = "git+https://github.com/i-am-logger/pr4xis.git?tag=pr4xis-v0.24.0#9db0a15f03d68566e832204fdf9962e62a89fe20"
+version = "0.25.0"
+source = "git+https://github.com/i-am-logger/pr4xis.git?rev=425a34f898943c68a98f3901bd68039c52cf503d#425a34f898943c68a98f3901bd68039c52cf503d"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1251,8 +1251,8 @@ dependencies = [
 
 [[package]]
 name = "pr4xis-domains"
-version = "0.24.0"
-source = "git+https://github.com/i-am-logger/pr4xis.git?tag=pr4xis-v0.24.0#9db0a15f03d68566e832204fdf9962e62a89fe20"
+version = "0.25.0"
+source = "git+https://github.com/i-am-logger/pr4xis.git?rev=425a34f898943c68a98f3901bd68039c52cf503d#425a34f898943c68a98f3901bd68039c52cf503d"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1272,8 +1272,8 @@ dependencies = [
 
 [[package]]
 name = "pr4xis-runtime"
-version = "0.24.0"
-source = "git+https://github.com/i-am-logger/pr4xis.git?tag=pr4xis-v0.24.0#9db0a15f03d68566e832204fdf9962e62a89fe20"
+version = "0.25.0"
+source = "git+https://github.com/i-am-logger/pr4xis.git?rev=425a34f898943c68a98f3901bd68039c52cf503d#425a34f898943c68a98f3901bd68039c52cf503d"
 dependencies = [
  "blake3",
  "pr4xis",
