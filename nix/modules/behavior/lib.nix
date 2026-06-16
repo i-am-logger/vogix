@@ -51,55 +51,11 @@ let
     let parsed = parseKeyCombo modKey combo;
     in "${parsed.mods}, ${parsed.key}";
 
-  # Map kanata key names to their kanata config representation
-  kanataKeyMap = {
-    "capslock" = "caps";
-    "escape" = "esc";
-    "left" = "left";
-    "right" = "rght";
-    "up" = "up";
-    "down" = "down";
-    "pageup" = "pgup";
-    "pagedown" = "pgdn";
-    "home" = "home";
-    "end" = "end";
-    "insert" = "ins";
-    "delete" = "del";
-    "backspace" = "bspc";
-    "tab" = "tab";
-    "enter" = "ret";
-    "space" = "spc";
-  };
-
-  # Convert a key name to kanata format
-  # Handles compound keys like "C-right" → "(multi lctl rght)"
-  toKanataKey = key:
-    let
-      lower = lib.toLower key;
-      # Check for modifier prefix (C-, S-, A-, M-)
-      hasCtrl = lib.hasPrefix "c-" lower;
-      hasShift = lib.hasPrefix "s-" lower;
-      hasAlt = lib.hasPrefix "a-" lower;
-      hasMeta = lib.hasPrefix "m-" lower;
-      hasModifier = hasCtrl || hasShift || hasAlt || hasMeta;
-      modifier =
-        if hasCtrl then "lctl"
-        else if hasShift then "lsft"
-        else if hasAlt then "lalt"
-        else if hasMeta then "lmet"
-        else "";
-      baseKey = if hasModifier then builtins.substring 2 (builtins.stringLength lower - 2) lower else lower;
-      resolvedBase = kanataKeyMap.${baseKey} or baseKey;
-    in
-    if hasModifier then "(multi ${modifier} ${resolvedBase})"
-    else kanataKeyMap.${lower} or lower;
-
 in
 {
   inherit
     parseKeyCombo
     toHyprlandBind
-    toKanataKey
     modifierMap
     ;
 }

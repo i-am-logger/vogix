@@ -239,67 +239,38 @@ in
   inherit (optionsModule) options;
 
   config = mkIf cfg.enable (mkMerge [
-    # Behavior: generate hyprland and kanata configs
+    # Behavior: generate the hyprland config
     # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
     # to avoid infinite recursion between config definition and evaluation)
-    (
-      let
-        # Generate help scripts for each mode
-        helpScripts = behaviorModule.mkHelpScripts behaviorCfg;
-        globalHelpScript = behaviorModule.mkGlobalHelpScript behaviorCfg;
+    {
+      # Merge defaults into behavior config
+      programs.vogix.behavior = {
+        keybindings = lib.mkDefault behaviorDefaults.keybindings;
+        modes = {
+          app = lib.mkDefault behaviorDefaults.modes.app;
 
-        helpScriptPackages = builtins.attrValues helpScripts
-          ++ (lib.optional (globalHelpScript != null) globalHelpScript);
-      in
-      {
-        # Merge defaults into behavior config
-        programs.vogix.behavior = {
-          keybindings = lib.mkDefault behaviorDefaults.keybindings;
-          modes = {
-            app = lib.mkDefault behaviorDefaults.modes.app;
-            desktop = lib.mkDefault behaviorDefaults.modes.desktop;
-            arrange = lib.mkDefault behaviorDefaults.modes.arrange;
-            theme = lib.mkDefault behaviorDefaults.modes.theme;
-
-            # Derive mode border colors from vogix semantic theme
-            modeColors =
-              let
-                colors = cfg.colors or { };
-                toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
-              in
-              {
-                app = {
-                  active = toRgb (colors.foreground-border or "585b70");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                desktop = {
-                  active = toRgb (colors.active or "89b4fa");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                arrange = {
-                  active = toRgb (colors.warning or "f9e2af");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                theme = {
-                  active = toRgb (colors.success or "a6e3a1");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
-                console = {
-                  active = toRgb (colors.special or "cba6f7");
-                  inactive = toRgb (colors.background-selection or "313244");
-                };
+          # Derive the app-mode border color from the vogix semantic theme.
+          # Modes are NOT statuses — navigation modes use neutral/accent slots,
+          # never warning/danger/notice (those are reserved for real conditions).
+          # The flat default is a single `app` mode (no CapsLock sub-modes), so
+          # only `app` needs a colour.
+          modeColors =
+            let
+              colors = cfg.colors or { };
+              toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
+            in
+            {
+              app = {
+                active = toRgb (colors.foreground-border or "585b70");
+                inactive = toRgb (colors.background-selection or "313244");
               };
-          };
-
-          # Generated outputs for downstream consumption
-          generatedHyprland = behaviorModule.mkHyprlandConfig behaviorCfg;
-          generatedKanata = behaviorModule.mkKanataConfig behaviorCfg;
+            };
         };
 
-        # Install help scripts
-        home.packages = helpScriptPackages;
-      }
-    )
+        # Generated outputs for downstream consumption
+        generatedHyprland = behaviorModule.mkHyprlandConfig behaviorCfg;
+      };
+    }
 
     {
       # Install vogix binary
@@ -474,7 +445,18 @@ in
       systemd.user.services.vogix-daemon = {
         Unit = {
           Description = "Vogix Theme Management Daemon";
+          # Member of the graphical session (NOT default.target). The daemon
+          # restores the session and monitors Hyprland events — both need
+          # WAYLAND_DISPLAY + HYPRLAND_INSTANCE_SIGNATURE, which are only
+          # exported into the systemd-user environment by Hyprland's startup
+          # (dbus-update-activation-environment + the hyprland-session.target
+          # restart). default.target is reached at *login*, BEFORE that import,
+          # so a default.target-wanted daemon captured an empty env, mis-detected
+          # an "empty desktop", and auto-restored apps that died with no Wayland
+          # display. graphical-session.target is (re)started by Hyprland AFTER
+          # the import, so members inherit the full env — like the input engine.
           After = [ "graphical-session.target" ];
+          PartOf = [ "graphical-session.target" ];
         };
 
         Service = {
@@ -482,13 +464,70 @@ in
           ExecStart = "${cfg.package}/bin/vogix daemon";
           Restart = "on-failure";
           RestartSec = 5;
+          # Verbosity flows to journald; see programs.vogix.logLevel.
+          # VOGIX_AUTO_RESTORE gates boot-time session re-spawn (auto-save is
+          # unaffected); see programs.vogix.autoRestoreSession.
+          Environment = [
+            "RUST_LOG=vogix=${cfg.logLevel}"
+            "VOGIX_AUTO_RESTORE=${if cfg.autoRestoreSession then "1" else "0"}"
+          ];
         };
 
         Install = {
-          WantedBy = [ "default.target" ];
+          WantedBy = [ "graphical-session.target" ];
         };
       };
     })
+
+    # ── Input engine: render the schema + run the input daemon ──
+    # The state file is the bridge from the authored Nix config to the Rust
+    # runtime — `Schema::load()` reads it on startup. Writing it via
+    # home.file (instead of an activation script) keeps it under nix's GC
+    # roots and gives us atomic replacement on switch.
+    {
+      home.file.".local/state/vogix/input.json" = {
+        text = behaviorModule.mkSchemaJSON behaviorCfg;
+      };
+
+      # The user systemd service that grabs evdev, runs the praxis-validated
+      # mode statechart, and dispatches to Hyprland over its control socket.
+      # vogix is the sole input engine; the user is in the `input` + `uinput`
+      # groups (set by the NixOS module) so the grab + uinput emit don't need root.
+      #
+      # `After = graphical-session.target` because the Hyprland IPC socket is
+      # owned by that session; dispatches before it lands would be dropped.
+      systemd.user.services.vogix-input = {
+        Unit = {
+          Description = "Vogix Input Engine (ontology-driven keybinding + mode engine)";
+          After = [ "graphical-session.target" ];
+          PartOf = [ "graphical-session.target" ];
+          # Hard cap on the restart loop. The engine grabs evdev as its last
+          # startup step; a tight crash-restart loop briefly takes the
+          # keyboard away from whoever else has it (login screen, TTY) every
+          # cycle. Three failures in 30s → service goes permanently failed
+          # and stops restarting, so the user always retains a usable
+          # keyboard even if our daemon is fundamentally broken on this host.
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 30;
+        };
+
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/vogix input run";
+          Restart = "on-failure";
+          # 2s back-off between attempts within the burst window.
+          RestartSec = 2;
+          # Verbosity flows to journald; see programs.vogix.logLevel. Raise to
+          # `debug` to see every keybinding decision in
+          # `journalctl --user -u vogix-input`.
+          Environment = [ "RUST_LOG=vogix=${cfg.logLevel}" ];
+        };
+
+        Install = {
+          WantedBy = [ "graphical-session.target" ];
+        };
+      };
+    }
 
   ]);
 }

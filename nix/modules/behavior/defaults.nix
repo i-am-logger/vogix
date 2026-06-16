@@ -1,22 +1,38 @@
-# Vogix behavior defaults — Modal desktop UX
+# Vogix behavior defaults
 #
 # Two sub-domains:
-#   keybindings: modKey, mouse, layers (input config)
-#   modes: app, desktop, arrange, theme (contextual actions)
+#   keybindings: modKey, paradigm (selection), mouse, layers, terminalClasses
+#   modes: app — the user's OVERLAY (launch/system/media); the paradigm WM-nav is
+#          resolved by the engine, NOT encoded here.
 #
 # Philosophy:
-#   - App mode (default): Super = Command (macOS-like), keys → apps
-#   - Desktop mode (Super+Escape / CapsLock toggle): single keys for WM
-#   - Arrange mode (from desktop): move + resize windows
-#   - Theme mode (from desktop): vogix appearance switching
+#   - Keybindings are a flat catalog of interaction PARADIGMS (vim/emacs/mac/
+#     windows/… + the house `vogix`), resolved by the input engine from the
+#     `paradigm` selection. The paradigm provides the WM-navigation (focus / move
+#     / resize / workspaces / window-state); the engine merges the user's own
+#     OVERLAY (launch / system / media) on top. A paradigm is loaded ONCE and
+#     every view (engine dispatch, `vogix input keys` help, the Hyprland fallback)
+#     is materialized from it — nothing re-encodes the nav.
+#   - `vogix` (the default) is the user's own layout: flat Super-combos, the
+#     minimal Super+C/V copy/paste remap (`copy-paste`), no CapsLock. Its nav
+#     lives in the engine (`src/input/catalog.rs::vogix_nav_preset`); only the
+#     overlay below is authored in Nix (it uses keys praxis can't represent —
+#     return/slash/print/XF86 — so it's the user's data, not the paradigm).
 #
-# Semantic keys (consistent across modes):
-#   h/j/k/l = directional, q = quit, f = fullscreen, y = float (yank),
-#   o = split, a = arrange, s = swap, d = dismiss, n/p = next/prev,
-#   v = vogix, x = lock, Space = command palette
+# The overlay binds also serve as the engine-off fallback (via the Hyprland
+# generator): Super+Return (terminal) + the launcher are enough to recover and
+# restart `vogix-input` if it ever fails to start.
 _:
 
-{
+let
+  # F12 system console: toggle the `console` Hyprland special workspace and lazily
+  # launch a wezterm + tmux session in it. This is a plain exec (NOT an engine mode
+  # switch) — the engine stays in `app`, which re-emits unbound keys, so typing
+  # reaches tmux. Toggling again hides it; the `grep -q vogix-console ||` guard
+  # avoids relaunching an already-running session.
+  consoleToggleAction = "exec, hyprctl dispatch togglespecialworkspace console; hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console";
+in
+rec {
   # ── Input settings ──
   input = {
     repeatDelay = 200;
@@ -39,7 +55,10 @@ _:
 
   layouts = {
     dwindle = {
-      pseudotile = true;
+      # NOTE: no `pseudotile` here — Hyprland removed the `dwindle:pseudotile`
+      # config option (gone as of 0.55). Pseudotiling is now only the `pseudo`
+      # dispatcher (a keybind), so the toggle would error
+      # ("config option <dwindle:pseudotile> does not exist").
       preserve_split = true;
       force_split = 2;
       smart_resizing = true;
@@ -66,10 +85,32 @@ _:
   # ── Gestures ──
   gestures = { };
 
-  # ── Keybindings (modal input) ──
+  # ── Keybindings ──
   keybindings = {
     modKey = "super";
 
+    # Interaction-paradigm SELECTION. `vogix` = the house default (the user's own
+    # WM-nav layout). The engine resolves this name into the paradigm's nav modes
+    # + mode graph and merges the overlay below; the catalog lives in the engine
+    # (`src/input/catalog.rs`), not here. `vogix`'s remap is `copy-paste`
+    # (Super+C/V → Ctrl+C/V, terminal-aware), supplied by the engine.
+    paradigm = "vogix";
+
+    # Window classes treated as terminals for the context-aware copy/paste remap:
+    # there Super+C/V → Ctrl+Shift+C/V (so native Ctrl+C still SIGINTs), vs plain
+    # Ctrl+C/V in GUI apps. POSIX termios: bare Ctrl+C in a terminal = SIGINT.
+    terminalClasses = [
+      "kitty"
+      "org.wezfurlong.wezterm"
+      "wezterm"
+      "vogix-console"
+      "Alacritty"
+      "foot"
+      "org.gnome.Console"
+      "xterm-256color"
+    ];
+
+    # Mouse: Super+drag move, Super+right-drag resize (Hyprland `bindm`).
     mouse = {
       moveWindow = {
         button = "mouse:272";
@@ -83,235 +124,72 @@ _:
       };
     };
 
-    layers = {
-      # CapsLock → Scroll_Lock (toggles desktop mode via Hyprland)
-      desktopToggle = {
-        hold = "capslock";
-        tapAction = "slck";
-        tapHoldMs = 1; # Effectively always tap — no hold behavior for now
-        bindings = { };
-      };
+    # No interaction layers — CapsLock is just CapsLock (no dual-role mode trigger).
+    layers = { };
+  };
+
+  # ── Mode graph ── a single flat `app` mode for the overlay. The paradigm's mode
+  # graph (and any sub-modes) is resolved by the engine; this is just the root the
+  # overlay binds attach to (and what the Hyprland generator reads for its root +
+  # console rules).
+  modeGraph = {
+    root = "app";
+    modes = {
+      app = { parent = null; type = "normal"; };
     };
   };
 
-  # Super → Ctrl remaps (internal, derived from modKey = "super")
-  # Not user-facing — generated automatically when modKey is super
-  _superCtrlRemaps = {
-    copy = { from = "super + c"; to = "ctrl + c"; };
-    paste = { from = "super + v"; to = "ctrl + v"; };
-    cut = { from = "super + x"; to = "ctrl + x"; };
-    undo = { from = "super + z"; to = "ctrl + z"; };
-    save = { from = "super + s"; to = "ctrl + s"; };
-    selectAll = { from = "super + a"; to = "ctrl + a"; };
-    find = { from = "super + f"; to = "ctrl + f"; };
-    closeTab = { from = "super + w"; to = "ctrl + w"; };
-    newTab = { from = "super + t"; to = "ctrl + t"; };
-    newWindow = { from = "super + n"; to = "ctrl + n"; };
-    print = { from = "super + p"; to = "ctrl + p"; };
-    reload = { from = "super + r"; to = "ctrl + r"; };
-    addressBar = { from = "super + l"; to = "ctrl + l"; };
-    open = { from = "super + o"; to = "ctrl + o"; };
-    bold = { from = "super + b"; to = "ctrl + b"; };
-    italic = { from = "super + i"; to = "ctrl + i"; };
-    underline = { from = "super + u"; to = "ctrl + u"; };
-    redo = { from = "super + y"; to = "ctrl + y"; };
-    quit = { from = "super + q"; to = "ctrl + q"; };
-    goToLine = { from = "super + g"; to = "ctrl + g"; };
-    devTools = { from = "super + d"; to = "ctrl + d"; };
-  };
-
-  # ── Modes (contextual actions) ──
+  # ── Modes ──
   modes = {
-    # App mode: always-available bindings (workspaces, media, mode entry)
+    # `app` holds ONLY the user's OVERLAY — launch / system / media bindings that
+    # aren't the WM-navigation paradigm (and that use keys praxis can't express:
+    # return/slash/print/XF86). The paradigm NAV (focus / move / resize /
+    # workspaces / window-state) is resolved by the engine from
+    # `keybindings.paradigm` and merged on top; it is NOT encoded here.
     app = {
       enter = null;
       exit = "escape";
       bindings = {
-        # ── Workspaces ──
-        workspace1 = { key = "super + 1"; action = "workspace, 1"; description = "Workspace 1"; };
-        workspace2 = { key = "super + 2"; action = "workspace, 2"; description = "Workspace 2"; };
-        workspace3 = { key = "super + 3"; action = "workspace, 3"; description = "Workspace 3"; };
-        workspace4 = { key = "super + 4"; action = "workspace, 4"; description = "Workspace 4"; };
-        workspace5 = { key = "super + 5"; action = "workspace, 5"; description = "Workspace 5"; };
-        workspace6 = { key = "super + 6"; action = "workspace, 6"; description = "Workspace 6"; };
-        workspace7 = { key = "super + 7"; action = "workspace, 7"; description = "Workspace 7"; };
-        workspace8 = { key = "super + 8"; action = "workspace, 8"; description = "Workspace 8"; };
-        workspace9 = { key = "super + 9"; action = "workspace, 9"; description = "Workspace 9"; };
-        workspace10 = { key = "super + 0"; action = "workspace, 10"; description = "Workspace 10"; };
-
-        # ── Quick access ──
+        # ── Launch ──
         terminal = { key = "super + return"; action = "exec, $TERMINAL"; description = "Terminal"; };
-        launcher = { key = "super + space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
+        browser = { key = "super + e"; action = "exec, $BROWSER"; description = "Browser"; };
+        # Launcher + locker are environment choices, not vogix's — consume the
+        # command from the environment (like $TERMINAL/$BROWSER above) instead of
+        # hardcoding a tool. The host exports $LAUNCHER/$LOCKER; the `:-` fallback
+        # keeps vogix usable standalone.
+        launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-walker}"; description = "Launcher"; };
+        colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
+        lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-hyprlock}"; description = "Lock screen"; };
 
-        # ── Mac-style function keys ──
-        desktopModeF3 = { key = "F3"; action = "submap, desktop"; description = "Desktop mode (Mission Control)"; };
-        launcherF4 = { key = "F4"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher (Launchpad)"; };
+        # ── Screenshots ──
+        # --cursor is invalid with the `area` target in current grimblast.
+        screenshotClip = { key = "print"; action = "exec, grimblast --notify copy area"; description = "Screenshot → clipboard"; };
+        screenshotEdit = { key = "shift + print"; action = "exec, grimblast save area - | swappy -f -"; description = "Screenshot → editor"; };
 
-        # ── Audio ──
+        # ── Gaps ──
+        gapsOn = { key = "super + shift + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 5;keyword general:gaps_in 6"''; description = "Gaps on"; };
+        gapsOff = { key = "super + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 0;keyword general:gaps_in 0"''; description = "Gaps off"; };
+
+        # ── System (console, notifications, undo, help) ──
+        console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
+        dismissNotification = { key = "super + d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
+        dismissAll = { key = "super + shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all notifications"; };
+        undoSession = { key = "super + z"; action = "exec, vogix session undo"; description = "Undo last window change"; };
+        # Help is now an ENGINE view: it reads the resolved schema (paradigm nav +
+        # this overlay) and renders it — replacing the build-time Nix help scripts.
+        help = { key = "super + slash"; action = "exec, vogix input keys"; description = "Show keybindings"; };
+
+        # ── Audio / brightness / media (XF86) ──
         volumeUp = { key = "XF86AudioRaiseVolume"; action = "exec, pamixer -i 5"; description = "Volume up"; };
         volumeDown = { key = "XF86AudioLowerVolume"; action = "exec, pamixer -d 5"; description = "Volume down"; };
         volumeMute = { key = "XF86AudioMute"; action = "exec, pamixer -t"; description = "Toggle mute"; };
         micMute = { key = "XF86AudioMicMute"; action = "exec, pamixer --default-source -t"; description = "Toggle mic"; };
-
-        # ── Screen brightness ──
-        brightnessUp = { key = "XF86MonBrightnessUp"; action = "exec, light -A 5"; description = "Screen brighter"; };
-        brightnessDown = { key = "XF86MonBrightnessDown"; action = "exec, light -U 5"; description = "Screen dimmer"; };
-
-        # ── Peripheral brightness (OpenRGB) ──
-        peripheralBrightnessUp = { key = "XF86KbdBrightnessUp"; action = "exec, openrgb --brightness +10"; description = "Peripherals brighter"; };
-        peripheralBrightnessDown = { key = "XF86KbdBrightnessDown"; action = "exec, openrgb --brightness -10"; description = "Peripherals dimmer"; };
-
-        # ── Media ──
+        # `light` is not installed on this host; `brightnessctl` is.
+        brightnessUp = { key = "XF86MonBrightnessUp"; action = "exec, brightnessctl set 5%+"; description = "Brighter"; };
+        brightnessDown = { key = "XF86MonBrightnessDown"; action = "exec, brightnessctl set 5%-"; description = "Dimmer"; };
         mediaPlay = { key = "XF86AudioPlay"; action = "exec, playerctl play-pause"; description = "Play/pause"; };
         mediaNext = { key = "XF86AudioNext"; action = "exec, playerctl next"; description = "Next track"; };
         mediaPrev = { key = "XF86AudioPrev"; action = "exec, playerctl previous"; description = "Previous track"; };
-
-        # ── Screenshot ──
-        screenshotClip = { key = "print"; action = "exec, grimblast --notify copy area"; description = "Screenshot → clipboard"; };
-        screenshotEdit = { key = "shift + print"; action = "exec, grimblast save area - | swappy -f -"; description = "Screenshot → editor"; };
-
-        # ── Help ──
-        help = { key = "super + slash"; action = "exec, vogix-modes-global"; description = "Show keybindings"; };
-
-        # ── System console (fullscreen tmux overlay, available everywhere) ──
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "Toggle system console"; };
-
-        # ── Desktop mode entry ──
-        enterDesktop = { key = "Scroll_Lock"; action = "submap, desktop"; description = "Enter desktop mode (CapsLock tap)"; };
-        enterDesktopFallback = { key = "super + escape"; action = "submap, desktop"; description = "Enter desktop mode"; };
-      };
-    };
-
-    # Desktop mode: manage environment with single keys
-    desktop = {
-      enter = null;
-      exit = "escape";
-      bindings = {
-        focusLeft = { key = "h"; action = "movefocus, l"; description = "Focus left"; };
-        focusDown = { key = "j"; action = "movefocus, d"; description = "Focus down"; };
-        focusUp = { key = "k"; action = "movefocus, u"; description = "Focus up"; };
-        focusRight = { key = "l"; action = "movefocus, r"; description = "Focus right"; };
-        focusLeftArrow = { key = "left"; action = "movefocus, l"; description = "Focus left"; };
-        focusDownArrow = { key = "down"; action = "movefocus, d"; description = "Focus down"; };
-        focusUpArrow = { key = "up"; action = "movefocus, u"; description = "Focus up"; };
-        focusRightArrow = { key = "right"; action = "movefocus, r"; description = "Focus right"; };
-
-        workspace1 = { key = "1"; action = "workspace, 1"; description = "Workspace 1"; };
-        workspace2 = { key = "2"; action = "workspace, 2"; description = "Workspace 2"; };
-        workspace3 = { key = "3"; action = "workspace, 3"; description = "Workspace 3"; };
-        workspace4 = { key = "4"; action = "workspace, 4"; description = "Workspace 4"; };
-        workspace5 = { key = "5"; action = "workspace, 5"; description = "Workspace 5"; };
-        workspace6 = { key = "6"; action = "workspace, 6"; description = "Workspace 6"; };
-        workspace7 = { key = "7"; action = "workspace, 7"; description = "Workspace 7"; };
-        workspace8 = { key = "8"; action = "workspace, 8"; description = "Workspace 8"; };
-        workspace9 = { key = "9"; action = "workspace, 9"; description = "Workspace 9"; };
-        workspace10 = { key = "0"; action = "workspace, 10"; description = "Workspace 10"; };
-        workspaceNext = { key = "n"; action = "workspace, +1"; description = "Next workspace"; };
-        workspacePrev = { key = "p"; action = "workspace, -1"; description = "Previous workspace"; };
-
-        closeWindow = { key = "q"; action = "killactive,"; description = "Close window"; };
-        fullscreen = { key = "f"; action = "fullscreen"; description = "Fullscreen"; };
-        toggleFloat = { key = "y"; action = "togglefloating,"; description = "Float (yank from tiling)"; };
-        toggleSplit = { key = "o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
-
-        openTerminal = { key = "t"; action = "exec, $TERMINAL"; description = "Terminal"; };
-        openBrowser = { key = "e"; action = "exec, $BROWSER"; description = "Browser"; };
-        openLauncher = { key = "space"; action = "exec, walker -p 'Start…' -w 1000 -h 700"; description = "Launcher"; };
-
-        dismissNotification = { key = "d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
-        dismissAll = { key = "shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all"; };
-
-        lock = { key = "x"; action = "exec, hyprlock"; description = "Lock screen"; };
-
-        enterArrange = { key = "a"; action = "submap, arrange"; description = "Arrange mode"; };
-        enterTheme = { key = "v"; action = "submap, theme"; description = "Theme mode (vogix)"; };
-
-        # ── Console + history ──
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
-        undoSession = { key = "u"; action = "exec, vogix session undo"; description = "Undo last window change"; };
-
-        help = { key = "slash"; action = "exec, vogix-modes-desktop"; description = "Show keybindings"; };
-
-        exitDesktop = { key = "Scroll_Lock"; action = "submap, reset"; description = "Back to app mode"; };
-      };
-    };
-
-    # Arrange mode: move + resize windows
-    arrange = {
-      enter = "a";
-      exit = "escape";
-      bindings = {
-        moveLeft = { key = "h"; action = "movewindow, l"; description = "Move left"; };
-        moveDown = { key = "j"; action = "movewindow, d"; description = "Move down"; };
-        moveUp = { key = "k"; action = "movewindow, u"; description = "Move up"; };
-        moveRight = { key = "l"; action = "movewindow, r"; description = "Move right"; };
-        moveLeftArrow = { key = "left"; action = "movewindow, l"; description = "Move left"; };
-        moveDownArrow = { key = "down"; action = "movewindow, d"; description = "Move down"; };
-        moveUpArrow = { key = "up"; action = "movewindow, u"; description = "Move up"; };
-        moveRightArrow = { key = "right"; action = "movewindow, r"; description = "Move right"; };
-
-        resizeLeft = { key = "shift + h"; action = "resizeactive, -30 0"; description = "Shrink width"; repeat = true; };
-        resizeDown = { key = "shift + j"; action = "resizeactive, 0 30"; description = "Grow height"; repeat = true; };
-        resizeUp = { key = "shift + k"; action = "resizeactive, 0 -30"; description = "Shrink height"; repeat = true; };
-        resizeRight = { key = "shift + l"; action = "resizeactive, 30 0"; description = "Grow width"; repeat = true; };
-        resizeLeftArrow = { key = "shift + left"; action = "resizeactive, -30 0"; description = "Shrink width"; repeat = true; };
-        resizeDownArrow = { key = "shift + down"; action = "resizeactive, 0 30"; description = "Grow height"; repeat = true; };
-        resizeUpArrow = { key = "shift + up"; action = "resizeactive, 0 -30"; description = "Shrink height"; repeat = true; };
-        resizeRightArrow = { key = "shift + right"; action = "resizeactive, 30 0"; description = "Grow width"; repeat = true; };
-
-        sendToWorkspace1 = { key = "1"; action = "movetoworkspace, 1"; description = "Send to workspace 1"; };
-        sendToWorkspace2 = { key = "2"; action = "movetoworkspace, 2"; description = "Send to workspace 2"; };
-        sendToWorkspace3 = { key = "3"; action = "movetoworkspace, 3"; description = "Send to workspace 3"; };
-        sendToWorkspace4 = { key = "4"; action = "movetoworkspace, 4"; description = "Send to workspace 4"; };
-        sendToWorkspace5 = { key = "5"; action = "movetoworkspace, 5"; description = "Send to workspace 5"; };
-        sendToWorkspace6 = { key = "6"; action = "movetoworkspace, 6"; description = "Send to workspace 6"; };
-        sendToWorkspace7 = { key = "7"; action = "movetoworkspace, 7"; description = "Send to workspace 7"; };
-        sendToWorkspace8 = { key = "8"; action = "movetoworkspace, 8"; description = "Send to workspace 8"; };
-        sendToWorkspace9 = { key = "9"; action = "movetoworkspace, 9"; description = "Send to workspace 9"; };
-        sendToWorkspace10 = { key = "0"; action = "movetoworkspace, 10"; description = "Send to workspace 10"; };
-
-        fullscreen = { key = "f"; action = "fullscreen"; description = "Fullscreen"; };
-        toggleFloat = { key = "y"; action = "togglefloating,"; description = "Float"; };
-        toggleSplit = { key = "o"; action = "layoutmsg, togglesplit"; description = "Toggle split"; };
-        swap = { key = "s"; action = "swapnext,"; description = "Swap with neighbor"; };
-
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
-        help = { key = "slash"; action = "exec, vogix-modes-arrange"; description = "Show keybindings"; };
-      };
-    };
-
-    # Theme mode: vogix appearance switching
-    theme = {
-      enter = "v";
-      exit = "escape";
-      bindings = {
-        nextTheme = { key = "n"; action = "exec, vogix -t next"; description = "Next theme"; };
-        prevTheme = { key = "p"; action = "exec, vogix -t prev"; description = "Previous theme"; };
-        darker = { key = "d"; action = "exec, vogix -v darker"; description = "Darker variant"; };
-        lighter = { key = "l"; action = "exec, vogix -v lighter"; description = "Lighter variant"; };
-        cycleScheme = { key = "s"; action = "exec, vogix -s next"; description = "Cycle scheme"; };
-
-        screenBrighterTheme = { key = "XF86MonBrightnessUp"; action = "exec, vogix -v lighter"; description = "Lighter variant"; };
-        screenDimmerTheme = { key = "XF86MonBrightnessDown"; action = "exec, vogix -v darker"; description = "Darker variant"; };
-        peripheralBrighterTheme = { key = "XF86KbdBrightnessUp"; action = "exec, openrgb --brightness +10"; description = "Peripherals brighter"; };
-        peripheralDimmerTheme = { key = "XF86KbdBrightnessDown"; action = "exec, openrgb --brightness -10"; description = "Peripherals dimmer"; };
-
-        showStatus = { key = "space"; action = "exec, vogix status | xargs notify-send 'Vogix'"; description = "Show current theme"; };
-
-        console = { key = "F12"; action = "exec, hyprctl dispatch togglespecialworkspace console; if hyprctl monitors -j | grep -q special:console; then hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console; hyprctl dispatch submap console; else hyprctl dispatch submap reset; fi"; description = "System console"; };
-        help = { key = "slash"; action = "exec, vogix-modes-theme"; description = "Show keybindings"; };
-      };
-    };
-    # Console mode: system terminal overlay (tmux)
-    # Keys pass through to tmux — only F12/Escape exit the mode
-    # NO catchall — unlike other modes, unbound keys go to the terminal
-    console = {
-      enter = null;
-      # No exit key — F12 and Escape are handled in bindings (they need to close the workspace too)
-      # Two F12 bindings execute sequentially: toggle workspace first (triggers animation), then exit submap
-      bindings = {
-        exitConsoleA = { key = "F12"; action = "togglespecialworkspace, console"; description = "Close console"; };
-        exitConsoleB = { key = "F12"; action = "submap, reset"; description = "Return to app mode"; };
       };
     };
   };

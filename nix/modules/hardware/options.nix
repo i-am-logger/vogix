@@ -68,6 +68,32 @@ in
           description = "Enable udev rules for hidraw access and DFU flashing";
         };
       };
+
+      colorSlot = mkOption {
+        type = types.str;
+        default = "base0D";
+        description = ''
+          Vogix palette slot used to colour the keyboard backlight.
+          Defaults to base0D (link/accent) — bright and legible across themes.
+          The previous default base01 (surface) was nearly invisible on dark variants
+          because the keycaps absorb most of the LED.
+          See vogix16.nix for the semantic slot map.
+        '';
+      };
+    };
+
+    dram-rgb = {
+      enable = mkEnableOption "addressable RGB on the DDR5 memory modules (ENE DRAM controllers) via OpenRGB's SMBus (i2c) interface";
+
+      colorSlot = mkOption {
+        type = types.str;
+        default = "base01";
+        description = ''
+          Vogix palette slot used to colour the DRAM RGB.
+          Defaults to base01 (surface) for a subtle, monochromatic base.
+          See vogix16.nix for the semantic slot map.
+        '';
+      };
     };
 
     themeApply = mkOption {

@@ -52,7 +52,7 @@ When tests pass, you'll see:
 
 === Test 2: Check Status Command ===
 ✓ Status command works
-Output: Current theme: aikido
+Output: Current theme: yoga
 Current variant: dark
 
 === Test 7: Variant Navigation ===

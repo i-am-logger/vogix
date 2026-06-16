@@ -23,38 +23,44 @@ Themes in the vogix16-themes repository use TOML format with one file per varian
 
 ```
 vogix16-themes/
-└── themes/
-    └── catppuccin/
-        ├── latte.toml      # Light variant
-        ├── frappe.toml     # Dark variant
-        ├── macchiato.toml  # Darker variant
-        └── mocha.toml      # Darkest variant
+├── yoga/           # Western convention: success green, danger red
+│   ├── day.toml    # light variant
+│   └── night.toml  # dark variant
+├── aikido/         # Japanese convention: success red, danger green
+│   ├── day.toml
+│   └── night.toml
+└── ...
 ```
 
 Each variant file:
 
 ```toml
-# themes/catppuccin/mocha.toml
+# vogix16-themes/yoga/night.toml — a Western theme (success green, danger red)
 polarity = "dark"
 
 [colors]
-base00 = "#1e1e2e"  # Background
-base01 = "#181825"  # Surface
-base02 = "#313244"  # Selection
-base03 = "#45475a"  # Comments
-base04 = "#585b70"  # Borders
-base05 = "#cdd6f4"  # Text
-base06 = "#f5e0dc"  # Headings
-base07 = "#b4befe"  # Bright
+# Monochromatic ramp (background → foreground); single-hue by design
+base00 = "#262626"  # background
+base01 = "#333333"  # background_surface
+base02 = "#3b3028"  # background_selection
+base03 = "#54433a"  # foreground_comment
+base04 = "#6c5d53"  # foreground_border
+base05 = "#a29990"  # foreground_text
+base06 = "#cbc3bc"  # foreground_heading
+base07 = "#f6f5f0"  # foreground_bright
 
-base08 = "#f38ba8"  # Danger
-base09 = "#fab387"  # Warning
-base0A = "#f9e2af"  # Notice
-base0B = "#a6e3a1"  # Success
-base0C = "#94e2d5"  # Active
-base0D = "#89b4fa"  # Link
-base0E = "#cba6f7"  # Highlight
-base0F = "#f2cdcd"  # Special
+# Functional accents. The SLOT fixes the role (base08 is ALWAYS success); the
+# HUE is the theme's editorial choice — Western themes paint success green and
+# danger red, while a Japanese theme (aikido) does the reverse. Same roles,
+# different hues. See the vogix16 design-system doc.
+base08 = "#4d5645"  # success
+base09 = "#835538"  # warning
+base0A = "#bfa46f"  # notice
+base0B = "#d7503c"  # danger
+base0C = "#8694a8"  # active
+base0D = "#658fbd"  # link
+base0E = "#896ea4"  # highlight
+base0F = "#7a5c42"  # special
 ```
 
 ### Theme Structure
@@ -183,14 +189,14 @@ Theme processing happens entirely at **Nix build time**, not at runtime:
 │   ├── btop/themes/vogix.theme
 │   └── console/palette
 ├── yyyy-vogix-base16-catppuccin-latte/
-├── zzzz-vogix-vogix16-aikido-dark/
+├── zzzz-vogix-vogix16-yoga-dark/
 └── ...
 
 ~/.local/share/vogix/
 └── themes/
     ├── base16-catppuccin-mocha -> /nix/store/xxxx-...
     ├── base16-catppuccin-latte -> /nix/store/yyyy-...
-    ├── vogix16-aikido-dark -> /nix/store/zzzz-...
+    ├── vogix16-yoga-dark -> /nix/store/zzzz-...
     └── ...
 
 ~/.local/state/vogix/

@@ -130,11 +130,11 @@ fn test_variant_cache_path() {
     let config = create_test_config(&temp_dir);
     let cache = ThemeCache::from_config(&config).unwrap();
 
-    let path = cache.variant_cache_path(&Scheme::Vogix16, "aikido", "night");
+    let path = cache.variant_cache_path(&Scheme::Vogix16, "yoga", "night");
 
     assert!(path.to_string_lossy().contains("test-hash-123"));
     assert!(path.to_string_lossy().contains("vogix16"));
-    assert!(path.to_string_lossy().contains("aikido"));
+    assert!(path.to_string_lossy().contains("yoga"));
     assert!(path.to_string_lossy().contains("night"));
 }
 

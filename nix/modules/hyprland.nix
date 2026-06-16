@@ -22,25 +22,28 @@ let
   appearance = appearanceModule.mkHyprlandConfig acfg;
   behavior = behaviorModule.mkHyprlandConfig behaviorCfg;
 
-  # Apply mkDefault recursively to all leaf values
+  # Apply mkDefault to all leaf values so mynixos/user can override
   mkDefaultAttrs = attrs:
-    lib.mapAttrsRecursive
-      (_path: value:
-        if builtins.isList value then mkDefault value
-        else if builtins.isAttrs value then value
-        else mkDefault value
-      )
-      attrs;
+    lib.mapAttrsRecursive (_path: mkDefault) attrs;
 
 in
 {
-  config = mkIf (cfg.enable && (config.wayland.windowManager.hyprland.enable or false)) {
-    wayland.windowManager.hyprland = {
-      settings = lib.mkMerge [
-        (mkDefaultAttrs appearance.settings)
-        (mkDefaultAttrs behavior.settings)
+  config = lib.mkMerge [
+    # Warn if vogix is enabled but Hyprland is not
+    (mkIf (cfg.enable && !(config.wayland.windowManager.hyprland.enable or false)) {
+      warnings = [
+        "programs.vogix is enabled but wayland.windowManager.hyprland is not — appearance/behavior settings will not be applied"
       ];
-      extraConfig = mkAfter (behavior.extraConfig or "");
-    };
-  };
+    })
+
+    (mkIf (cfg.enable && (config.wayland.windowManager.hyprland.enable or false)) {
+      wayland.windowManager.hyprland = {
+        settings = lib.mkMerge [
+          (mkDefaultAttrs appearance.settings)
+          (mkDefaultAttrs behavior.settings)
+        ];
+        extraConfig = mkAfter (behavior.extraConfig or "");
+      };
+    })
+  ];
 }

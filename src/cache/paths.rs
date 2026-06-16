@@ -85,9 +85,9 @@ mod tests {
     #[test]
     fn test_variant_cache_path_structure() {
         let cache_dir = PathBuf::from("/cache");
-        let path = variant_cache_path(&cache_dir, "abc123", &Scheme::Vogix16, "aikido", "night");
+        let path = variant_cache_path(&cache_dir, "abc123", &Scheme::Vogix16, "yoga", "night");
 
-        assert_eq!(path, PathBuf::from("/cache/abc123/vogix16/aikido/night"));
+        assert_eq!(path, PathBuf::from("/cache/abc123/vogix16/yoga/night"));
     }
 
     #[test]
@@ -114,8 +114,8 @@ mod tests {
             ansi16: PathBuf::from("/themes/ansi16"),
         };
 
-        let path = theme_variant_path(&sources, &Scheme::Vogix16, "aikido", "night");
-        assert_eq!(path, PathBuf::from("/themes/vogix16/aikido/night.toml"));
+        let path = theme_variant_path(&sources, &Scheme::Vogix16, "yoga", "night");
+        assert_eq!(path, PathBuf::from("/themes/vogix16/yoga/night.toml"));
     }
 
     #[test]

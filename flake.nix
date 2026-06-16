@@ -11,24 +11,12 @@
       url = "github:cachix/devenv";
       inputs = {
         nixpkgs.follows = "nixpkgs";
-        cachix.follows = "crate2nix/cachix";
-        flake-compat.follows = "crate2nix/flake-compat";
-        flake-parts.follows = "crate2nix/flake-parts";
-        git-hooks.inputs.gitignore.follows = "crate2nix/pre-commit-hooks/gitignore";
-        crate2nix.follows = "crate2nix";
         rust-overlay.follows = "rust-overlay";
       };
     };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    crate2nix = {
-      url = "github:i-am-logger/crate2nix/fix/remove-crate2nix-stable-input";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        cachix.inputs.nixpkgs.follows = "nixpkgs";
-      };
     };
 
     # Base16/Base24 color schemes - forked with directory-based structure
@@ -68,7 +56,6 @@
     { self
     , nixpkgs
     , home-manager
-    , devenv
     , ...
     }@inputs:
     let
@@ -101,19 +88,19 @@
             inherit system;
             config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "vogix" ];
           };
-          # Use mkConfig but only access outputs, not shell
-          devenvOutputs =
-            (devenv.lib.mkConfig {
-              inherit inputs pkgs;
-              modules = [ ./devenv.nix ];
-            }).outputs;
-          # Wrap devenv output to add shell completions (devenv builder doesn't support postInstall)
-          vogix = pkgs.runCommand "vogix-${devenvOutputs.vogix.version or "unknown"}"
+          # Built with nixpkgs' standard buildRustPackage (nix/packages/vogix.nix).
+          # cargo's vendoring fetches the whole praxis repo, so its
+          # `version.workspace = true` resolves against the workspace root — which
+          # is why this replaced the devenv/crate2nix build (crate2nix's per-crate
+          # vendor could not find a workspace root for the inherited version).
+          vogix-unwrapped = pkgs.callPackage ./nix/packages/vogix.nix { };
+          # Wrap to add shell completions (kept out of the build derivation).
+          vogix = pkgs.runCommand "vogix-${vogix-unwrapped.version}"
             {
               nativeBuildInputs = [ pkgs.installShellFiles ];
-              meta = devenvOutputs.vogix.meta or { };
+              inherit (vogix-unwrapped) meta;
             } ''
-            cp -r ${devenvOutputs.vogix} $out
+            cp -r ${vogix-unwrapped} $out
             chmod -R u+w $out
             installShellCompletion --cmd vogix \
               --bash <($out/bin/vogix completions bash) \
@@ -121,8 +108,7 @@
               --fish <($out/bin/vogix completions fish)
           '';
         in
-        devenvOutputs
-        // {
+        {
           inherit vogix;
           default = vogix;
         }
@@ -130,7 +116,7 @@
 
       # Overlay to make vogix available in pkgs
       overlays.default = _final: prev: {
-        inherit (self.packages.${prev.system}) vogix;
+        inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix;
       };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
@@ -210,12 +196,19 @@
 
           # Template architecture tests
           templates = import ./nix/vm/tests/templates.nix testArgs;
+
+          # Input ENGINE end-to-end (vogix is the sole input engine): runs the
+          # real `vogix input run` against a virtual keyboard + a mock compositor
+          # socket and asserts the full daily-driver UX — re-emit/typing, the
+          # Super→Ctrl remap, caps tap-sticky / hold-momentary, sub-mode routing,
+          # exitAfter, the Esc safety-net, repeat, and the single-instance guard.
+          input-engine = import ./nix/vm/tests/input-engine.nix testArgs;
         }
       );
 
       # Development shells - using devenv
       # Note: Use 'devenv shell' for development instead of 'nix develop'
-      # devShells commented out due to Windows dependencies issue in crate2nix evaluation
+      # (devShells kept commented out; the dev environment lives in devenv.nix)
       # devShells = forAllSystems (system:
       #   let
       #     pkgs = import nixpkgs {

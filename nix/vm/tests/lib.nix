@@ -66,7 +66,7 @@ let
 
     # Load all theme colors from Nix
     all_themes = json.loads(r"""${themesJSON}""")
-    aikido_colors = all_themes['aikido']
+    yoga_colors = all_themes['yoga']
 
     # Start the machine
     machine.start()

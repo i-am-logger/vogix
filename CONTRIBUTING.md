@@ -220,7 +220,7 @@ nix run .#vogix-vm
 
 # Inside VM
 vogix status
-vogix -t aikido -v dark  # Test theme switching
+vogix -t yoga -v dark  # Test theme switching
 ```
 
 ### 4. Document

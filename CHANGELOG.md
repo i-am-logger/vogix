@@ -202,7 +202,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic theme switching functionality
 - Dark and light variant support
 - NixOS and home-manager integration
-- Example themes (aikido, forest, matrix)
+- Example themes (yoga, forest, matrix)
 - CLI tool for runtime theme management
 - Application reload mechanism
 - Documentation for design system, architecture, and usage

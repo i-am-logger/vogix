@@ -24,14 +24,14 @@ testLib.mkTest "scheme-switching" ''
   status_before = machine.succeed("su - vogix -c 'vogix theme status'")
   print(f"Status before scheme change: {status_before}")
 
-  # Switch to base16 scheme - must specify a base16 theme since current theme (aikido) is vogix16-only
+  # Switch to base16 scheme - must specify a base16 theme since current theme (yoga) is vogix16-only
   machine.succeed("su - vogix -c 'vogix theme set -s base16 -t dracula'")
   status_after = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "base16" in status_after.lower(), "Scheme not updated to base16!"
   print("✓ Scheme switched to base16")
 
   # Switch back to vogix16 - must specify a vogix16 theme
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   status_back = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "vogix16" in status_back.lower(), "Scheme not switched back to vogix16!"
   print("✓ Scheme switched back to vogix16")
@@ -39,7 +39,7 @@ testLib.mkTest "scheme-switching" ''
   print("\n=== Test: Cross-Scheme Theme Switching (vogix16 → base16) ===")
   # Console reload may fail in VM (no real TTY), which is expected behavior
 
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   status_before = machine.succeed("su - vogix -c 'vogix theme status'")
   print(f"Before: {status_before.strip()}")
 
@@ -106,8 +106,8 @@ testLib.mkTest "scheme-switching" ''
       if "[INFO" in switch_output and "Applied:" in switch_output:
           print("✓ CLI shows [INFO] when all reloads succeed (correct)")
 
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
-  print("✓ Switched back to vogix16/aikido")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
+  print("✓ Switched back to vogix16/yoga")
 
   print("\n=== Test: Full Scheme Switching Cycle ===")
 
@@ -134,7 +134,7 @@ testLib.mkTest "scheme-switching" ''
       print(f"    ✓ Switched to {to_scheme}")
       return True
 
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
 
   # Test vogix16 -> base16
   base16_themes_to_try = ["dracula", "gruvbox-dark-medium", "nord", "monokai"]
@@ -148,26 +148,26 @@ testLib.mkTest "scheme-switching" ''
       print("✓ vogix16 -> base16 works!")
 
       # Test back to vogix16
-      if test_scheme_switch("base16", "vogix16", "aikido"):
+      if test_scheme_switch("base16", "vogix16", "yoga"):
           print("✓ base16 -> vogix16 (full circle) works!")
   else:
       print("⚠ No base16 themes available for testing")
 
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t aikido -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   print("\n✓ Scheme switching test complete!")
 
   print("\n=== Test: Console Palette Format Validation ===")
 
-  # Check aikido (vogix16) palette - aikido uses 'night' for dark polarity
-  aikido_palette = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/aikido-night/console/palette'")
-  print(f"Aikido palette (first 200 chars): {aikido_palette[:200]}")
+  # Check yoga (vogix16) palette - yoga uses 'night' for dark polarity
+  yoga_palette = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/yoga-night/console/palette'")
+  print(f"Yoga palette (first 200 chars): {yoga_palette[:200]}")
 
-  aikido_lines = [l for l in aikido_palette.strip().split('\n') if l.strip()]
-  assert len(aikido_lines) == 16, f"FAILED: Aikido palette has {len(aikido_lines)} lines, expected 16"
-  for i, line in enumerate(aikido_lines):
-      assert line.startswith('#'), f"FAILED: Aikido palette line {i} doesn't start with #: {line}"
-      assert len(line) == 7, f"FAILED: Aikido palette line {i} is not #RRGGBB format: {line}"
-  print("✓ Aikido (vogix16) palette has correct format (16 lines with # prefix)")
+  yoga_lines = [l for l in yoga_palette.strip().split('\n') if l.strip()]
+  assert len(yoga_lines) == 16, f"FAILED: Yoga palette has {len(yoga_lines)} lines, expected 16"
+  for i, line in enumerate(yoga_lines):
+      assert line.startswith('#'), f"FAILED: Yoga palette line {i} doesn't start with #: {line}"
+      assert len(line) == 7, f"FAILED: Yoga palette line {i} is not #RRGGBB format: {line}"
+  print("✓ Yoga (vogix16) palette has correct format (16 lines with # prefix)")
 
   # Check catppuccin (base16) palette - tests YAML inline comment stripping
   catppuccin_palette_path = f"{vogix_themes}/catppuccin-frappe/console/palette"

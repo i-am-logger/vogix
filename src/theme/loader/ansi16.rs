@@ -284,8 +284,8 @@ red = "#ff5555"
         assert_eq!(colors.get("color01"), Some(&"#ff5555".to_string()));
 
         // Missing colors should not be in the map
-        assert!(colors.get("color02").is_none());
-        assert!(colors.get("cursor_bg").is_none());
+        assert!(!colors.contains_key("color02"));
+        assert!(!colors.contains_key("cursor_bg"));
     }
 
     #[test]

@@ -7,7 +7,7 @@
 //! - Wezterm terminal state (pane CWD, running command)
 //! - Brave browser (relies on built-in session restore)
 
-use crate::errors::Result;
+use crate::errors::{Result, VogixError};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -41,22 +41,22 @@ struct Session {
     terminals: Vec<WeztermPane>,
 }
 
-fn session_dir() -> PathBuf {
+fn session_dir() -> Result<PathBuf> {
     let state_dir = dirs::state_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("state")))
-        .expect("could not determine state directory");
-    state_dir.join("vogix").join("sessions")
+        .ok_or_else(|| VogixError::Config("could not determine state directory".into()))?;
+    Ok(state_dir.join("vogix").join("sessions"))
 }
 
-pub fn session_path(name: &str) -> PathBuf {
-    session_dir().join(format!("{}.json", name))
+pub fn session_path(name: &str) -> Result<PathBuf> {
+    Ok(session_dir()?.join(format!("{}.json", name)))
 }
 
 const MAX_AUTOSAVE_STACK: usize = 20;
 
 /// Push an autosave snapshot onto the stack (rotate old ones)
 fn push_autosave_stack() {
-    let dir = session_dir();
+    let dir = session_dir().unwrap_or_else(|_| PathBuf::from("/tmp/vogix/sessions"));
     // Rotate: autosave-19 → delete, autosave-18 → autosave-19, ..., autosave → autosave-1
     for i in (1..MAX_AUTOSAVE_STACK).rev() {
         let from = dir.join(format!("autosave-{}.json", i));
@@ -232,12 +232,15 @@ pub fn handle_session_save(name: &str) -> Result<()> {
 
     let session = Session { windows, terminals };
 
-    let dir = session_dir();
+    let dir = session_dir()?;
     fs::create_dir_all(&dir)?;
 
-    let path = session_path(name);
+    let path = session_path(name)?;
     let json = serde_json::to_string_pretty(&session)?;
-    fs::write(&path, json)?;
+    // Atomic write: tmp + rename prevents corruption on concurrent invocations
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, &json)?;
+    fs::rename(&tmp, &path)?;
 
     info!(
         "Saved session '{}': {} windows, {} terminals",
@@ -258,7 +261,7 @@ pub fn handle_session_restore_file(file_path: &str, dry_run: bool) -> Result<()>
 }
 
 pub fn handle_session_restore(name: &str, dry_run: bool) -> Result<()> {
-    let path = session_path(name);
+    let path = session_path(name)?;
     if !path.exists() {
         return Err(format!("No saved session '{}' found at {:?}", name, path).into());
     }
@@ -374,7 +377,7 @@ fn restore_from_path(path: &Path, label: &str, dry_run: bool) -> Result<()> {
 }
 
 pub fn handle_session_undo() -> Result<()> {
-    let dir = session_dir();
+    let dir = session_dir()?;
     let prev = dir.join("autosave-1.json");
     if !prev.exists() {
         return Err("No previous session state to undo to".to_string().into());
@@ -406,7 +409,7 @@ pub fn handle_session_undo() -> Result<()> {
 }
 
 pub fn handle_session_list() -> Result<()> {
-    let dir = session_dir();
+    let dir = session_dir()?;
     if !dir.exists() {
         info!("No saved sessions");
         return Ok(());
@@ -467,7 +470,7 @@ mod tests {
             title: "⠂ vogix-keybindings-modal-system".to_string(),
             cwd: "file://yoga/etc/nixos/".to_string(),
         };
-        let (cmd, args) = pane_launch_command(&pane);
+        let (cmd, _args) = pane_launch_command(&pane);
         assert_eq!(cmd, "wezterm");
         // Should not launch claude for a title containing "vogix" but not "claude"
     }
@@ -662,7 +665,7 @@ mod tests {
         assert!(restored.windows[0].floating);
         assert_eq!(restored.windows[0].size, [1920, 1080]);
         assert_eq!(restored.windows[0].fullscreen, 1);
-        assert_eq!(restored.windows[1].floating, false);
+        assert!(!restored.windows[1].floating);
         assert_eq!(restored.terminals[0].pane_id, 42);
         assert_eq!(restored.terminals[1].title, "✳ lumen");
     }
@@ -670,8 +673,8 @@ mod tests {
     // Property: MAX_AUTOSAVE_STACK is reasonable
     #[test]
     fn test_max_autosave_stack_bounds() {
-        assert!(MAX_AUTOSAVE_STACK > 0);
-        assert!(MAX_AUTOSAVE_STACK <= 100); // Don't keep too many
+        // Compile-time bound check (the value is a const): keep some, not too many.
+        const _: () = assert!(MAX_AUTOSAVE_STACK > 0 && MAX_AUTOSAVE_STACK <= 100);
     }
 
     // Property: pane_launch_command always returns wezterm with --cwd

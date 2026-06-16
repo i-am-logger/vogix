@@ -1,14 +1,23 @@
-# Behavior module tests
+# Behavior module tests — engine-resolved `vogix` paradigm + overlay
 #
 # Run with: nix eval --impure -f nix/modules/behavior/tests.nix --apply 'f: f {}'
 # Returns: { passed = <count>; failed = []; } on success
-# Throws on failure with details
+# Throws on failure with details (every assertion is FORCED — see `allTests`).
+#
+# Scope after the flip: defaults.nix no longer encodes the WM-navigation. It
+# carries only the user's OVERLAY (launch/system/media) plus the paradigm
+# SELECTION (`paradigm = "vogix"`); the engine resolves the selection into the
+# nav modes + mode graph (guarded byte-for-byte by the Rust side,
+# `src/input/catalog.rs::engine_resolved_vogix_equals_the_live_layout`). So these
+# tests guard the NIX contract: the overlay content, and that `mkSchemaJSON`
+# emits {paradigm, overlay} with NO modeGraph (its absence is what triggers
+# engine resolution) and no nav leak.
 { pkgs ? import <nixpkgs> { }
 , lib ? pkgs.lib
 }:
 
 let
-  inherit (lib) filterAttrs mapAttrsToList;
+  inherit (lib) mapAttrsToList;
 
   kbModule = import ./. { inherit lib pkgs; };
   inherit (kbModule) defaults;
@@ -26,57 +35,108 @@ let
     if lib.hasInfix needle haystack then { inherit name; passed = true; }
     else throw "FAILED: ${name} — '${needle}' not found in output";
 
-  # ── Test data ──
-  # Use mkGeneratorConfig to build the flat config generators expect
-  # (transforms app→normal, flattens keybindings.*)
-  fullConfig = kbModule.mkGeneratorConfig defaults;
+  assertExcludes = name: needle: haystack:
+    if !(lib.hasInfix needle haystack) then { inherit name; passed = true; }
+    else throw "FAILED: ${name} — '${needle}' unexpectedly present in output";
 
+  # ── Test data ──
+  fullConfig = kbModule.mkGeneratorConfig defaults;
   hyprConfig = kbModule.mkHyprlandConfig defaults;
-  kanataConfig = kbModule.mkKanataConfig defaults;
-  helpScripts = kbModule.mkHelpScripts defaults;
+  schemaJSON = kbModule.mkSchemaJSON defaults;
+
+  # The OVERLAY (launch/system/media). The WM-nav is NOT here — the engine
+  # resolves it from `keybindings.paradigm`.
+  app = defaults.modes.app.bindings;
+  appBinds = builtins.attrValues app;
+  hasAction = needle: builtins.any (b: lib.hasInfix needle (b.action or "")) appBinds;
 
   # ── Tests ──
 
   tests = [
-    # === Defaults (raw structure) ===
-    (check "defaults.modes has app mode"
+    # === Mode graph — the overlay root only (a SINGLE flat `app` mode) ===
+    (check "defaults.modeGraph exists"
+      (defaults ? modeGraph))
+
+    (assertEq "modeGraph root is app"
+      "app"
+      defaults.modeGraph.root)
+
+    (assertEq "modeGraph has exactly 1 mode (app — the overlay root)"
+      1
+      (builtins.length (builtins.attrNames defaults.modeGraph.modes)))
+
+    (check "modeGraph.app has null parent (root)"
+      (defaults.modeGraph.modes.app.parent == null))
+
+    (assertEq "modeGraph.app type is normal"
+      "normal"
+      defaults.modeGraph.modes.app.type)
+
+    # The paradigm's sub-modes (if any) are resolved by the engine, never here.
+    (check "modeGraph has no desktop / move / resize / console sub-modes"
+      (!(defaults.modeGraph.modes ? desktop)
+        && !(defaults.modeGraph.modes ? move)
+        && !(defaults.modeGraph.modes ? resize)
+        && !(defaults.modeGraph.modes ? console)))
+
+    # === Modes ===
+    (check "defaults.modes has the app mode"
       (defaults.modes ? app))
 
-    (check "defaults.modes has desktop mode"
-      (defaults.modes ? desktop))
+    (check "defaults.modes has ONLY the app mode"
+      (builtins.attrNames defaults.modes == [ "app" ]))
 
-    (check "defaults.modes has arrange mode"
-      (defaults.modes ? arrange))
+    # === Keybindings — paradigm SELECTION, engine owns the catalog ===
+    (assertEq "paradigm is the house default (vogix)"
+      "vogix"
+      defaults.keybindings.paradigm)
 
-    (check "defaults.modes has theme mode"
-      (defaults.modes ? theme))
+    (check "the `paradigms` catalog is GONE (the engine owns it now)"
+      (!(defaults.keybindings ? paradigms)))
 
-    (check "defaults.keybindings.layers has desktopToggle"
-      (defaults.keybindings.layers ? desktopToggle))
-
-    (check "defaults._superCtrlRemaps has copy"
-      (defaults._superCtrlRemaps ? copy))
+    (check "no CapsLock / dual-role interaction layer"
+      (defaults.keybindings.layers == { }))
 
     (check "defaults.keybindings.mouse has moveWindow"
       (defaults.keybindings.mouse ? moveWindow))
 
-    # === Generator config (flat structure via mkGeneratorConfig) ===
-    (check "fullConfig.modes has normal (renamed from app)"
-      (fullConfig.modes ? normal))
+    # === Schema emission — the FLIP contract (mirror of catalog.rs) ===
+    (assertContains "rendered schema selects the vogix paradigm"
+      ''"paradigm":"vogix"''
+      schemaJSON)
 
-    (check "fullConfig has universal remaps"
-      (fullConfig ? universal))
+    (assertExcludes "rendered schema OMITS modeGraph (its absence triggers engine resolution)"
+      "modeGraph"
+      schemaJSON)
+
+    (assertExcludes "rendered schema carries no inline remap (the engine resolves vogix→copy-paste)"
+      "copy-paste"
+      schemaJSON)
+
+    (assertExcludes "rendered schema is NOT modal — no submap entry"
+      "submap"
+      schemaJSON)
+
+    # The overlay is the user's own non-paradigm keys — NOT the WM nav.
+    (assertExcludes "no WM-nav (movefocus) leaks into the emitted overlay"
+      "movefocus"
+      schemaJSON)
+
+    (assertExcludes "no WM-nav (workspace) leaks into the emitted overlay"
+      ''"workspace,''
+      schemaJSON)
+
+    # === Generator config ===
+    (check "fullConfig.modes has app (root mode)"
+      (fullConfig.modes ? app))
+
+    (check "fullConfig carries the modKey"
+      (fullConfig.modKey or null == "super"))
 
     (check "fullConfig has mouse"
       (fullConfig ? mouse))
 
-    # === Hyprland generator ===
-    (check "hyprland generates settings"
-      (hyprConfig ? settings))
-
-    (check "hyprland generates extraConfig"
-      (hyprConfig ? extraConfig))
-
+    # === Hyprland generator — the engine-OFF fallback (overlay only) ===
     (check "hyprland settings has bind"
       (hyprConfig.settings ? bind))
 
@@ -86,202 +146,100 @@ let
     (check "hyprland mainMod is SUPER"
       (hyprConfig.settings."$mainMod" == "SUPER"))
 
-    (check "hyprland has normal mode binds"
-      (builtins.length hyprConfig.settings.bind > 0))
-
     (assertEq "hyprland has 2 mouse bindings"
       2
       (builtins.length hyprConfig.settings.bindm))
 
-    # Normal mode should have workspaces + media + screenshots + launcher + terminal + help
-    (check "normal mode has >20 bindings"
-      (builtins.length hyprConfig.settings.bind > 20))
+    # The fallback is the OVERLAY (launch/system/media), NOT the full keymap —
+    # the WM nav lives in the engine. So it is small (the recovery surface), not
+    # the >40-bind layout the old encode-in-Nix scheme produced.
+    (check "the fallback is the overlay, not the full keymap (< 40 binds)"
+      (builtins.length hyprConfig.settings.bind < 40))
 
-    # Submaps
-    (assertContains "extraConfig has desktop submap"
-      "submap = desktop"
-      hyprConfig.extraConfig)
+    # Recovery: Super+Return + the launcher are enough to restart vogix-input if
+    # the engine ever fails to start.
+    (check "fallback keeps the terminal recovery bind (Super+Return)"
+      (lib.hasInfix "exec, $TERMINAL" (lib.concatStringsSep "\n" hyprConfig.settings.bind)))
 
-    (assertContains "extraConfig has arrange submap"
-      "submap = arrange"
-      hyprConfig.extraConfig)
+    (check "fallback keeps the launcher recovery bind"
+      (lib.hasInfix "LAUNCHER" (lib.concatStringsSep "\n" hyprConfig.settings.bind)))
 
-    (assertContains "extraConfig has theme submap"
-      "submap = theme"
-      hyprConfig.extraConfig)
+    # No sub-modes anywhere — the engine owns input, and there are no submaps.
+    (check "extraConfig has no desktop / move / resize submap"
+      (!(lib.hasInfix "submap = desktop" hyprConfig.extraConfig)
+        && !(lib.hasInfix "submap = move" hyprConfig.extraConfig)
+        && !(lib.hasInfix "submap = resize" hyprConfig.extraConfig)))
 
-    # Submap nesting: arrange escapes to desktop, not reset
-    (assertContains "arrange Escape goes to desktop"
-      "escape, submap, desktop"
-      hyprConfig.extraConfig)
+    (check "no submap-entry binds leak into the root binds"
+      (!(builtins.any (b: lib.hasInfix "submap" b) hyprConfig.settings.bind)))
 
-    # Desktop escape goes to reset (app mode)
-    (assertContains "desktop Escape goes to reset"
-      "escape, submap, reset"
-      hyprConfig.extraConfig)
+    (check "NO bindr anywhere"
+      (!(lib.hasInfix "bindr" hyprConfig.extraConfig)))
 
-    # Desktop mode has focus bindings
-    (assertContains "desktop has focus left"
-      "h, movefocus, l"
-      hyprConfig.extraConfig)
+    # === Overlay content — the REAL job of defaults.nix now ===
+    (assertEq "Launch: Super+Return = terminal ($TERMINAL)"
+      "exec, $TERMINAL"
+      (app.terminal.action or ""))
+    (assertEq "Launch: Super+Return key"
+      "super + return"
+      (app.terminal.key or ""))
+    (assertEq "Launch: Super+E = browser ($BROWSER)"
+      "exec, $BROWSER"
+      (app.browser.action or ""))
+    (assertEq "Launch: Super+Space = launcher (env $LAUNCHER, walker fallback)"
+      "exec, \${LAUNCHER:-walker}"
+      (app.launcher.action or ""))
 
-    # Arrange mode has move and resize
-    (assertContains "arrange has move window"
-      "h, movewindow, l"
-      hyprConfig.extraConfig)
+    # Help is now an ENGINE view — `vogix input keys` materializes from the
+    # resolved schema (this overlay + the paradigm nav), replacing the Nix script.
+    (assertEq "System: Super+/ = show keybindings (engine view)"
+      "exec, vogix input keys"
+      (app.help.action or ""))
+    (assertEq "System: Super+/ key"
+      "super + slash"
+      (app.help.key or ""))
 
-    (assertContains "arrange has resize (binde)"
-      "binde = SHIFT, h, resizeactive"
-      hyprConfig.extraConfig)
+    (assertEq "System: F12 = toggle system console"
+      "Toggle system console"
+      (app.console.description or ""))
+    (assertEq "System: Super+D = dismiss notification (makoctl)"
+      "exec, makoctl dismiss"
+      (app.dismissNotification.action or ""))
+    (assertEq "System: Super+Shift+D = dismiss all"
+      "exec, makoctl dismiss --all"
+      (app.dismissAll.action or ""))
+    (assertEq "System: Super+Z = session undo"
+      "super + z"
+      (app.undoSession.key or ""))
+    (assertEq "System: Print = screenshot → clipboard"
+      "exec, grimblast --notify copy area"
+      (app.screenshotClip.action or ""))
 
-    # Theme mode has vogix commands
-    (assertContains "theme has vogix next"
-      "vogix -t next"
-      hyprConfig.extraConfig)
+    (assertEq "Media: XF86AudioRaiseVolume = volume up"
+      "XF86AudioRaiseVolume"
+      (app.volumeUp.key or ""))
+    (assertEq "Media: XF86MonBrightnessUp = brighter"
+      "exec, brightnessctl set 5%+"
+      (app.brightnessUp.action or ""))
 
-    (assertContains "theme has vogix darker"
-      "vogix -v darker"
-      hyprConfig.extraConfig)
-
-    # Theme mode overrides brightness keys
-    (assertContains "theme overrides brightness key"
-      "XF86MonBrightnessUp, exec, vogix -v lighter"
-      hyprConfig.extraConfig)
-
-    # === Kanata generator ===
-    (check "kanata config is not null"
-      (kanataConfig != null))
-
-    (assertContains "kanata has defsrc"
-      "defsrc"
-      kanataConfig)
-
-    (assertContains "kanata has deflayer default"
-      "deflayer default"
-      kanataConfig)
-
-    (assertContains "kanata has tap-hold for capslock"
-      "tap-hold"
-      kanataConfig)
-
-    # === Help scripts ===
-    (check "help scripts generated for desktop"
-      (helpScripts ? desktop))
-
-    (check "help scripts generated for arrange"
-      (helpScripts ? arrange))
-
-    (check "help scripts generated for theme"
-      (helpScripts ? theme))
-
-    (check "desktop help is a derivation"
-      (helpScripts.desktop ? name))
-
-    (assertEq "desktop help script name"
-      "vogix-keys-desktop"
-      helpScripts.desktop.name)
-
-    # === Semantic consistency ===
-    # q = quit in desktop mode
-    (check "desktop mode has q = close"
-      ((defaults.modes.desktop.bindings.closeWindow.key or "") == "q"))
-
-    # hjkl = directional in desktop mode
-    (check "desktop mode h = focus left"
-      ((defaults.modes.desktop.bindings.focusLeft.key or "") == "h"))
-
-    # hjkl = move in arrange mode
-    (check "arrange mode h = move left"
-      ((defaults.modes.arrange.bindings.moveLeft.key or "") == "h"))
-
-    # Shift+hjkl = resize in arrange mode
-    (check "arrange mode Shift+h = resize"
-      ((defaults.modes.arrange.bindings.resizeLeft.key or "") == "shift + h"))
-
-    # === Mode entry/exit flow ===
-    (check "desktop mode enter is null (entered via CapsLock)"
-      (defaults.modes.desktop.enter == null))
-
-    (check "arrange entered from desktop via 'a'"
-      (defaults.modes.arrange.enter == "a"))
-
-    (check "theme entered from desktop via 'v'"
-      (defaults.modes.theme.enter == "v"))
-
-    # === CapsLock toggle ===
-    (check "CapsLock tap sends Scroll_Lock"
-      (defaults.keybindings.layers.desktopToggle.tapAction == "slck"))
-
-    (check "app mode has Scroll_Lock → desktop submap"
-      (defaults.modes.app.bindings ? enterDesktop))
-
-    (check "desktop mode has Scroll_Lock → reset (toggle back)"
-      (defaults.modes.desktop.bindings ? exitDesktop))
-
-    (assertContains "hyprland app mode binds Scroll_Lock to desktop submap"
-      "Scroll_Lock, submap, desktop"
-      (lib.concatStringsSep "\n" hyprConfig.settings.bind))
-
-    # === Kanata Super→Ctrl ===
-    (assertContains "kanata has defoverrides"
-      "defoverrides"
-      kanataConfig)
-
-    (assertContains "kanata remaps Super+C to Ctrl+C"
-      "(lmet c) (lctl c)"
-      kanataConfig)
-
-    # process-unmapped-keys is set via NixOS services.kanata extraDefCfg, not in generated config
-
-    (assertContains "kanata CapsLock tap is Scroll_Lock"
-      "tap-hold"
-      kanataConfig)
-
-    # === Help in every mode ===
-    (check "desktop mode has help binding"
-      (defaults.modes.desktop.bindings ? help))
-
-    (check "arrange mode has help binding"
-      (defaults.modes.arrange.bindings ? help))
-
-    (check "theme mode has help binding"
-      (defaults.modes.theme.bindings ? help))
-
-    (check "normal mode has help binding"
-      (defaults.modes.app.bindings ? help))
-
-    # === No Super+letter conflicts ===
-    # Normal mode should NOT have Super+letter bindings (those are app shortcuts now)
-    (check "no Super+C in normal mode (would conflict with copy)"
-      (!(builtins.any (b: lib.hasInfix "SUPER, c," b) hyprConfig.settings.bind)))
-
-    (check "no Super+A in normal mode (would conflict with select all)"
-      (!(builtins.any (b: lib.hasInfix "SUPER, a," b) hyprConfig.settings.bind)))
-
-    (check "no Super+F in normal mode (would conflict with find)"
-      (!(builtins.any (b: lib.hasInfix "SUPER, f," b) hyprConfig.settings.bind)))
+    # === The nav is the ENGINE's job — it must NOT be in the overlay ===
+    (check "no focus/move/resize WM-nav action leaks into the overlay"
+      (!(hasAction "movefocus") && !(hasAction "swapwindow") && !(hasAction "resizeactive")))
+    (check "no workspace-switch nav leaks into the overlay"
+      (!(hasAction "workspace, ") && !(hasAction "movetoworkspace")))
+    (check "no window-state nav (close/fullscreen/pseudo) leaks into the overlay"
+      (!(app ? closeWindow) && !(app ? floatPin) && !(app ? toggleGroup)))
   ];
 
   # ══════════════════════════════════════════════
-  # Property-based tests
-  # Invariants that must hold for ANY keybinding config
+  # Property-based tests — invariants for ANY config
   # ══════════════════════════════════════════════
 
   allModes = defaults.modes;
   modeNames = builtins.attrNames allModes;
-  # Submap modes = everything except app (global) and console (passthrough)
-  submapModes = filterAttrs (name: _: name != "app" && name != "console") allModes;
-
-  propertyTests = (mapAttrsToList
-    (name: mode:
-      check "P1: mode '${name}' has exit defined"
-        ((mode.exit or null) != null)
-    )
-    submapModes)
 
   # ── P2: No duplicate keys within a mode ──
-  # Two bindings in the same mode must not use the same key
-  ++ (mapAttrsToList
+  propertyTests = (mapAttrsToList
     (modeName: mode:
       let
         bindings = mode.bindings or { };
@@ -293,8 +251,7 @@ let
     )
     allModes)
 
-  # ── P3: All submap references resolve ──
-  # If a binding says "submap, X", mode X must exist
+  # ── P3: All submap references resolve (overlay has none, but stays honest) ──
   ++ (lib.concatMap
     (modeName:
       let
@@ -302,34 +259,24 @@ let
         bindings = mode.bindings or { };
         submapRefs = lib.concatMap
           (binding:
-            let
-              action = binding.action or "";
-              parts = lib.splitString ", " action;
+            let parts = lib.splitString ", " (binding.action or "");
             in
             if builtins.head parts == "submap" && builtins.length parts == 2
-            then [ (lib.last parts) ]
-            else [ ]
+            then [ (lib.last parts) ] else [ ]
           )
           (builtins.attrValues bindings);
-        # "reset" is special (returns to app mode), not a user-defined mode
         userRefs = builtins.filter (r: r != "reset") submapRefs;
       in
       map
-        (ref:
-          check "P3: submap '${ref}' referenced in '${modeName}' exists"
-            (allModes ? ${ref})
-        )
+        (ref: check "P3: submap '${ref}' referenced in '${modeName}' exists" (allModes ? ${ref}))
         userRefs
     )
     modeNames)
 
-  # ── P4: Every binding has a description ──
-  # Required for the help system to work
+  # ── P4: Every binding has a description (the help system needs it) ──
   ++ (lib.concatMap
     (modeName:
-      let
-        mode = allModes.${modeName};
-        bindings = mode.bindings or { };
+      let bindings = allModes.${modeName}.bindings or { };
       in
       mapAttrsToList
         (bindName: binding:
@@ -340,110 +287,25 @@ let
     )
     modeNames)
 
-  # ── P5: Help scripts exist for every submap mode ──
+  # ── P10: Mode graph hierarchy is consistent ──
   ++ (mapAttrsToList
-    (name: _:
-      check "P5: help script exists for '${name}' mode"
-        (helpScripts ? ${name})
-    )
-    submapModes)
-
-  # ── P6: No Super+letter in normal mode binds ──
-  # The macOS constraint: Super+letter is reserved for app shortcuts
-  ++ (
-    let
-      letters = lib.stringToCharacters "abcdefghijklmnopqrstuvwxyz";
-      normalBindStrings = hyprConfig.settings.bind;
-    in
-    map
-      (letter:
-        check "P6: no 'SUPER, ${letter}' in normal mode (reserved for app shortcuts)"
-          (!(builtins.any (b: lib.hasInfix "SUPER, ${letter}," b) normalBindStrings))
-      )
-      letters
-  )
-
-  # ── P7: Symmetric directional bindings ──
-  # If a mode has h (left), it must also have j, k, l
-  ++ (lib.concatMap
-    (modeName:
-      let
-        mode = allModes.${modeName};
-        bindings = mode.bindings or { };
-        keys = map (b: b.key or "") (builtins.attrValues bindings);
-        hasH = builtins.elem "h" keys;
-        hasJ = builtins.elem "j" keys;
-        hasK = builtins.elem "k" keys;
-        hasL = builtins.elem "l" keys;
-        hasAny = hasH || hasJ || hasK || hasL;
-        hasAll = hasH && hasJ && hasK && hasL;
+    (name: graphDef:
+      let parent = graphDef.parent or null;
       in
-      lib.optional hasAny (
-        check "P7: '${modeName}' has complete hjkl set (not partial)"
-          hasAll
-      )
+      if parent == null then
+        check "P10: root mode '${name}' has no parent"
+          (name == defaults.modeGraph.root)
+      else
+        check "P10: mode '${name}' parent '${parent}' exists in graph"
+          (defaults.modeGraph.modes ? ${parent})
     )
-    modeNames)
-
-  # ── P8: Universal remaps are all Super→Ctrl ──
-  # The pattern must be consistent
-  ++ (mapAttrsToList
-    (name: entry:
-      let
-        from = parseUniversalCombo (entry.from or "");
-        to = parseUniversalCombo (entry.to or "");
-      in
-      check "P8: universal '${name}' maps Super→Ctrl"
-        (from != null && to != null && from.mod == "super" && to.mod == "ctrl")
-    )
-    defaults._superCtrlRemaps)
-
-  # ── P9: Kanata layer bindings all map to valid keys ──
-  # No empty or null values in layer bindings
-  ++ (lib.concatMap
-    (layerName:
-      let
-        layer = defaults.keybindings.layers.${layerName};
-        bindings = layer.bindings or { };
-      in
-      mapAttrsToList
-        (src: dst:
-          check "P9: kanata layer '${layerName}' key '${src}' maps to non-empty value"
-            (dst != "" && dst != null)
-        )
-        bindings
-    )
-    (builtins.attrNames defaults.keybindings.layers))
-
-  # ── P10: Mode exit targets form a valid hierarchy ──
-  # Sub-modes exit to their parent, not to random places
-  # arrange/theme → desktop, desktop → reset
-  ++ [
-    (check "P10: arrange exits to desktop (parent)"
-      ((defaults.modes.arrange.exit or "") == "escape"))
-
-    (check "P10: theme exits to desktop (parent)"
-      ((defaults.modes.theme.exit or "") == "escape"))
-
-    (check "P10: desktop exits to app mode"
-      ((defaults.modes.desktop.exit or "") == "escape"))
-  ];
-
-  # Helper used by P8
-  parseUniversalCombo = combo:
-    let
-      parts = map lib.trim (lib.splitString "+" combo);
-      lower = map lib.toLower parts;
-    in
-    if builtins.length parts == 2 then {
-      mod = builtins.head lower;
-      key = lib.toLower (lib.last parts);
-    }
-    else null;
+    defaults.modeGraph.modes);
 
   allTests = tests ++ propertyTests;
-  results = map (t: t) allTests;
-  passed = builtins.length results;
+  # FORCE every assertion: a failing check/assertEq THROWS, so deepSeq makes the
+  # eval fail loudly. (The old `map (t: t)` + `length` only counted unforced
+  # thunks — it never actually evaluated an assertion, so it always "passed".)
+  passed = builtins.deepSeq allTests (builtins.length allTests);
 
 in
 {

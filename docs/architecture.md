@@ -2,9 +2,12 @@
 
 ## 1. Overview
 
-Vogix is a runtime theme management system for NixOS with multi-scheme support. This document provides a high-level overview of the architecture that enables dynamic theme switching at runtime.
+Vogix is a NixOS UX subsystem with two runtime parts:
 
-The system supports 4 color schemes (vogix16, base16, base24, ansi16), allowing users to switch themes without requiring a rebuild.
+1. **Theme management** - runtime color-theme switching across 4 schemes (vogix16, base16, base24, ansi16) without a rebuild. Covered by sections 2-6 below.
+2. **Input engine** - an ontology-driven keyboard daemon (typed modes, dual-role CapsLock, selectable interaction paradigms). Covered by section 7.
+
+This document gives a high-level overview of both.
 
 ## 2. Key Components
 
@@ -41,7 +44,7 @@ For detailed implementation of specific components, see the specialized document
 ~/.local/share/vogix/themes/                   # Theme packages (home-manager)
     ├── base16-catppuccin-mocha -> /nix/store/...
     ├── base16-catppuccin-latte -> /nix/store/...
-    ├── vogix16-aikido-dark -> /nix/store/...
+    ├── vogix16-yoga-dark -> /nix/store/...
     └── ...
 
 ~/.local/state/vogix/                          # CLI managed (mutable)
@@ -84,7 +87,7 @@ The home-manager module (`programs.vogix`) handles all build-time generation:
   programs.vogix = {
     enable = true;
     scheme = "vogix16";
-    theme = "aikido";
+    theme = "yoga";
     variant = "dark";
   };
 }
@@ -119,8 +122,69 @@ When a user runs `vogix -t catppuccin -v mocha` or `vogix -v darker`:
 6. **Application Generators** (`nix/modules/applications/`): Multi-scheme generators
 
 ### Runtime Components (Rust)
-1. **Commands** (`src/commands/`): cache, completions, list, refresh, status, theme_change
+1. **Commands** (`src/commands/`): cache, completions, list, refresh, status, theme_change, input
 2. **Theme Management** (`src/theme/`): discovery, loader (per-scheme), query, types
 3. **Template Rendering** (`src/template/`): Tera-based config rendering
 4. **Cache** (`src/cache/`): Theme cache paths and rendering
-5. **Core modules**: cli.rs, config/, errors.rs, reload.rs, scheme.rs, state.rs, symlink.rs
+5. **Input engine** (`src/input/`): device (pure Router + the evdev-grab/uinput loop), schema (input.json loader → praxis ModeGraph), hypr (compositor IPC + active-window stream), keys (chord ↔ praxis-Key codec), taphold (dual-role CapsLock detector)
+6. **Core modules**: cli.rs, config/, errors.rs, reload.rs, scheme.rs, state.rs, symlink.rs
+
+## 7. Input Engine
+
+A single evdev→uinput daemon (`vogix input run`) owns the keyboard directly -
+replacing kanata and compositor submaps - so keybindings work even when no
+compositor is running.
+
+### Pipeline
+
+```
+evdev grab  →  Router (pure)  →  uinput re-emit + compositor IPC (Hyprland)
+                   ↑
+           loaded schema (input.json)
+```
+
+- **Router** (`src/input/device.rs`) is pure: `(keycode, value, now) → [Effect]`
+  (emit a key, dispatch a WM action, set a border colour, note a mode change). It
+  interprets the *loaded* schema - nothing about which modes/keys exist is
+  hard-coded.
+- **Schema** (`src/input/schema.rs`) loads `~/.local/state/vogix/input.json`
+  (rendered from `nix/modules/behavior/defaults.nix`), builds a praxis `ModeGraph`,
+  and validates it against the Harel mode axioms at startup (fail-closed).
+- **I/O shell** (`run()` in device.rs) creates the uinput device *before* grabbing
+  (a failed start can never hold the keyboard), re-syncs held modifiers, subscribes
+  to Hyprland's active-window event stream, and is single-instance-guarded +
+  self-healing across compositor restarts.
+
+### Ontology (praxis)
+
+The mode statechart, transitions, and dynamics axioms live in
+[praxis](https://github.com/i-am-logger/pr4xis)
+(`applied/hmi/input/{modes,engine,keybindings}`): quasimode-reverts-to-root
+(Raskin/Norman) and exit-always-reaches-root (Harel) are machine-checked, so
+"stuck in a mode" is unrepresentable. The Super→Ctrl remap is praxis
+`macos_remap`, proven injective + complete (RemapInjective / MacosRemapComplete,
+checked by `vogix input check`).
+
+### Paradigms
+
+`keybindings.paradigm` selects a whole interaction *flavour*, resolved at Nix-eval
+into the engine's per-mode bindings + Super remap (the runtime is unchanged). Each
+paradigm is cited to its primary source in `defaults.nix`:
+
+| Paradigm | Style | Remap |
+|----------|-------|-------|
+| `default` | modal (CapsLock→desktop, bare hjkl/arrows) - the user's own config | macOS |
+| `windows` | chorded (Super+arrow nav, Win+Ctrl+arrow virtual desktops, Alt+Tab) | none |
+| `mac`     | Control+arrow Spaces, Cmd+Tab, Ctrl+Cmd+F | macOS |
+| `emacs`   | modal C-f/C-b/C-n/C-p + a `C-x` prefix (key sequences as transient modes) | none |
+
+A key *sequence* (e.g. `C-x C-c`) needs no special machinery: a prefix is a chord
+that enters a transient mode whose next chord completes it (a sequence = a modal
+state). Users layer their own bindings over a paradigm via
+`programs.vogix.behavior.modes` (recursiveUpdate per binding).
+
+### Mode-visibility surface
+
+On a mode change the engine paints the active-window border (and publishes the
+mode to a state file a bar can read), so the current mode is always visible - the
+cure for mode error (Norman 1981). Per-mode colours are theme-derived.

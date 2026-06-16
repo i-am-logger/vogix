@@ -32,10 +32,6 @@ let
 
   cfg = config.vogix;
 
-  # Behavior module for kanata config generation
-  behaviorModule = import ./behavior { inherit lib; };
-  kanataConfig = behaviorModule.mkKanataConfig { };
-
   # Import vogix16 themes for console colors
   vogix16Import = import ./vogix16-import.nix {
     inherit lib vogix16Themes;
@@ -104,7 +100,7 @@ in
       type = types.nullOr types.path;
       default = null;
       description = "Path to theme file for console colors (overrides auto-detection).";
-      example = literalExpression "./themes/aikido.nix";
+      example = literalExpression "./themes/yoga.nix";
     };
 
     variant = mkOption {
@@ -117,6 +113,7 @@ in
       default = null;
       description = "Theme variant (dark or light) for console colors (overrides auto-detection).";
     };
+
   };
 
   config = mkIf cfg.enable (mkMerge [
@@ -192,17 +189,17 @@ in
       ];
     })
 
-    # Kanata service for behavior module (evdev key remapping)
-    # System-wide: nav layer, Super→Ctrl, CapsLock toggle
-    (mkIf (kanataConfig != null) {
-      services.kanata = {
-        enable = true;
-        keyboards.default = {
-          devices = [ ];
-          config = kanataConfig;
-          extraDefCfg = "process-unmapped-keys yes";
-        };
-      };
-    })
+    # Input engine: uinput + group membership wiring.
+    # hardware.uinput exposes /dev/uinput; the vogix input daemon needs to open
+    # it RW to create the virtual keyboard. Membership in the `input` group lets
+    # it open /dev/input/event* for the real keyboard grab; membership in
+    # `uinput` lets it open /dev/uinput for emit. Without root either of those
+    # would EACCES — that's the whole reason we list the groups here.
+    {
+      hardware.uinput.enable = true;
+      users.users = lib.genAttrs homeManagerUsers (_user: {
+        extraGroups = [ "input" "uinput" ];
+      });
+    }
   ]);
 }

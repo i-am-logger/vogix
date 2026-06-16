@@ -49,7 +49,7 @@ vogix status
 ### 2. List Available Themes
 ```bash
 vogix list
-# Should show: aikido, forest, etc.
+# Should show: yoga, forest, etc.
 ```
 
 ### 3. Switch Themes
@@ -61,7 +61,7 @@ vogix -t forest -s vogix16
 cat ~/.config/alacritty/colors.toml
 
 # Switch back
-vogix -t aikido -s vogix16
+vogix -t yoga -s vogix16
 ```
 
 ### 4. Switch Variants

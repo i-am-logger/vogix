@@ -10,6 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::color::ShaderColor;
+use pr4xis_domains::applied::hmi::theming::ontology::Palette;
 
 /// Rec. 709 luma coefficients for luminance calculation.
 const LUMA_R: f32 = 0.2126;
@@ -91,43 +92,41 @@ fn with_saturation(color: &ShaderColor, saturation: f32) -> ShaderColor {
     )
 }
 
-/// Functional color keys (base08-0F) that should be preserved through tinting.
-const FUNCTIONAL_KEYS: &[&str] = &[
-    "base08", "base09", "base0A", "base0B", "base0C", "base0D", "base0E", "base0F",
-];
-
 /// Generate GLSL shader source with embedded theme colors.
 #[must_use]
-pub fn generate_glsl(
-    color: &ShaderColor,
-    params: &ShaderParams,
-    colors: &std::collections::HashMap<String, String>,
-) -> String {
+pub fn generate_glsl(color: &ShaderColor, params: &ShaderParams, palette: &Palette) -> String {
     let color = with_saturation(color, params.saturation);
 
+    // Functional (accent) colors from the ontology palette, by role, in slot
+    // order — scheme-correct, deduplicated, byte-stable. Replaces the old
+    // "try every naming convention" string shotgun.
     let mut func_consts = String::new();
     let mut func_dists = String::new();
-    for (i, key) in FUNCTIONAL_KEYS.iter().enumerate() {
-        if let Some(hex) = colors.get(*key)
-            && let Some((r, g, b)) = super::color::hex_to_rgb(hex)
-        {
-            func_consts.push_str(&format!(
-                "const vec3 func{} = vec3({:.4}, {:.4}, {:.4});\n",
-                i, r, g, b
-            ));
-            func_dists.push_str(&format!(
-                "    closest = min(closest, distance(c, func{}));\n",
-                i
-            ));
-        }
+    for (i, rgb) in crate::theme::palette::functional_colors(palette)
+        .iter()
+        .enumerate()
+    {
+        func_consts.push_str(&format!(
+            "const vec3 func{} = vec3({:.4}, {:.4}, {:.4});\n",
+            i,
+            rgb.r as f32 / 255.0,
+            rgb.g as f32 / 255.0,
+            rgb.b as f32 / 255.0,
+        ));
+        func_dists.push_str(&format!(
+            "    closest = min(closest, distance(c, func{}));\n",
+            i
+        ));
     }
 
-    // Detect polarity from base00 background luminance
-    let is_dark = colors
-        .get("base00")
-        .and_then(|hex| super::color::hex_to_rgb(hex))
-        .map(|(r, g, b)| r * LUMA_R + g * LUMA_G + b * LUMA_B < 0.5)
-        .unwrap_or(true);
+    // Polarity from the ontology (base00 luminance). build_palette maps ansi16's
+    // color00/background → Base00, so light ansi16 themes get the light (screen)
+    // blend instead of silently defaulting to dark.
+    let is_dark = {
+        use pr4xis_domains::applied::hmi::theming::base16::Polarity;
+        use pr4xis_domains::applied::hmi::theming::ontology;
+        ontology::detect_polarity(palette) != Some(Polarity::Light)
+    };
 
     SHADER_TEMPLATE
         .replace("{R}", &format!("{:.4}", color.r))
@@ -167,7 +166,7 @@ pub fn shader_dir() -> Result<PathBuf> {
 pub fn write_shader(
     color: &ShaderColor,
     params: &ShaderParams,
-    colors: &std::collections::HashMap<String, String>,
+    palette: &Palette,
 ) -> Result<PathBuf> {
     let dir = shader_dir()?;
     fs::create_dir_all(&dir).map_err(|e| VogixError::ShaderWrite {
@@ -176,7 +175,7 @@ pub fn write_shader(
     })?;
 
     let path = dir.join("monochromatic.glsl");
-    let source = generate_glsl(color, params, colors);
+    let source = generate_glsl(color, params, palette);
 
     fs::write(&path, source).map_err(|e| VogixError::ShaderWrite {
         path: path.clone(),
@@ -206,7 +205,8 @@ pub fn cleanup_shader() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use pr4xis_domains::applied::hmi::theming::base16::ColorSlot;
+    use pr4xis_domains::natural::colors::Rgb;
 
     fn green() -> ShaderColor {
         ShaderColor::new(0.0, 1.0, 0.0)
@@ -216,38 +216,44 @@ mod tests {
         ShaderColor::new(1.0, 0.71, 0.0)
     }
 
-    fn empty_colors() -> HashMap<String, String> {
-        HashMap::new()
+    fn empty_palette() -> Palette {
+        Palette::new()
     }
 
-    fn test_colors() -> HashMap<String, String> {
-        let mut c = HashMap::new();
-        c.insert("base08".into(), "#ff6b6b".into());
-        c.insert("base09".into(), "#e89a4f".into());
-        c.insert("base0A".into(), "#d4c44a".into());
-        c.insert("base0B".into(), "#33ff66".into());
-        c.insert("base0C".into(), "#66e5c0".into());
-        c.insert("base0D".into(), "#5bb8e8".into());
-        c.insert("base0E".into(), "#c484e8".into());
-        c.insert("base0F".into(), "#7a8a55".into());
-        c
+    /// Palette with the 8 base16 accents (base08..0F) populated.
+    fn test_palette() -> Palette {
+        let accents = [
+            (ColorSlot::Base08, "#ff6b6b"),
+            (ColorSlot::Base09, "#e89a4f"),
+            (ColorSlot::Base0A, "#d4c44a"),
+            (ColorSlot::Base0B, "#33ff66"),
+            (ColorSlot::Base0C, "#66e5c0"),
+            (ColorSlot::Base0D, "#5bb8e8"),
+            (ColorSlot::Base0E, "#c484e8"),
+            (ColorSlot::Base0F, "#7a8a55"),
+        ];
+        let mut p = Palette::new();
+        for (slot, hex) in accents {
+            p.insert(slot, Rgb::from_hex(hex).unwrap());
+        }
+        p
     }
 
     #[test]
     fn generate_contains_version() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_palette());
         assert!(src.starts_with("#version 300 es"));
     }
 
     #[test]
     fn generate_contains_theme_color() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_palette());
         assert!(src.contains("vec3(0.0000, 1.0000, 0.0000)"));
     }
 
     #[test]
     fn generate_amber_color() {
-        let src = generate_glsl(&amber(), &ShaderParams::default(), &empty_colors());
+        let src = generate_glsl(&amber(), &ShaderParams::default(), &empty_palette());
         assert!(src.contains("vec3(1.0000, 0.7100, 0.0000)"));
     }
 
@@ -257,7 +263,7 @@ mod tests {
             intensity: 0.8,
             ..Default::default()
         };
-        let src = generate_glsl(&green(), &params, &empty_colors());
+        let src = generate_glsl(&green(), &params, &empty_palette());
         assert!(src.contains("const float intensity = 0.8000;"));
     }
 
@@ -267,7 +273,7 @@ mod tests {
             intensity: 2.0,
             ..Default::default()
         };
-        let src = generate_glsl(&green(), &params, &empty_colors());
+        let src = generate_glsl(&green(), &params, &empty_palette());
         assert!(src.contains("const float intensity = 1.0000;"));
     }
 
@@ -277,7 +283,7 @@ mod tests {
             brightness: 0.5,
             ..Default::default()
         };
-        let src = generate_glsl(&green(), &params, &empty_colors());
+        let src = generate_glsl(&green(), &params, &empty_palette());
         assert!(src.contains("const float brightness = 0.5000;"));
     }
 
@@ -287,13 +293,13 @@ mod tests {
             saturation: 0.0,
             ..Default::default()
         };
-        let src = generate_glsl(&green(), &params, &empty_colors());
+        let src = generate_glsl(&green(), &params, &empty_palette());
         assert!(src.contains("vec3(0.7152, 0.7152, 0.7152)"));
     }
 
     #[test]
     fn generate_has_valid_glsl_structure() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_palette());
         assert!(src.contains("void main()"));
         assert!(src.contains("fragColor ="));
         assert!(src.contains("texture(tex, v_texcoord)"));
@@ -304,7 +310,7 @@ mod tests {
 
     #[test]
     fn generate_embeds_functional_colors() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &test_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &test_palette());
         assert!(
             src.contains("const vec3 func0"),
             "base08 should be embedded"
@@ -321,7 +327,7 @@ mod tests {
 
     #[test]
     fn generate_no_functional_without_colors() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_palette());
         assert!(
             !src.contains("const vec3 func0"),
             "no func colors without palette"
@@ -360,33 +366,61 @@ mod tests {
         assert!(s.b >= 0.0 && s.b <= 1.0);
     }
 
-    fn dark_colors() -> HashMap<String, String> {
-        let mut c = test_colors();
-        c.insert("base00".into(), "#1e1e2e".into()); // dark bg
-        c
+    fn dark_palette() -> Palette {
+        let mut p = test_palette();
+        p.insert(ColorSlot::Base00, Rgb::from_hex("#1e1e2e").unwrap()); // dark bg
+        p
     }
 
-    fn light_colors() -> HashMap<String, String> {
-        let mut c = test_colors();
-        c.insert("base00".into(), "#eff1f5".into()); // light bg
-        c
+    fn light_palette() -> Palette {
+        let mut p = test_palette();
+        p.insert(ColorSlot::Base00, Rgb::from_hex("#eff1f5").unwrap()); // light bg
+        p
     }
 
     #[test]
     fn generate_dark_theme_uses_multiply() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &dark_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &dark_palette());
         assert!(src.contains("const float isDark = 1.0;"));
     }
 
     #[test]
     fn generate_light_theme_uses_screen() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &light_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &light_palette());
         assert!(src.contains("const float isDark = 0.0;"));
     }
 
     #[test]
     fn generate_no_base00_defaults_dark() {
-        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_colors());
+        let src = generate_glsl(&green(), &ShaderParams::default(), &empty_palette());
+        assert!(src.contains("const float isDark = 1.0;"));
+    }
+
+    // Regression: ansi16 themes have no `base00` string key — build_palette maps
+    // color00/background → Base00, so a LIGHT ansi16 theme uses the screen blend
+    // instead of silently defaulting to dark (Copilot review, generator.rs:189).
+    #[test]
+    fn generate_ansi16_light_uses_screen() {
+        use crate::scheme::Scheme;
+        let mut c = std::collections::HashMap::new();
+        c.insert("background".to_string(), "#eff1f5".to_string()); // light bg
+        c.insert("color01".to_string(), "#d20f39".to_string()); // a red accent
+        let palette = crate::theme::palette::build_palette(&c, Scheme::Ansi16);
+        let src = generate_glsl(&green(), &ShaderParams::default(), &palette);
+        assert!(
+            src.contains("const float isDark = 0.0;"),
+            "light ansi16 theme should use the screen (light) blend"
+        );
+        assert!(src.contains("const vec3 func0"), "color01 accent preserved");
+    }
+
+    #[test]
+    fn generate_ansi16_dark_uses_multiply() {
+        use crate::scheme::Scheme;
+        let mut c = std::collections::HashMap::new();
+        c.insert("background".to_string(), "#1e1e2e".to_string()); // dark bg
+        let palette = crate::theme::palette::build_palette(&c, Scheme::Ansi16);
+        let src = generate_glsl(&green(), &ShaderParams::default(), &palette);
         assert!(src.contains("const float isDark = 1.0;"));
     }
 }

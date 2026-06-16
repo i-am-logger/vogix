@@ -7,8 +7,38 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = env!("CARGO_PKG_DESCRIPTION"), long_about = None)]
 pub struct Cli {
+    /// Log verbosity. Overrides the `RUST_LOG` env var when set; otherwise
+    /// `RUST_LOG` (or the built-in `info` default) applies. The systemd units
+    /// set `RUST_LOG=vogix=<level>`; this flag is the ad-hoc equivalent for a
+    /// one-off `vogix input run` / `vogix daemon` from a shell.
+    #[arg(long, value_enum, global = true)]
+    pub log_level: Option<LogLevel>,
+
     #[command(subcommand)]
     pub command: Commands,
+}
+
+/// Log verbosity levels, mapped 1:1 onto `env_logger`/`log` filter strings.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    /// The `env_logger` filter string for this level.
+    pub fn as_filter(self) -> &'static str {
+        match self {
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -43,8 +73,82 @@ pub enum Commands {
         command: ShaderCommands,
     },
 
+    /// Switch desktop mode (normal, focus, gaming, presentation, etc.)
+    Mode {
+        /// Target mode name
+        target: String,
+    },
+
+    /// Inspect submap-mode telemetry captured by the daemon
+    Modes {
+        #[command(subcommand)]
+        command: ModesCommands,
+    },
+
     /// Run the vogix daemon (session auto-save, event monitoring)
     Daemon,
+
+    /// Ontology-driven input engine (keybinding modes)
+    Input {
+        #[command(subcommand)]
+        command: InputCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum InputCommands {
+    /// Validate the loaded input schema's mode graph + engine invariants
+    Check {
+        /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
+    /// Run the input engine: grab evdev, drive the mode statechart, dispatch
+    /// window actions to Hyprland's IPC socket, and re-emit normal keys via
+    /// uinput. vogix is the sole input engine (it took over from the older
+    /// kanata + Hyprland-submaps split).
+    Run {
+        /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
+    /// Read-only diagnostics for a running engine: which keyboards are grabbed
+    /// and their event flow (so a silent device localises a fault to the
+    /// hardware, not the engine). Never grabs the keyboard, never logs keystrokes.
+    Doctor {
+        /// Repaint continuously instead of printing one snapshot.
+        #[arg(long)]
+        watch: bool,
+    },
+    /// Show the keybindings of the resolved input schema (the live paradigm's
+    /// nav merged with the overlay), materialized from the engine's single
+    /// resolved schema — the engine-side replacement for the Nix help scripts.
+    Keys {
+        /// Print the help text to stdout instead of showing it via walker/notify-send.
+        #[arg(long)]
+        print: bool,
+        /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ModesCommands {
+    /// Show the most recent N transitions from modes.log
+    Recent {
+        /// Number of transitions to show (default 20)
+        #[arg(short = 'n', long, default_value_t = 20)]
+        count: usize,
+    },
+    /// Per-mode dwell-time histogram across the entire log
+    Stats,
+    /// Re-entries within a short window — likely accidental or canceled
+    Confusion {
+        /// Threshold in milliseconds; re-entries faster than this are flagged
+        #[arg(short = 't', long, default_value_t = 1000)]
+        threshold_ms: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -128,6 +232,12 @@ pub enum ThemeCommands {
         #[arg(short = 'q', long)]
         quiet: bool,
     },
+
+    /// Undo last theme change
+    Undo,
+
+    /// Redo last undone theme change
+    Redo,
 }
 
 #[derive(Subcommand)]
@@ -428,14 +538,6 @@ mod tests {
 
     #[test]
     fn test_invalid_commands_fail() {
-        let invalid_commands = [
-            vec!["vogix", "invalid"],
-            vec!["vogix", "theme", "invalid"],
-            vec!["vogix", "session", "invalid"],
-            vec!["vogix", "theme", "set"], // set with no flags is valid but does nothing
-        ];
-        // "set" with no flags is actually valid (clap allows optional args)
-        // Only truly invalid subcommands should fail
         assert!(Cli::try_parse_from(["vogix", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "theme", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "session", "invalid"]).is_err());

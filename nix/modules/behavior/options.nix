@@ -3,7 +3,7 @@
 # Defines programs.vogix.behavior.* options
 # Two sub-domains:
 #   - keybindings: input config (modKey, mouse, layers)
-#   - modes: modal system (desktop, arrange, theme)
+#   - modes: modal system (desktop, theme — flat, all parented to app)
 { lib }:
 
 let
@@ -51,6 +51,17 @@ let
               default = false;
               description = "Whether this binding repeats when held";
             };
+            exitAfter = mkOption {
+              type = types.bool;
+              default = false;
+              description = ''
+                Return to the root (app) mode immediately after this action
+                runs. For launch/leaf actions (terminal, browser, launcher,
+                lock) so you aren't stranded in the submap with keys eaten.
+                Only meaningful inside submap modes; exec actions reset the
+                submap first, then run the command.
+              '';
+            };
           };
         });
         default = { };
@@ -59,33 +70,35 @@ let
     };
   };
 
-  # Kanata layer type
+  # Dual-role layer type (engine-native): a trigger key that activates a mode.
   layerType = types.submodule {
     options = {
-      toggle = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = "Key that toggles this layer on/off";
-      };
       hold = mkOption {
         type = types.nullOr types.str;
         default = null;
-        description = "Key that activates this layer while held";
+        description = ''
+          The dual-role trigger key (e.g. "capslock"). Tapping it enters the
+          target mode sticky; holding it enters the mode momentary.
+        '';
       };
-      tapAction = mkOption {
+      entersMode = mkOption {
         type = types.nullOr types.str;
         default = null;
-        description = "What the toggle/hold key does on tap";
+        description = ''
+          The mode this trigger activates. The vogix input engine reads this
+          directly to drive its mode statechart — tap = sticky (toggle), hold =
+          momentary (left on release). No synthetic keysyms are involved.
+        '';
       };
       tapHoldMs = mkOption {
         type = types.int;
-        default = 200;
-        description = "Tap-hold threshold in milliseconds";
+        default = 250;
+        description = "Tap↔hold threshold in milliseconds (tap = sticky, hold = momentary)";
       };
-      bindings = mkOption {
-        type = types.attrsOf types.str;
-        default = { };
-        description = "Key remappings in this layer (source = target)";
+      stickyIdleMs = mkOption {
+        type = types.int;
+        default = 30000;
+        description = "Idle milliseconds after which a sticky (tapped/locked) mode auto-reverts to root";
       };
     };
   };
@@ -128,6 +141,24 @@ in
                 description = "Primary modifier key (acts as macOS Command — implies Super→Ctrl remap)";
               };
 
+              paradigm = mkOption {
+                type = types.str;
+                default = "vogix";
+                description = ''
+                  Selected interaction paradigm — the GLOBAL, system-wide keybinding
+                  model the input engine materializes. The catalog lives in the
+                  engine (`src/input/catalog.rs`), NOT here: the engine resolves this
+                  name into the paradigm's modes + mode graph and merges your own
+                  launch/system/media OVERLAY (the `modes` below) on top.
+
+                  Available: "vogix" (the house default — the user's own WM-nav
+                  layout), "cua", "emacs", "i3", "vim", "windows", "macos", "linux".
+                  Each is global: e.g. "cua" makes Ctrl+C copy everywhere, "macos"
+                  applies the Cmd-feel Super→Ctrl remap, "i3"/"vim" drive the WM by
+                  their own conventions.
+                '';
+              };
+
               mouse = mkOption {
                 type = types.attrsOf mouseBindingType;
                 default = { };
@@ -137,7 +168,45 @@ in
               layers = mkOption {
                 type = types.attrsOf layerType;
                 default = { };
-                description = "System-wide key layers via kanata (evdev level)";
+                description = "Dual-role trigger layers (e.g. CapsLock → desktop), driven by the vogix input engine at the evdev level";
+              };
+
+              terminalClasses = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = ''
+                  Hyprland window classes treated as terminals. When one is
+                  focused, the Super→Ctrl remap is context-adjusted: copy/paste
+                  retarget to Ctrl+Shift+C/V and the other remaps are suppressed,
+                  so the macOS-style Super+C can't fire Ctrl+C = SIGINT into the
+                  foreground job. Real Ctrl+C (no Super) still interrupts.
+                '';
+              };
+
+              deviceFilter = mkOption {
+                type = types.submodule {
+                  options = {
+                    excludeVendors = mkOption {
+                      type = types.listOf types.int;
+                      default = [ ];
+                      description = "USB vendor ids the engine must NEVER grab (e.g. security keys).";
+                    };
+                    excludeNameSubstrings = mkOption {
+                      type = types.listOf types.str;
+                      default = [ ];
+                      description = "Device-name substrings the engine must never grab (audio HID, consumer-control nodes).";
+                    };
+                  };
+                };
+                default = { };
+                description = ''
+                  Which evdev devices the input engine may OWN. The engine grabs
+                  keyboards exclusively, so it must not grab a YubiKey (it would
+                  break OTP/FIDO typing) or an audio mixer. A safe baseline is
+                  baked into vogix (Yubico and audio HID are always excluded);
+                  these lists ADD to it — they never replace it, so you can't
+                  accidentally re-enable a security-key grab.
+                '';
               };
             };
           };
@@ -160,19 +229,7 @@ in
               desktop = mkOption {
                 type = modeBindingType;
                 default = { };
-                description = "Desktop mode — WM commands with single keys";
-              };
-
-              arrange = mkOption {
-                type = modeBindingType;
-                default = { };
-                description = "Arrange mode — move + resize windows";
-              };
-
-              theme = mkOption {
-                type = modeBindingType;
-                default = { };
-                description = "Theme mode — vogix appearance switching";
+                description = "Desktop mode — focus, move, resize, workspaces, send-and-follow (single, unified WM mode)";
               };
 
               modeColors = mkOption {
@@ -196,13 +253,6 @@ in
           internal = true;
           default = { };
           description = "Generated Hyprland config";
-        };
-
-        generatedKanata = mkOption {
-          type = types.nullOr types.str;
-          internal = true;
-          default = null;
-          description = "Generated kanata config";
         };
       };
     };

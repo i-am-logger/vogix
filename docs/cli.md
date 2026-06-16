@@ -109,7 +109,7 @@ The CLI is configured via the home-manager module:
 programs.vogix = {
   enable = true;
   scheme = "vogix16";
-  theme = "aikido";
+  theme = "yoga";
   variant = "dark";
 };
 ```

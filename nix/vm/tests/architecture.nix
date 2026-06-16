@@ -23,27 +23,27 @@ testLib.mkTest "architecture" ''
   print("=== Test: Nix Pre-Generated Theme-Variant Configs ===")
 
   # Verify theme-variant directories exist in ~/.local/share/vogix/themes/
-  # Note: aikido uses 'night' for dark polarity and 'day' for light polarity
-  machine.succeed(f"su - vogix -c 'test -d {vogix_themes}/aikido-night'")
-  print(f"✓ aikido-night (dark) theme-variant directory exists in {vogix_themes}/")
+  # Note: yoga uses 'night' for dark polarity and 'day' for light polarity
+  machine.succeed(f"su - vogix -c 'test -d {vogix_themes}/yoga-night'")
+  print(f"✓ yoga-night (dark) theme-variant directory exists in {vogix_themes}/")
 
-  machine.succeed(f"su - vogix -c 'test -d {vogix_themes}/aikido-day'")
-  print(f"✓ aikido-day (light) theme-variant directory exists in {vogix_themes}/")
+  machine.succeed(f"su - vogix -c 'test -d {vogix_themes}/yoga-day'")
+  print(f"✓ yoga-day (light) theme-variant directory exists in {vogix_themes}/")
 
   # Check that configs are pre-generated with actual colors (not {{baseXX}})
-  aikido_night_config = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/aikido-night/alacritty/alacritty.toml 2>/dev/null || echo NOTFOUND'")
-  if "NOTFOUND" not in aikido_night_config:
-      print("✓ aikido-night alacritty config exists")
-      assert "{{base" not in aikido_night_config, "Config contains unprocessed template placeholders!"
-      assert "#" in aikido_night_config, "Config missing hex colors!"
-      print("✓ aikido-night config has actual colors (no {{baseXX}} placeholders)")
+  yoga_night_config = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/yoga-night/alacritty/alacritty.toml 2>/dev/null || echo NOTFOUND'")
+  if "NOTFOUND" not in yoga_night_config:
+      print("✓ yoga-night alacritty config exists")
+      assert "{{base" not in yoga_night_config, "Config contains unprocessed template placeholders!"
+      assert "#" in yoga_night_config, "Config missing hex colors!"
+      print("✓ yoga-night config has actual colors (no {{baseXX}} placeholders)")
 
-  aikido_day_config = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/aikido-day/alacritty/alacritty.toml 2>/dev/null || echo NOTFOUND'")
-  if "NOTFOUND" not in aikido_day_config:
-      print("✓ aikido-day alacritty config exists")
-      assert "{{base" not in aikido_day_config, "Config contains unprocessed template placeholders!"
-      assert aikido_night_config != aikido_day_config, "Night and day configs are identical!"
-      print("✓ aikido-day config differs from aikido-night (variants work)")
+  yoga_day_config = machine.succeed(f"su - vogix -c 'cat {vogix_themes}/yoga-day/alacritty/alacritty.toml 2>/dev/null || echo NOTFOUND'")
+  if "NOTFOUND" not in yoga_day_config:
+      print("✓ yoga-day alacritty config exists")
+      assert "{{base" not in yoga_day_config, "Config contains unprocessed template placeholders!"
+      assert yoga_night_config != yoga_day_config, "Night and day configs are identical!"
+      print("✓ yoga-day config differs from yoga-night (variants work)")
 
   print("\n=== Test: Current-Theme Symlink Exists ===")
   # current-theme symlink is in ~/.local/state/vogix/, not themes dir
@@ -52,8 +52,8 @@ testLib.mkTest "architecture" ''
 
   current_target = machine.succeed(f"su - vogix -c 'readlink {current_theme}'")
   print(f"✓ 'current-theme' points to: {current_target.strip()}")
-  assert "aikido" in current_target.lower(), "current-theme symlink doesn't point to default aikido theme"
-  # aikido uses 'night' as its dark polarity variant name
+  assert "yoga" in current_target.lower(), "current-theme symlink doesn't point to default yoga theme"
+  # yoga uses 'night' as its dark polarity variant name
   assert "night" in current_target.lower(), "current-theme symlink doesn't point to night (dark) variant"
 
   print("\n=== Test: User Config Contains App Reload Methods ===")

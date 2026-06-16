@@ -108,9 +108,6 @@ in
           package = config.languages.rust.toolchainPackage;
         };
 
-        # Python
-        black.enable = true;
-
         # Shell
         shellcheck.enable = true;
         shfmt.enable = true;
@@ -135,25 +132,12 @@ in
     clippy.enable = true;
   };
 
-  # https://devenv.sh/outputs/
-  outputs = {
-    vogix = config.languages.rust.import ./. {
-      # Override to skip Windows-specific dependencies
-      crateOverrides = pkgs.defaultCrateOverrides // {
-        # Skip all Windows-specific crates
-        windows-sys = _attrs: null;
-        windows-core = _attrs: null;
-        windows-targets = _attrs: null;
-        windows_x86_64_gnu = _attrs: null;
-        windows_x86_64_msvc = _attrs: null;
-        windows_i686_gnu = _attrs: null;
-        windows_i686_msvc = _attrs: null;
-        windows_aarch64_msvc = _attrs: null;
-        windows_aarch64_gnullvm = _attrs: null;
-        anstyle-wincon = _attrs: null;
-      };
-    };
-  };
+  # NOTE: the Nix PACKAGE build of vogix is no longer here. It moved to nixpkgs'
+  # standard `buildRustPackage` (nix/packages/vogix.nix, wired in flake.nix),
+  # because praxis 0.24.0 adopted `version.workspace = true` and crate2nix's
+  # per-crate vendor step can't resolve a workspace-inherited version (no
+  # workspace root), whereas cargo's vendoring fetches the whole praxis repo and
+  # resolves it. devenv stays for the dev shell + treefmt + git-hooks + tasks.
 
   # https://devenv.sh/tasks/
   tasks = {
@@ -162,15 +146,15 @@ in
     };
 
     "test:clippy" = {
-      exec = "cargo clippy --quiet -- -D warnings";
+      exec = "cargo clippy -p vogix --quiet -- -D warnings";
     };
 
     "test:check" = {
-      exec = "cargo check --quiet";
+      exec = "cargo check -p vogix --quiet";
     };
 
     "test:unit" = {
-      exec = "cargo test --quiet";
+      exec = "cargo test -p vogix --quiet";
     };
   };
 

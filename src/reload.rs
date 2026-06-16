@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
+use log::warn;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -124,6 +125,8 @@ impl ReloadDispatcher {
     /// Symlinks are removed and re-created so watchers on the parent directory
     /// see Create/Remove events (touch -h only changes symlink mtime which
     /// inotify directory watchers don't detect).
+    /// Touch or re-symlink a config file to trigger inotify events.
+    /// Note: uses unix-specific symlink API (vogix is NixOS/Linux-only).
     fn touch_or_relink(&self, path: &str) -> Result<()> {
         let p = std::path::Path::new(path);
         if p.is_symlink() {
@@ -134,10 +137,16 @@ impl ReloadDispatcher {
             std::os::unix::fs::symlink(&target, p)
                 .map_err(|e| VogixError::reload_with_source("failed to recreate symlink", e))?;
         } else {
-            Command::new("touch")
+            let status = Command::new("touch")
                 .arg(path)
                 .status()
                 .map_err(|e| VogixError::reload_with_source("failed to touch config file", e))?;
+            if !status.success() {
+                return Err(VogixError::reload(format!(
+                    "touch {path} failed with exit code {:?}",
+                    status.code()
+                )));
+            }
         }
         Ok(())
     }
@@ -175,8 +184,18 @@ impl ReloadDispatcher {
                     && comm.trim() == process_name
                     && let Ok(pid) = pid_str.parse::<i32>()
                 {
-                    unsafe { libc::kill(pid, sig) };
-                    found = true;
+                    let ret = unsafe { libc::kill(pid, sig) };
+                    if ret == 0 {
+                        found = true;
+                    } else {
+                        warn!(
+                            "Signal {} to {} (pid {}) failed: errno {}",
+                            sig,
+                            process_name,
+                            pid,
+                            std::io::Error::last_os_error()
+                        );
+                    }
                 }
             }
         }
@@ -207,30 +226,61 @@ impl ReloadDispatcher {
         Ok(())
     }
 
-    /// Apply theme colors to hardware devices
+    /// Apply theme colors to hardware devices in parallel.
+    ///
+    /// Each device runs as a separate `sh -c` child process spawned concurrently;
+    /// we then join them all so the call still returns synchronously. This matters
+    /// when multiple devices are configured (keyboard + kraken + DRAM): on a theme
+    /// change all three light up together instead of cascading over ~hundreds of ms.
     pub fn apply_hardware(&self, config: &Config, colors: &HashMap<String, String>, quiet: bool) {
         if config.hardware.is_empty() {
             return;
         }
 
-        for (device_name, device) in &config.hardware {
-            // Resolve {{color}} placeholders in the command
-            let mut cmd = device.command.clone();
-            for (color_name, hex_value) in colors {
-                let placeholder = format!("{{{{{}}}}}", color_name);
-                let hex_no_hash = hex_value.trim_start_matches('#');
-                cmd = cmd.replace(&placeholder, hex_no_hash);
-            }
+        let children: Vec<(String, std::io::Result<std::process::Child>)> = config
+            .hardware
+            .iter()
+            .map(|(device_name, device)| {
+                let mut cmd = device.command.clone();
+                for (color_name, hex_value) in colors {
+                    let placeholder = format!("{{{{{}}}}}", color_name);
+                    let hex_no_hash = hex_value.trim_start_matches('#');
+                    cmd = cmd.replace(&placeholder, hex_no_hash);
+                }
+                let child = Command::new("sh")
+                    .arg("-c")
+                    .arg(&cmd)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn();
+                (device_name.clone(), child)
+            })
+            .collect();
 
-            match self.run_command(&cmd) {
-                Ok(_) => {
+        for (device_name, child) in children {
+            let child = match child {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("⚠ Hardware {}: failed to spawn: {}", device_name, e);
+                    continue;
+                }
+            };
+
+            match child.wait_with_output() {
+                Ok(out) if out.status.success() => {
                     if !quiet {
                         println!("✓ Hardware: {}", device_name);
                     }
                 }
-                Err(e) => {
-                    eprintln!("⚠ Hardware {}: {}", device_name, e);
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    eprintln!(
+                        "⚠ Hardware {}: command failed: {}",
+                        device_name,
+                        stderr.trim()
+                    );
                 }
+                Err(e) => eprintln!("⚠ Hardware {}: {}", device_name, e),
             }
         }
     }
@@ -248,9 +298,8 @@ mod tests {
 
     #[test]
     fn test_reload_dispatcher_creation() {
+        // Constructing the dispatcher must not panic.
         let _dispatcher = ReloadDispatcher::new();
-        // Verify it can be created
-        assert!(true);
     }
 
     #[test]
@@ -266,13 +315,10 @@ mod tests {
             theme_file_path: None,
         };
 
-        // Test that touch method doesn't crash
-        match dispatcher.reload_app("test", &metadata) {
-            Ok(msg) => assert!(msg.contains("touched")),
-            Err(_) => {
-                // Touch might fail if /tmp doesn't exist in test environment, that's OK
-                assert!(true);
-            }
+        // Touch may fail if /tmp isn't writable in the test env — that's OK; we
+        // only assert it doesn't crash and reports a touch on success.
+        if let Ok(msg) = dispatcher.reload_app("test", &metadata) {
+            assert!(msg.contains("touched"));
         }
     }
 
