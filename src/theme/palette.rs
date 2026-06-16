@@ -78,7 +78,12 @@ pub fn functional_colors(palette: &Palette) -> Vec<Rgb> {
     use pr4xis_domains::applied::hmi::theming::base16::SemanticRole;
     ColorSlot::variants()
         .into_iter()
-        .filter(|slot| matches!(slot.role(), SemanticRole::Accent | SemanticRole::BrightAccent))
+        .filter(|slot| {
+            matches!(
+                slot.role(),
+                SemanticRole::Accent | SemanticRole::BrightAccent
+            )
+        })
         .filter_map(|slot| palette.get(&slot).copied())
         .collect()
 }
