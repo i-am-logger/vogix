@@ -4,7 +4,7 @@ resolver = "3"
 
 [package]
 name = "vogix"
-version = "0.6.4"
+version = "0.7.0"
 edition = "2024"
 authors = ["i-am-logger"]
 description = "Runtime theme management for NixOS with the vogix16 design system"
