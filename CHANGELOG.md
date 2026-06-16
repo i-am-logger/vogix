@@ -5,6 +5,24 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.4...vogix-v0.7.0) (2026-06-16)
+
+
+### Features
+
+* appearance, hardware, and console modules ([#169](https://github.com/i-am-logger/vogix/issues/169)) ([64ffb34](https://github.com/i-am-logger/vogix/commit/64ffb3458bf8c20d3297fc07420744b700e42c48))
+* F12 console mode + tmux + semantic colors + shader prep ([a8266e2](https://github.com/i-am-logger/vogix/commit/a8266e2a0b6a2859b2c08ccfa6a85eeb8dbc1dff))
+* **input:** engine-resolved multi-paradigm keybindings + praxis 0.25.0 ([#172](https://github.com/i-am-logger/vogix/issues/172)) ([d764b68](https://github.com/i-am-logger/vogix/commit/d764b680ce1cf6ab8db652a3c9b66ff8ca3a4db0))
+* monochromatic shader + app theming (bespec, wezterm, btop) ([80dcfbe](https://github.com/i-am-logger/vogix/commit/80dcfbe05c7a87fa89ea1c93df60d62c0f735d4b))
+* refactor CLI + session/daemon with undo stack ([3f15cf2](https://github.com/i-am-logger/vogix/commit/3f15cf248e6d252c936e29a5791a579137a2fa42))
+* shader on accepts -i/-b/-s params for intensity/brightness/saturation ([1e942ef](https://github.com/i-am-logger/vogix/commit/1e942effcf0d78e10b96724cd708aeb67956841d))
+* shader on/off/toggle CLI + status display ([f229885](https://github.com/i-am-logger/vogix/commit/f22988522a07f8380fd7e82146ac812d571d72a7))
+
+
+### Bug Fixes
+
+* default shader intensity to 0.7 ([8b2cc01](https://github.com/i-am-logger/vogix/commit/8b2cc01c80b552667f4631efae0bf18bd1274b4d))
+
 ## [0.6.4](https://github.com/i-am-logger/vogix/compare/vogix-v0.6.3...vogix-v0.6.4) (2026-03-18)
 
 
