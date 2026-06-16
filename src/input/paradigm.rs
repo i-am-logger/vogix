@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 
 use pr4xis_domains::applied::hmi::input::keybindings::{
-    BindingSet, Key, KeyCombo, Modifier, NamedKey,
+    BindingSet, Key, KeyCombo, Modifier, MouseButton, NamedKey,
 };
 
 use super::schema::{Binding, ModeGraphSpec, ModeNode, ModeSpec};
@@ -60,7 +60,14 @@ pub fn render_combo(combo: &KeyCombo) -> String {
         Key::Number(n) => n.to_string(),
         Key::Function(n) => format!("F{n}"),
         Key::Named(k) => render_named(k),
-        Key::Mouse(b) => format!("mouse{b:?}").to_ascii_lowercase(),
+        Key::Mouse(b) => match b {
+            // evdev button codes — vogix's `mouse:<code>` form (Hyprland `bindm`).
+            MouseButton::Left => "mouse:272".to_string(),
+            MouseButton::Right => "mouse:273".to_string(),
+            MouseButton::Middle => "mouse:274".to_string(),
+            MouseButton::ScrollUp => "mouse_up".to_string(),
+            MouseButton::ScrollDown => "mouse_down".to_string(),
+        },
     });
     parts.join(" + ")
 }

@@ -23,41 +23,24 @@ struct Vogix16Theme {
     colors: HashMap<String, String>,
 }
 
-/// Semantic color mapping from base16 colors to named colors
-const SEMANTIC_MAPPINGS: &[(&str, &str)] = &[
-    // Monochromatic scale
-    ("base00", "background"),
-    ("base01", "background_surface"),
-    ("base02", "background_selection"),
-    ("base03", "foreground_comment"),
-    ("base04", "foreground_border"),
-    ("base05", "foreground_text"),
-    ("base06", "foreground_heading"),
-    ("base07", "foreground_bright"),
-    // Functional colors
-    ("base08", "success"),
-    ("base09", "warning"),
-    ("base0A", "notice"),
-    ("base0B", "danger"),
-    ("base0C", "active"),
-    ("base0D", "link"),
-    ("base0E", "highlight"),
-    ("base0F", "special"),
-];
-
 /// Load colors from a vogix16 theme file
 ///
-/// Returns base colors plus semantic mappings (e.g., "background", "foreground_text")
+/// Returns base colors plus semantic aliases (e.g., "background", "foreground_text").
 pub fn load(content: &str, _path: &Path) -> Result<HashMap<String, String>> {
+    use pr4xis::category::FinitelyGenerated;
+    use pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic;
+
     let theme: Vogix16Theme = toml::from_str(content).map_err(VogixError::TomlParse)?;
 
-    // Start with base colors
+    // Start with the raw base16-shaped colors (base00..0F).
     let mut colors = theme.colors.clone();
 
-    // Add semantic color mappings
-    for (base_color, semantic_name) in SEMANTIC_MAPPINGS {
-        if let Some(v) = theme.colors.get(*base_color) {
-            colors.insert(semantic_name.to_string(), v.clone());
+    // Add vogix16 semantic aliases sourced from the praxis ontology — the single
+    // definition of the slot↔role mapping (base08=success, base0B=danger, …) and
+    // the snake_case key names — instead of a table duplicated here.
+    for semantic in Vogix16Semantic::variants() {
+        if let Some(v) = theme.colors.get(semantic.to_slot().key()) {
+            colors.insert(semantic.key().to_string(), v.clone());
         }
     }
 
@@ -110,8 +93,18 @@ base0F = "#7a5c42"
     }
 
     #[test]
-    fn test_semantic_mappings_count() {
-        // Ensure we have all 16 semantic mappings
-        assert_eq!(SEMANTIC_MAPPINGS.len(), 16);
+    fn test_derives_all_16_aliases_from_praxis() {
+        use pr4xis::category::FinitelyGenerated;
+        use pr4xis_domains::applied::hmi::theming::base16::ColorSlot;
+        use pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic;
+        let body: String = ColorSlot::variants()
+            .iter()
+            .filter(|s| s.is_base16())
+            .map(|s| format!("{} = \"#101010\"\n", s.key()))
+            .collect();
+        let colors = load(&format!("[colors]\n{body}"), Path::new("t.toml")).unwrap();
+        for s in Vogix16Semantic::variants() {
+            assert!(colors.contains_key(s.key()), "missing alias {}", s.key());
+        }
     }
 }

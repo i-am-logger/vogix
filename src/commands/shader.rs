@@ -29,7 +29,7 @@ pub fn maybe_apply_shader(config: &Config, state: &State) -> Result<()> {
 
     let params = resolve_shader_params(config, state);
     let colors = load_current_theme_colors(config, state)?;
-    shader::apply_from_colors(&colors, &params)?;
+    shader::apply_from_colors(&colors, state.current_scheme, &params)?;
 
     log::debug!(
         "Shader applied for {}-{}",

@@ -14,7 +14,7 @@ use crate::scheme::Scheme;
 use pr4xis::category::FinitelyGenerated;
 use pr4xis_domains::applied::hmi::theming::base16::{ColorSlot, Polarity};
 use pr4xis_domains::applied::hmi::theming::ontology::{self, Palette};
-use pr4xis_domains::applied::hmi::theming::schemes::{Ansi16Color, Vogix16Semantic};
+use pr4xis_domains::applied::hmi::theming::schemes::Ansi16Color;
 use pr4xis_domains::natural::colors::Rgb;
 use std::collections::HashMap;
 
@@ -33,17 +33,14 @@ pub fn build_palette(colors: &HashMap<String, String>, scheme: Scheme) -> Palett
     let mut palette = Palette::new();
 
     match scheme {
-        Scheme::Base16 | Scheme::Base24 => {
+        // vogix16 theme files are base16-shaped (base00..0F): the loader keeps
+        // those keys and only ADDS semantic aliases, so all three read by slot.
+        // The vogix16 *interpretation* (base08 = success, …) is the consumer's
+        // concern; the palette is the same ColorSlot→Rgb map regardless of scheme.
+        Scheme::Base16 | Scheme::Base24 | Scheme::Vogix16 => {
             for slot in ColorSlot::variants() {
                 if let Some(hex) = colors.get(slot.key()) {
                     insert_hex(&mut palette, slot, hex);
-                }
-            }
-        }
-        Scheme::Vogix16 => {
-            for semantic in Vogix16Semantic::variants() {
-                if let Some(hex) = colors.get(semantic.key()) {
-                    insert_hex(&mut palette, semantic.to_slot(), hex);
                 }
             }
         }
@@ -69,6 +66,21 @@ pub fn build_palette(colors: &HashMap<String, String>, scheme: Scheme) -> Palett
 /// Detect theme polarity using the praxis ontology.
 pub fn polarity(palette: &Palette) -> Option<Polarity> {
     ontology::detect_polarity(palette)
+}
+
+/// The functional (accent) colors of a palette, in `ColorSlot` order, for every
+/// slot whose role is `Accent` or `BrightAccent`. These are the semantic colors
+/// the screen shader preserves through the monochrome tint — selected by ontology
+/// role, so the choice is scheme-correct and hue-agnostic (it works for vogix16's
+/// editorial accent hues just as well as base16's). Deterministic order keeps the
+/// generated shader byte-stable for caching.
+pub fn functional_colors(palette: &Palette) -> Vec<Rgb> {
+    use pr4xis_domains::applied::hmi::theming::base16::SemanticRole;
+    ColorSlot::variants()
+        .into_iter()
+        .filter(|slot| matches!(slot.role(), SemanticRole::Accent | SemanticRole::BrightAccent))
+        .filter_map(|slot| palette.get(&slot).copied())
+        .collect()
 }
 
 /// Validate palette against praxis axioms.
@@ -123,24 +135,13 @@ mod tests {
         c
     }
 
+    // vogix16 theme files are base16-shaped (base00..0F). Accents carry semantic
+    // ROLES (base08=success, base0B=danger) with theme-chosen hues — Western here
+    // (success green, danger red), matching the real `yoga` theme.
     fn vogix16_colors() -> HashMap<String, String> {
-        let mut c = HashMap::new();
-        c.insert("background".into(), "#1e1e2e".into());
-        c.insert("background-surface".into(), "#313244".into());
-        c.insert("background-selection".into(), "#45475a".into());
-        c.insert("foreground-comment".into(), "#585b70".into());
-        c.insert("foreground-border".into(), "#6c7086".into());
-        c.insert("foreground-text".into(), "#cdd6f4".into());
-        c.insert("foreground-heading".into(), "#d8dee8".into());
-        c.insert("foreground-bright".into(), "#eceff4".into());
-        c.insert("success".into(), "#f38ba8".into());
-        c.insert("warning".into(), "#fab387".into());
-        c.insert("notice".into(), "#f9e2af".into());
-        c.insert("danger".into(), "#a6e3a1".into());
-        c.insert("active".into(), "#94e2d5".into());
-        c.insert("link".into(), "#89b4fa".into());
-        c.insert("highlight".into(), "#cba6f7".into());
-        c.insert("special".into(), "#f2cdcd".into());
+        let mut c = base16_colors();
+        c.insert("base08".into(), "#2d8a2d".into()); // success = green
+        c.insert("base0B".into(), "#c23030".into()); // danger  = red
         c
     }
 

@@ -13,6 +13,7 @@ pub mod generator;
 pub mod hyprctl;
 
 use crate::errors::Result;
+use crate::scheme::Scheme;
 use color::extract_shader_color;
 use generator::ShaderParams;
 use std::collections::HashMap;
@@ -24,11 +25,16 @@ use std::path::PathBuf;
 /// writes it to the runtime directory, and applies it via hyprctl.
 pub fn apply_from_colors(
     colors: &HashMap<String, String>,
+    scheme: Scheme,
     params: &ShaderParams,
 ) -> Result<PathBuf> {
     hyprctl::check_environment()?;
-    let shader_color = extract_shader_color(colors);
-    let path = generator::write_shader(&shader_color, params, colors)?;
+    // One scheme-aware bridge into the ontology palette drives every stage —
+    // tint hue, polarity, and functional-color preservation — instead of each
+    // re-deriving from raw base16 string keys (which silently broke ansi16).
+    let palette = crate::theme::palette::build_palette(colors, scheme);
+    let shader_color = extract_shader_color(&palette);
+    let path = generator::write_shader(&shader_color, params, &palette)?;
     hyprctl::set_shader(&path)?;
     Ok(path)
 }
