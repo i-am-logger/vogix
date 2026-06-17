@@ -412,7 +412,7 @@ in
     (mkIf (config.programs.bash.enable or false) {
       programs.bash.profileExtra = ''
         # Apply vogix theme on login (restores theme after reboot)
-        ${cfg.package}/bin/vogix refresh --quiet 2>/dev/null || true
+        ${cfg.package}/bin/vogix theme refresh --quiet 2>/dev/null || true
       '';
     })
 
@@ -420,7 +420,7 @@ in
     (mkIf (config.programs.zsh.enable or false) {
       programs.zsh.profileExtra = ''
         # Apply vogix theme on login (restores theme after reboot)
-        ${cfg.package}/bin/vogix refresh --quiet 2>/dev/null || true
+        ${cfg.package}/bin/vogix theme refresh --quiet 2>/dev/null || true
       '';
     })
 
@@ -428,7 +428,7 @@ in
     (mkIf (config.programs.fish.enable or false) {
       programs.fish.loginShellInit = ''
         # Apply vogix theme on login (restores theme after reboot)
-        ${cfg.package}/bin/vogix refresh --quiet 2>/dev/null; or true
+        ${cfg.package}/bin/vogix theme refresh --quiet 2>/dev/null; or true
       '';
     })
 

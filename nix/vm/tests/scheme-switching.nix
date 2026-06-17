@@ -115,9 +115,9 @@ testLib.mkTest "scheme-switching" ''
       print(f"\n  --- Switching from {from_scheme} to {to_scheme} ---")
 
       if expected_theme:
-          switch_cmd = f"vogix -s {to_scheme} -t {expected_theme}"
+          switch_cmd = f"vogix theme set -s {to_scheme} -t {expected_theme}"
       else:
-          switch_cmd = f"vogix -s {to_scheme}"
+          switch_cmd = f"vogix theme set -s {to_scheme}"
 
       switch_result = machine.execute(f"su - vogix -c '{switch_cmd} 2>&1'")
       if switch_result[0] != 0:
