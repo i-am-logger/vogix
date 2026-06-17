@@ -1,12 +1,13 @@
-//! Configuration module - system config loading and path resolution.
+//! Configuration module - config manifest loading and path resolution.
 //!
 //! This module provides:
-//! - `Config` struct for loading vogix system configuration from /etc/vogix/
+//! - `Config` struct for loading the vogix config manifest from
+//!   `~/.local/state/vogix/config.toml`
 //! - `AppMetadata` for application-specific settings
 //! - `TemplatesConfig` and `ThemeSourcesConfig` for template-based rendering
 //!
 //! Path architecture:
-//! - `/etc/vogix/config.toml` - System manifest (NixOS module, read-only)
+//! - `~/.local/state/vogix/config.toml` - Config manifest (home-manager-generated)
 //! - `~/.local/share/vogix/themes/` - Theme packages (home-manager, read-only)
 //! - `~/.local/state/vogix/` - Per-user state (CLI managed, mutable)
 //! - `~/.cache/vogix/` - Per-user cache (rendered templates)
@@ -51,7 +52,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration from the system config (/etc/vogix/config.toml)
+    /// Load configuration from the user manifest (~/.local/state/vogix/config.toml)
     pub fn load() -> Result<Self> {
         let manifest_path = Self::manifest_path()?;
 

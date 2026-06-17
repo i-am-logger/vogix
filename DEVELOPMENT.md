@@ -51,10 +51,7 @@ cargo check
 ### Nix Package (Production)
 
 ```bash
-# Build with devenv (recommended - uses crate2nix for optimal Rust builds)
-devenv build outputs.vogix
-
-# Or build with nix (uses the same package definition)
+# Build the package (recommended)
 nix build .#vogix
 
 # Build for specific architecture
@@ -62,7 +59,7 @@ nix build .#packages.x86_64-linux.vogix
 nix build .#packages.aarch64-linux.vogix
 ```
 
-Both `devenv build` and `nix build` produce the same package using `crate2nix` for reproducible Rust builds.
+The package is built with nixpkgs' standard `rustPlatform.buildRustPackage` (`nix/packages/vogix.nix`) for a reproducible Rust build.
 
 ## Testing
 
@@ -96,12 +93,12 @@ nix build .#checks.x86_64-linux.cli             # CLI flags, error handling
 nix run .#vogix-vm
 
 # Inside the VM, test commands:
-vogix status
-vogix list
-vogix list -s base16
-vogix -s base16 -t catppuccin -v mocha
-vogix -v darker
-vogix -v lighter
+vogix theme status
+vogix theme list
+vogix theme list -s base16
+vogix theme set -s base16 -t catppuccin -v mocha
+vogix theme set -v darker
+vogix theme set -v lighter
 ```
 
 See [TESTING.md](TESTING.md) for testing documentation.
@@ -157,8 +154,13 @@ vogix/
 │   ├── commands/               # Command handlers
 │   │   ├── cache.rs            # Cache management
 │   │   ├── completions.rs      # Shell completions
+│   │   ├── daemon.rs           # Reload daemon
+│   │   ├── input.rs            # Input engine / keybindings
 │   │   ├── list.rs             # List themes
+│   │   ├── modes.rs            # Paradigms and modes
 │   │   ├── refresh.rs          # Refresh symlinks
+│   │   ├── session.rs          # Session save/restore/undo
+│   │   ├── shader.rs           # Hyprland screen shader
 │   │   ├── status.rs           # Show status
 │   │   └── theme_change.rs     # Theme/variant switching
 │   ├── cache/                  # Theme cache module
@@ -204,11 +206,20 @@ vogix/
 │   ├── packages/
 │   │   └── vogix.nix           # Package definition
 │   └── vm/
-│       ├── tests/              # Integration tests
-│       │   ├── smoke.nix
-│       │   ├── architecture.nix
-│       │   ├── theme-switching.nix
-│       │   └── cli.nix
+│       ├── tests/              # Integration tests (12 wired flake checks)
+│       │   ├── lib.nix             # Shared test helpers
+│       │   ├── smoke.nix           # Binary, status, list, systemd
+│       │   ├── architecture.nix    # Symlinks, runtime dirs
+│       │   ├── theme-switching.nix # Theme/variant switching
+│       │   ├── scheme-switching.nix # Cross-scheme, palette format
+│       │   ├── navigation.nix      # Darker/lighter navigation
+│       │   ├── cli.nix             # CLI flags, error handling
+│       │   ├── state.nix           # State persistence
+│       │   ├── session.nix         # Session save/restore/undo
+│       │   ├── runtime-size.nix    # Runtime size inspection
+│       │   ├── stress.nix          # Rapid switching
+│       │   ├── templates.nix       # Template architecture
+│       │   └── input-engine.nix    # Input engine end-to-end
 │       ├── test-vm.nix         # VM configuration
 │       └── home.nix            # Test user config
 │
@@ -346,7 +357,7 @@ RUST_BACKTRACE=full cargo run -- -t forest
 ```bash
 # After home-manager switch
 ls -la ~/.local/share/vogix/themes/
-cat /etc/vogix/config.toml
+cat ~/.local/state/vogix/config.toml
 
 # Check symlinks
 ls -la ~/.config/alacritty/colors.toml
@@ -438,7 +449,7 @@ nix flake check --show-trace
 
 | What | Path | Managed By |
 |------|------|------------|
-| System config | `/etc/vogix/config.toml` | NixOS module |
+| Config manifest | `~/.local/state/vogix/config.toml` | home-manager |
 | Theme packages | `~/.local/share/vogix/themes/` | home-manager |
 | Current symlink | `~/.local/state/vogix/current-theme` | Rust CLI |
 | User state | `~/.local/state/vogix/state.toml` | Rust CLI |
@@ -453,9 +464,9 @@ All components derive from here:
 - Nix package: Reads Cargo.toml via `builtins.fromTOML`
 - release-please: Updates Cargo.toml automatically
 
-Users pin versions via Git tags:
+Users pin versions via Git tags (release tags are `vogix-` prefixed):
 ```nix
-inputs.vogix.url = "github:i-am-logger/vogix/v0.5.0";
+inputs.vogix.url = "github:i-am-logger/vogix/vogix-v0.7.0";
 ```
 
 ## Conventional Commits

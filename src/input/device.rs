@@ -15,8 +15,9 @@
 //! for pointer binds (Super+drag/scroll). Either way the *base* key of a bound or
 //! unmapped Super-combo is swallowed, so no compositor keyboard bind double-fires.
 //! In catchall (`submap`) modes every unbound key is swallowed too; in passthrough
-//! modes unbound keys are re-emitted. CapsLock is never emitted — it is the mode
-//! trigger.
+//! modes unbound keys are re-emitted. CapsLock is swallowed as the mode trigger
+//! only when a dual-role layer is configured; with no such layer (the flat
+//! default) it passes through as an ordinary CapsLock.
 
 use super::health;
 use super::keys::{
@@ -313,8 +314,15 @@ impl Router {
         let mut fx = Vec::new();
         self.last_activity = now; // any input resets the sticky-idle timer
 
-        // CapsLock — the mode trigger; never emitted.
+        // CapsLock — the mode trigger; never emitted. EXCEPT when no dual-role
+        // layer is configured (`caps_target` is None — the flat default): the
+        // tap/hold intents would be no-ops, so swallowing it would make CapsLock
+        // a dead key. Pass it through so it stays an ordinary CapsLock.
         if is_capslock(key) {
+            if self.caps_target.is_none() {
+                fx.push(Effect::Emit { code, value });
+                return fx;
+            }
             let intent = match value {
                 1 => self.detector.feed(CapsEvent::CapsDown(now)),
                 0 => self.detector.feed(CapsEvent::CapsUp(now)),

@@ -76,17 +76,17 @@ testLib.mkTest "smoke" ''
   print("✓ Shell completions work")
 
   print("\n=== Test: Vogix Refresh in Login Shell Profile ===")
-  # Check that vogix refresh is in bash profile or .profile (since bash is enabled in test VM)
+  # Check that vogix theme refresh is in bash profile or .profile (since bash is enabled in test VM)
   # Home-manager may put profileExtra in .profile which is sourced by .bash_profile
   profile_content = machine.succeed("su - vogix -c 'cat ~/.profile 2>/dev/null || echo NOTFOUND'")
   bash_profile_content = machine.succeed("su - vogix -c 'cat ~/.bash_profile 2>/dev/null || echo NOTFOUND'")
 
-  if "vogix refresh" in profile_content or "vogix refresh" in bash_profile_content:
-      print("✓ vogix refresh found in login shell profile")
+  if "vogix theme refresh" in profile_content or "vogix theme refresh" in bash_profile_content:
+      print("✓ vogix theme refresh found in login shell profile")
   else:
       print(f".profile content: {profile_content[:500]}")
       print(f".bash_profile content: {bash_profile_content[:500]}")
-      raise AssertionError("FAILED: vogix refresh not found in shell profile")
+      raise AssertionError("FAILED: vogix theme refresh not found in shell profile")
 
   print("\n" + "="*60)
   print("SMOKE TESTS PASSED!")

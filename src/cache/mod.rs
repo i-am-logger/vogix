@@ -92,14 +92,22 @@ impl ThemeCache {
             "{}.tmp",
             cache_path.file_name().unwrap_or_default().to_string_lossy()
         ));
-        renderer::render_to_cache(
+        // Clear any stale .tmp from a previously-crashed render so we never reuse a
+        // partial directory (render_to_cache's create_dir_all would no-op over it).
+        let _ = std::fs::remove_dir_all(&tmp_path);
+        if let Err(e) = renderer::render_to_cache(
             &tmp_path,
             &self.templates.path,
             &self.theme_sources,
             scheme,
             theme,
             variant,
-        )?;
+        ) {
+            // Don't leave a partial .tmp dir orphaned on failure — clean_stale only
+            // scans top-level hash dirs, so it would never collect a variant-level one.
+            let _ = std::fs::remove_dir_all(&tmp_path);
+            return Err(e);
+        }
         // Atomic rename — readers see either the complete set or nothing
         if let Err(e) = std::fs::rename(&tmp_path, &cache_path) {
             // Another process may have raced and won — use their result

@@ -29,6 +29,18 @@ use errors::Result;
 use log::{debug, error, info, warn};
 
 fn main() {
+    // Restore default SIGPIPE handling. Rust sets SIGPIPE to SIG_IGN at startup,
+    // so writing to a pipe whose reader has already closed (e.g.
+    // `vogix completions bash | head`, `vogix theme list | grep -q`) surfaces as a
+    // BrokenPipe io error that clap_complete/println `.unwrap()` turns into a
+    // panic. SIG_DFL makes the process exit quietly on SIGPIPE — the conventional
+    // CLI behavior.
+    // SAFETY: called once at the very start of main, before any threads spawn.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     let cli = Cli::parse_args();
     init_logging(cli.log_level);
 
@@ -150,7 +162,7 @@ fn run_with_engine(command: &Commands) -> Result<()> {
     let config = config::Config::load()?;
 
     // Translate CLI command to VogixAction (variant resolution happens here)
-    let action = cli_to_action(command, &state)?;
+    let action = cli_to_action(command, &state, &config)?;
     debug!("Action: {}", action.describe());
 
     // Run through engine (preconditions checked, pure state transition)
@@ -191,9 +203,17 @@ fn run_with_engine(command: &Commands) -> Result<()> {
         return Ok(());
     }
 
-    // Verify theme-variant exists before committing state
-    // (prevents persisting invalid state if theme was deleted)
-    theme::verify_theme_variant_exists(&new_state.current_theme, &new_state.current_variant)?;
+    // Verify theme-variant exists before committing state (prevents persisting
+    // invalid state if the theme was deleted) — but only when the theme/variant
+    // actually changed, or on Refresh. Shader/mode-only actions never touch the
+    // theme directory, so they must not abort just because a stale theme package
+    // referenced by on-disk state was removed.
+    if is_refresh
+        || new_state.current_theme != state.current_theme
+        || new_state.current_variant != state.current_variant
+    {
+        theme::verify_theme_variant_exists(&new_state.current_theme, &new_state.current_variant)?;
+    }
 
     // Side effects first — if they fail, state is NOT persisted
     execute_side_effects(command, &config, new_state)?;
@@ -220,7 +240,12 @@ fn handle_theme_undo() -> Result<()> {
     let mut hist = history::History::load()?;
 
     match hist.undo(&state) {
-        Some(prev) => {
+        Some(mut prev) => {
+            // History snapshots carry the current_mode captured when they were
+            // pushed, but the daemon owns current_mode and updates it out-of-band
+            // (via save_current_mode, no history push). Carry the live mode forward
+            // so a theme undo doesn't revert the interaction mode to a stale value.
+            prev.current_mode = state.current_mode.clone();
             // Side effects first — if they fail, state is NOT persisted (same as engine flow)
             execute_side_effects(
                 &Commands::Theme {
@@ -248,7 +273,9 @@ fn handle_theme_redo() -> Result<()> {
     let mut hist = history::History::load()?;
 
     match hist.redo(&state) {
-        Some(next) => {
+        Some(mut next) => {
+            // Carry the live (daemon-owned) current_mode forward — see handle_theme_undo.
+            next.current_mode = state.current_mode.clone();
             // Side effects first — if they fail, state is NOT persisted (same as engine flow)
             execute_side_effects(
                 &Commands::Theme {
@@ -271,7 +298,11 @@ fn handle_theme_redo() -> Result<()> {
 
 /// Translate CLI command to VogixAction.
 /// Variant resolution (filesystem I/O) happens here — before the pure engine.
-fn cli_to_action(command: &Commands, state: &state::State) -> Result<VogixAction> {
+fn cli_to_action(
+    command: &Commands,
+    state: &state::State,
+    config: &config::Config,
+) -> Result<VogixAction> {
     match command {
         Commands::Theme {
             command:
@@ -282,21 +313,23 @@ fn cli_to_action(command: &Commands, state: &state::State) -> Result<VogixAction
                     ..
                 },
         } => {
-            // Resolve variant: navigation (darker/lighter), polarity (dark/light), or exact name
+            // Resolve variant: exact name, or directional (light/lighter/dark/darker).
+            // On a theme switch with no variant, keep the current illumination.
             let resolved_variant = if let Some(v) = variant {
-                if cli::is_variant_navigation(&Some(v.clone())) {
-                    Some(commands::theme_change::navigate_variant(state, v)?)
-                } else {
-                    let theme_name = theme.as_deref().unwrap_or(&state.current_theme);
-                    Some(commands::theme_change::resolve_variant(
-                        theme_name,
-                        v,
-                        &state.current_variant,
-                    )?)
-                }
+                let theme_name = theme.as_deref().unwrap_or(&state.current_theme);
+                let is_switch = theme.as_deref().is_some_and(|t| t != state.current_theme);
+                Some(commands::theme_change::resolve_variant(
+                    theme_name,
+                    v,
+                    &state.current_variant,
+                    is_switch,
+                )?)
             } else if theme.is_some() && theme.as_deref() != Some(&state.current_theme) {
-                // Theme changed, no variant specified — resolve polarity-matching variant
-                commands::theme_change::resolve_polarity_variant(state, theme.as_deref().unwrap())?
+                // Theme changed, no variant specified — match the current illumination.
+                commands::theme_change::resolve_illumination_variant(
+                    state,
+                    theme.as_deref().unwrap(),
+                )?
             } else {
                 None
             };
@@ -320,9 +353,12 @@ fn cli_to_action(command: &Commands, state: &state::State) -> Result<VogixAction
                     saturation,
                 },
         } => Ok(VogixAction::ShaderOn {
-            intensity: *intensity,
-            brightness: *brightness,
-            saturation: *saturation,
+            // Fall back to the user's configured shader defaults (not hardcoded
+            // 0.5/1.0/1.0) when a flag is omitted; the engine only reaches its own
+            // constants when config.shader is absent entirely.
+            intensity: (*intensity).or(config.shader.as_ref().map(|c| c.intensity)),
+            brightness: (*brightness).or(config.shader.as_ref().map(|c| c.brightness)),
+            saturation: (*saturation).or(config.shader.as_ref().map(|c| c.saturation)),
         }),
 
         Commands::Shader {
@@ -331,7 +367,20 @@ fn cli_to_action(command: &Commands, state: &state::State) -> Result<VogixAction
 
         Commands::Shader {
             command: ShaderCommands::Toggle,
-        } => Ok(VogixAction::ShaderToggle),
+        } => {
+            // Seed the off→on direction from configured shader defaults so a
+            // toggle honors config.shader instead of the hardcoded constants.
+            let (intensity, brightness, saturation) = config
+                .shader
+                .as_ref()
+                .map(|c| (c.intensity, c.brightness, c.saturation))
+                .unwrap_or((0.5, 1.0, 1.0));
+            Ok(VogixAction::ShaderToggle {
+                intensity,
+                brightness,
+                saturation,
+            })
+        }
 
         Commands::Shader {
             command: ShaderCommands::Intensity { value },

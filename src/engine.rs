@@ -34,7 +34,13 @@ pub enum VogixAction {
         saturation: Option<f32>,
     },
     ShaderOff,
-    ShaderToggle,
+    ShaderToggle {
+        /// Defaults used for the off→on direction (config-derived, set in
+        /// cli_to_action). The on→off direction ignores them.
+        intensity: f32,
+        brightness: f32,
+        saturation: f32,
+    },
     ShaderParam {
         param: ShaderParam,
         value: f32,
@@ -69,7 +75,7 @@ impl VogixAction {
             ),
             VogixAction::ShaderOn { .. } => "shader on".into(),
             VogixAction::ShaderOff => "shader off".into(),
-            VogixAction::ShaderToggle => "shader toggle".into(),
+            VogixAction::ShaderToggle { .. } => "shader toggle".into(),
             VogixAction::ShaderParam { param, value } => {
                 format!("shader {:?} = {:.2}", param, value)
             }
@@ -121,13 +127,19 @@ pub fn apply_action(state: &State, action: &VogixAction) -> Result<State, Box<dy
         VogixAction::ShaderOff => {
             next.shader = ShaderState::Off;
         }
-        VogixAction::ShaderToggle => {
+        VogixAction::ShaderToggle {
+            intensity,
+            brightness,
+            saturation,
+        } => {
             next.shader = match &state.shader {
                 ShaderState::On { .. } => ShaderState::Off,
+                // Off/Auto → On: seed from the carried defaults (config.shader,
+                // falling back to 0.5/1.0/1.0 — both resolved in cli_to_action).
                 _ => ShaderState::On {
-                    intensity: 0.5,
-                    brightness: 1.0,
-                    saturation: 1.0,
+                    intensity: *intensity,
+                    brightness: *brightness,
+                    saturation: *saturation,
                 },
             };
         }
@@ -392,7 +404,15 @@ mod tests {
     #[test]
     fn test_shader_toggle_on_to_off() {
         let state = state_with_shader();
-        let next = apply_action(&state, &VogixAction::ShaderToggle).unwrap();
+        let next = apply_action(
+            &state,
+            &VogixAction::ShaderToggle {
+                intensity: 0.5,
+                brightness: 1.0,
+                saturation: 1.0,
+            },
+        )
+        .unwrap();
         assert_eq!(next.shader, ShaderState::Off);
     }
 
@@ -402,8 +422,17 @@ mod tests {
             shader: ShaderState::Off,
             ..Default::default()
         };
-        let next = apply_action(&state, &VogixAction::ShaderToggle).unwrap();
-        assert!(next.shader.is_on());
+        // Toggling on uses the carried defaults (config-derived in cli_to_action).
+        let next = apply_action(
+            &state,
+            &VogixAction::ShaderToggle {
+                intensity: 0.7,
+                brightness: 1.2,
+                saturation: 0.9,
+            },
+        )
+        .unwrap();
+        assert_eq!(next.shader.params(), Some((0.7, 1.2, 0.9)));
     }
 
     #[test]

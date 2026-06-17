@@ -21,8 +21,8 @@ let
 in
 testLib.mkTest "navigation" ''
   print("=== Test: Darker/Lighter Navigation ===")
-  # Start from dark (yoga uses 'night'), try lighter
-  machine.succeed("su - vogix -c 'vogix theme set -v dark'")
+  # Start deterministically at yoga's dark variant (night), then try lighter.
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   machine.succeed("su - vogix -c 'vogix theme set -v lighter'")
   nav_status = machine.succeed("su - vogix -c 'vogix theme status'")
   # yoga uses 'day' for light polarity, not 'light'
@@ -48,7 +48,7 @@ testLib.mkTest "navigation" ''
 
   # Start from dark (night), navigate to lighter (day)
   print("  --- Starting from dark (night), navigating lighter ---")
-  machine.succeed("su - vogix -c 'vogix theme set -t yoga -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   status = machine.succeed("su - vogix -c 'vogix theme status'")
   assert "night" in status.lower()
 
@@ -133,7 +133,7 @@ testLib.mkTest "navigation" ''
       print(f"    ✓ {scheme}/catppuccin: Full navigation cycle complete!")
 
   # Reset
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
 
   print("\n=== Test: Single-Variant Theme Handling (Dracula) ===")
   # dracula only has 'default' variant (dark polarity)
@@ -156,21 +156,58 @@ testLib.mkTest "navigation" ''
       assert result_light[0] == 0, f"Single-variant theme should accept -v light: {result_light[1][:100]}"
       print("    ✓ -v light uses the only available variant")
 
-      # darker/lighter should fail at boundary (only one variant)
+      # On a single-variant theme there is nowhere to step, so darker/lighter
+      # resolve to the only variant too (consistent with -v dark/-v light above).
       result = machine.execute("su - vogix -c 'vogix theme set -v darker 2>&1'")
-      assert result[0] != 0, "darker on single-variant theme should fail!"
-      print("    ✓ -v darker correctly fails (single variant = at boundary)")
+      assert result[0] == 0, f"darker on single-variant theme should use the only variant: {result[1][:100]}"
+      print("    ✓ -v darker uses the only available variant")
 
       result = machine.execute("su - vogix -c 'vogix theme set -v lighter 2>&1'")
-      assert result[0] != 0, "lighter on single-variant theme should fail!"
-      print("    ✓ -v lighter correctly fails (single variant = at boundary)")
+      assert result[0] == 0, f"lighter on single-variant theme should use the only variant: {result[1][:100]}"
+      print("    ✓ -v lighter uses the only available variant")
 
       print("\n✓ Single-variant theme handling verified!")
   else:
       print("⚠ Could not test single-variant handling (base16/dracula not available)")
 
+  print("\n=== Test: dark/light are step-aliases of darker/lighter ===")
+  # yoga: day (light, order 0) <-> night (dark, order 1)
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
+  machine.succeed("su - vogix -c 'vogix theme set -v light'")  # steps one lighter
+  s = machine.succeed("su - vogix -c 'vogix theme status'")
+  assert "day" in s.lower(), f"-v light should step night -> day, got: {s}"
+  print("    ✓ -v light steps night -> day (alias of -v lighter)")
+  machine.succeed("su - vogix -c 'vogix theme set -v dark'")  # steps one darker
+  s = machine.succeed("su - vogix -c 'vogix theme status'")
+  assert "night" in s.lower(), f"-v dark should step day -> night, got: {s}"
+  print("    ✓ -v dark steps day -> night (alias of -v darker)")
+
+  print("\n=== Test: theme switch preserves illumination ===")
+  cat = machine.execute("su - vogix -c 'vogix theme set -s base16 -t catppuccin -v mocha 2>&1'")
+  if cat[0] == 0:
+      # From a light source, a switch lands on the new theme's lightest variant.
+      machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v day'")
+      machine.succeed("su - vogix -c 'vogix theme set -s base16 -t catppuccin'")  # no -v
+      s = machine.succeed("su - vogix -c 'vogix theme status'")
+      assert "latte" in s.lower(), f"light source should map to lightest (latte), got: {s}"
+      print("    ✓ switch from light -> catppuccin latte (lightest)")
+      # From a dark source, a switch lands on the darkest.
+      machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
+      machine.succeed("su - vogix -c 'vogix theme set -s base16 -t catppuccin'")  # no -v
+      s = machine.succeed("su - vogix -c 'vogix theme status'")
+      assert "mocha" in s.lower(), f"dark source should map to darkest (mocha), got: {s}"
+      print("    ✓ switch from dark -> catppuccin mocha (darkest)")
+      # Explicit -v light on a switch jumps to the extreme (lightest).
+      machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
+      machine.succeed("su - vogix -c 'vogix theme set -s base16 -t catppuccin -v light'")
+      s = machine.succeed("su - vogix -c 'vogix theme status'")
+      assert "latte" in s.lower(), f"switch -v light should be lightest (latte), got: {s}"
+      print("    ✓ switch -t catppuccin -v light -> latte (lightest)")
+  else:
+      print("    ⚠ catppuccin unavailable, skipping illumination test")
+
   # Final reset
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
 
   print("\n" + "="*60)
   print("NAVIGATION TESTS PASSED!")

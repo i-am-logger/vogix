@@ -149,7 +149,10 @@ pub fn generate_glsl(color: &ShaderColor, params: &ShaderParams, palette: &Palet
 }
 
 /// Return the directory for shader files at runtime.
-/// Prefers `$XDG_RUNTIME_DIR/vogix/`, falls back to `/tmp/vogix/`.
+///
+/// Prefers `$XDG_RUNTIME_DIR/vogix/`. Only when `XDG_RUNTIME_DIR` is *unset* does
+/// it fall back to `/tmp/vogix/`; if `XDG_RUNTIME_DIR` is set but its directory
+/// does not exist, that is an error ([`VogixError::NoRuntimeDir`]).
 pub fn shader_dir() -> Result<PathBuf> {
     let base = std::env::var("XDG_RUNTIME_DIR")
         .map(PathBuf::from)

@@ -27,15 +27,6 @@ impl ThemeInfo {
         sorted
     }
 
-    /// Get the default variant for a given polarity (dark/light)
-    /// Returns the first variant with matching polarity, or the first variant if none match
-    pub fn default_variant_for_polarity(&self, polarity: &str) -> Option<&VariantInfo> {
-        self.variants
-            .iter()
-            .find(|v| v.polarity == polarity)
-            .or_else(|| self.variants.first())
-    }
-
     /// Navigate to darker or lighter variant
     /// Returns the new variant name, or error if at boundary
     pub fn navigate(&self, current: &str, direction: &str) -> Result<String> {
@@ -73,6 +64,40 @@ impl ThemeInfo {
                 direction
             ))),
         }
+    }
+
+    /// Normalized luminance position of `variant_name`: 0.0 = lightest, 1.0 =
+    /// darkest. Single-variant themes return 0.0. Used to match illumination
+    /// across themes on a switch.
+    pub fn order_fraction(&self, variant_name: &str) -> Option<f64> {
+        let sorted = self.variants_by_order();
+        let max = sorted.len().saturating_sub(1);
+        let idx = sorted
+            .iter()
+            .position(|v| v.name.eq_ignore_ascii_case(variant_name))?;
+        Some(if max == 0 {
+            0.0
+        } else {
+            idx as f64 / max as f64
+        })
+    }
+
+    /// The variant whose normalized luminance position is closest to `frac`
+    /// (0.0 = lightest .. 1.0 = darkest). Ties keep the lighter variant.
+    pub fn nearest_by_fraction(&self, frac: f64) -> &VariantInfo {
+        let sorted = self.variants_by_order();
+        let max = sorted.len().saturating_sub(1);
+        let mut best = sorted[0];
+        let mut best_d = f64::INFINITY;
+        for (i, v) in sorted.iter().enumerate() {
+            let pos = if max == 0 { 0.0 } else { i as f64 / max as f64 };
+            let d = (pos - frac).abs();
+            if d < best_d {
+                best_d = d;
+                best = *v;
+            }
+        }
+        best
     }
 }
 
@@ -238,5 +263,72 @@ mod tests {
         assert_eq!(sorted[0].name, "dawn");
         assert_eq!(sorted[1].name, "moon");
         assert_eq!(sorted[2].name, "base");
+    }
+
+    fn rose_pine() -> ThemeInfo {
+        // dawn (lightest, 0), moon (dark, 1), base (darkest, 2) — two darks.
+        ThemeInfo {
+            name: "rose-pine".to_string(),
+            scheme: Scheme::Base16,
+            variants: vec![
+                VariantInfo {
+                    name: "dawn".to_string(),
+                    polarity: "light".to_string(),
+                    order: 0,
+                },
+                VariantInfo {
+                    name: "moon".to_string(),
+                    polarity: "dark".to_string(),
+                    order: 1,
+                },
+                VariantInfo {
+                    name: "base".to_string(),
+                    polarity: "dark".to_string(),
+                    order: 2,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_order_fraction() {
+        let theme = rose_pine();
+        assert_eq!(theme.order_fraction("dawn"), Some(0.0)); // lightest
+        assert_eq!(theme.order_fraction("moon"), Some(0.5)); // middle
+        assert_eq!(theme.order_fraction("base"), Some(1.0)); // darkest
+        assert_eq!(theme.order_fraction("DAWN"), Some(0.0)); // case-insensitive
+        assert_eq!(theme.order_fraction("nope"), None);
+    }
+
+    #[test]
+    fn test_nearest_by_fraction() {
+        // Two-variant theme (yoga-style): day (light, 0), night (dark, 1).
+        let two = ThemeInfo {
+            name: "yoga".to_string(),
+            scheme: Scheme::Vogix16,
+            variants: vec![
+                VariantInfo {
+                    name: "day".to_string(),
+                    polarity: "light".to_string(),
+                    order: 0,
+                },
+                VariantInfo {
+                    name: "night".to_string(),
+                    polarity: "dark".to_string(),
+                    order: 1,
+                },
+            ],
+        };
+        // From the dark end -> night; from the light end -> day (polarity-preserving).
+        assert_eq!(two.nearest_by_fraction(1.0).name, "night");
+        assert_eq!(two.nearest_by_fraction(0.0).name, "day");
+        assert_eq!(two.nearest_by_fraction(0.4).name, "day");
+        assert_eq!(two.nearest_by_fraction(0.6).name, "night");
+
+        // Multi-variant: a mid source lands on the nearest-luminance variant.
+        let rp = rose_pine();
+        assert_eq!(rp.nearest_by_fraction(0.5).name, "moon"); // exact middle
+        assert_eq!(rp.nearest_by_fraction(1.0).name, "base"); // darkest
+        assert_eq!(rp.nearest_by_fraction(0.0).name, "dawn"); // lightest
     }
 }

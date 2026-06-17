@@ -21,26 +21,29 @@ nix build .#checks.x86_64-linux.cli             # CLI flags, error handling
 
 ### What Gets Tested
 
-The automated test suite verifies **18 test scenarios**:
+The automated test suite is split into **12 wired suites** (one `nix build .#checks.<system>.<suite>` each):
 
-1. **Binary Installation** - Vogix binary is installed and accessible
-2. **Status Command** - `vogix status` shows current scheme, theme and variant
-3. **List Command** - `vogix list` displays available schemes and themes
-4. **Config File** - Configuration file created with correct settings
-5. **Theme Files** - Theme definitions installed correctly
-6. **State Management** - State file created and persists changes
-7. **Variant Navigation** - `vogix -v darker/lighter/dark/light` works correctly
-8. **Theme Switching with Config Updates** - `vogix -t <name>` switches themes and regenerates app configs
-9. **Symlink Architecture** - Verifies ~/.config symlinks point to vogix-managed themed configs
-10. **Template Bundling** - Templates bundled in Nix package
-11. **Systemd Service** - Daemon service defined and can start
-12. **Shell Completions** - Completion generation works for all shells
-13. **Application Config Generation** - Alacritty and btop configs generated with correct hex colors
-14. **Theme Validation** - Theme files are valid
-15. **Error Handling** - Invalid inputs rejected gracefully
-16. **Version Check** - `--version` flag works
-17. **Multi-Scheme Support** - All 4 schemes (vogix16, base16, base24, ansi16) work
-18. **Catppuccin Navigation** - darker/lighter navigation through catppuccin variants
+1. **smoke** - Binary installs, `vogix theme status`/`theme list`, systemd daemon defined and starts
+2. **architecture** - `~/.config` symlinks point to vogix-managed themed configs; runtime dirs created
+3. **theme-switching** - `vogix theme set -t <name>` switches themes and regenerates app configs (alacritty, btop) with correct hex colors
+4. **scheme-switching** - All 4 schemes (vogix16, base16, base24, ansi16) work; palette format validation
+5. **navigation** - `vogix theme set -v darker/lighter/dark/light`; catppuccin multi-variant navigation
+6. **cli** - Subcommand parsing, CLI flags, error handling, `--version`
+7. **state** - State file created and persists changes
+8. **session** - Session save/restore behavior
+9. **runtime-size** - Runtime footprint / generated-config size bounds
+10. **stress** - Rapid theme/variant switching
+11. **templates** - Template architecture; templates bundled in the Nix package
+12. **input-engine** - The evdev-grab → uinput re-emit / mock-compositor dispatch engine
+
+The **input-engine** suite exercises, among others:
+
+- **Plain-key re-emit** - an unbound key is re-emitted on the engine's virtual device (typing works, compositor-agnostic)
+- **Super→Ctrl remap** - `Super+C/V` emit `Ctrl+C/V` at evdev; Super never leaks; numbers/excluded keys are not remapped (context-aware for terminal vs GUI)
+- **CapsLock tap/hold** - caps-hold + bound key dispatches the WM command (bound key swallowed); caps-tap enters a sticky mode and exits cleanly
+- **Sub-mode routing** - caps-hold → move/resize sub-modes, move↔resize switch, release returns to the app with no stuck mode
+- **Esc safety-net** - Esc exits a catchall mode back to the app (typing resumes)
+- **Single-instance guard** - a 2nd engine refuses with the lock message and never double-grabs; the 1st engine stays intact
 
 ## Test Output
 
@@ -113,11 +116,19 @@ The tests use `pkgs.nixosTest`, which:
 - Pre-configured test user
 - All vogix16 features enabled
 
-**Test Scripts**: `nix/vm/tests/`
-- `smoke.nix` - Quick sanity checks
+**Test Scripts**: `nix/vm/tests/` (12 wired suites, plus `lib.nix` shared helpers)
+- `smoke.nix` - Quick sanity checks (binary, status, list, systemd)
 - `architecture.nix` - Symlinks, runtime directories
-- `theme-switching.nix` - Theme and variant switching
-- `cli.nix` - CLI flags, error handling
+- `theme-switching.nix` - Theme and variant switching with config regeneration
+- `scheme-switching.nix` - Cross-scheme tests, palette format validation
+- `navigation.nix` - darker/lighter navigation, catppuccin multi-variant
+- `cli.nix` - Subcommand parsing, CLI flags, error handling
+- `state.nix` - State file creation and persistence
+- `session.nix` - Session save/restore
+- `runtime-size.nix` - Runtime footprint / generated-config size bounds
+- `stress.nix` - Rapid switching
+- `templates.nix` - Template architecture, bundling
+- `input-engine.nix` - evdev-grab → uinput re-emit / mock-compositor dispatch engine
 
 **Home Config**: `nix/vm/home.nix`
 - User configuration for testing
@@ -134,18 +145,18 @@ If you want to manually explore the test environment:
 nix run .#vogix-vm
 
 # Inside VM, run commands manually:
-vogix status
-vogix list
-vogix list -s base16
-vogix -s base16 -t catppuccin -v mocha
-vogix -v darker
-vogix -v lighter
-vogix -v dark
+vogix theme status
+vogix theme list
+vogix theme list -s base16
+vogix theme set -s base16 -t catppuccin -v mocha
+vogix theme set -v darker
+vogix theme set -v lighter
+vogix theme set -v dark
 
 # Check paths
 ls -la ~/.local/share/vogix/themes/
 ls -la ~/.local/state/vogix/
-cat /etc/vogix/config.toml
+cat ~/.local/state/vogix/config.toml
 ```
 
 ## Continuous Integration
@@ -238,7 +249,7 @@ These require manual testing on a real system, but the core functionality - conf
 
 Check package installation in `test-vm.nix`:
 ```nix
-services.vogix.enable = true;
+vogix.enable = true;
 ```
 
 ### Test fails with "theme not found"

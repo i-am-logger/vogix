@@ -3,6 +3,11 @@ use crate::state::State;
 use log::debug;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Per-process counter so the temp symlink name is unique even across concurrent
+/// in-process invocations — the PID alone is only unique between processes.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Manages symlinks for theme switching
 pub struct SymlinkManager {
@@ -58,22 +63,34 @@ impl SymlinkManager {
         fs::create_dir_all(&state_dir)?;
         let current_link = state_dir.join("current-theme");
 
-        // Remove existing symlink if present
-        if current_link.exists() || current_link.is_symlink() {
-            if current_link.is_symlink() {
-                fs::remove_file(&current_link)?;
-            } else {
-                return Err(VogixError::symlink(format!(
-                    "'current-theme' path exists but is not a symlink: {}",
-                    current_link.display()
-                )));
-            }
+        // Guard: never clobber a non-symlink occupying this path.
+        if current_link.exists() && !current_link.is_symlink() {
+            return Err(VogixError::symlink(format!(
+                "'current-theme' path exists but is not a symlink: {}",
+                current_link.display()
+            )));
         }
 
-        // Create new symlink (absolute path to theme package)
+        // Swap the symlink atomically: create it under a unique temp name in the
+        // same directory, then rename() over the live path. rename(2) replaces an
+        // existing symlink in one step, so `current-theme` is never absent — a
+        // remove-then-create would leave a window where every app config that
+        // resolves through it dangles (a crash there breaks the whole desktop).
+        let tmp_link = state_dir.join(format!(
+            "current-theme.tmp.{}.{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_file(&tmp_link); // clear a stale temp from a crashed run
+
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&target_path, &current_link).map_err(|e| {
+        std::os::unix::fs::symlink(&target_path, &tmp_link).map_err(|e| {
             VogixError::symlink_with_source("failed to create 'current-theme' symlink", e)
+        })?;
+
+        fs::rename(&tmp_link, &current_link).map_err(|e| {
+            let _ = fs::remove_file(&tmp_link);
+            VogixError::symlink_with_source("failed to swap 'current-theme' symlink", e)
         })?;
 
         debug!(
@@ -101,22 +118,30 @@ impl SymlinkManager {
 
         let current_link = state_dir.join("current-theme");
 
-        // Remove existing symlink if present
-        if current_link.exists() || current_link.is_symlink() {
-            if current_link.is_symlink() {
-                fs::remove_file(&current_link)?;
-            } else {
-                return Err(VogixError::symlink(format!(
-                    "'current-theme' path exists but is not a symlink: {}",
-                    current_link.display()
-                )));
-            }
+        // Guard: never clobber a non-symlink occupying this path.
+        if current_link.exists() && !current_link.is_symlink() {
+            return Err(VogixError::symlink(format!(
+                "'current-theme' path exists but is not a symlink: {}",
+                current_link.display()
+            )));
         }
 
-        // Create new symlink (absolute path to cache)
+        // Atomic swap (see update_current_symlink): temp symlink + rename().
+        let tmp_link = state_dir.join(format!(
+            "current-theme.tmp.{}.{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_file(&tmp_link);
+
         #[cfg(unix)]
-        std::os::unix::fs::symlink(cache_path, &current_link).map_err(|e| {
+        std::os::unix::fs::symlink(cache_path, &tmp_link).map_err(|e| {
             VogixError::symlink_with_source("failed to create state 'current-theme' symlink", e)
+        })?;
+
+        fs::rename(&tmp_link, &current_link).map_err(|e| {
+            let _ = fs::remove_file(&tmp_link);
+            VogixError::symlink_with_source("failed to swap state 'current-theme' symlink", e)
         })?;
 
         debug!(

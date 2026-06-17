@@ -42,7 +42,7 @@ testLib.mkTest "state" ''
   # Perform a series of operations and verify state is consistent
 
   # Complex sequence of operations
-  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v dark'")
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   machine.succeed("su - vogix -c 'vogix theme set -t nordic'")
   machine.succeed("su - vogix -c 'vogix theme set -v light'")
   machine.succeed("su - vogix -c 'vogix theme set -t matrix -v dark'")

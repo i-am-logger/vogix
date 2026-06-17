@@ -38,7 +38,7 @@ pub fn handle_list(filter_scheme: Option<&Scheme>, show_variants: bool) -> Resul
         println!("  base24  ({} themes)", base24_count);
         println!("  ansi16  ({} themes)", ansi16_count);
         println!();
-        println!("Use 'vogix list -s <scheme>' to list themes for a specific scheme");
+        println!("Use 'vogix theme list -s <scheme>' to list themes for a specific scheme");
         println!();
     }
 
