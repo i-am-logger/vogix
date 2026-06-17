@@ -21,9 +21,8 @@ reload_method = "command"
 reload_command = "hyprctl reload"
 
 [apps.alacritty]
-config_path = "/home/user/.config/alacritty/colors.toml"
+config_path = "/home/user/.config/alacritty/alacritty.toml"
 reload_method = "touch"
-theme_file_path = "/home/user/.config/alacritty/theme.toml"
 
 [apps.fish]
 config_path = "/home/user/.config/fish/colors.fish"

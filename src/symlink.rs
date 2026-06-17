@@ -3,6 +3,11 @@ use crate::state::State;
 use log::debug;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Per-process counter so the temp symlink name is unique even across concurrent
+/// in-process invocations — the PID alone is only unique between processes.
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Manages symlinks for theme switching
 pub struct SymlinkManager {
@@ -71,7 +76,11 @@ impl SymlinkManager {
         // existing symlink in one step, so `current-theme` is never absent — a
         // remove-then-create would leave a window where every app config that
         // resolves through it dangles (a crash there breaks the whole desktop).
-        let tmp_link = state_dir.join(format!("current-theme.tmp.{}", std::process::id()));
+        let tmp_link = state_dir.join(format!(
+            "current-theme.tmp.{}.{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = fs::remove_file(&tmp_link); // clear a stale temp from a crashed run
 
         #[cfg(unix)]
@@ -118,7 +127,11 @@ impl SymlinkManager {
         }
 
         // Atomic swap (see update_current_symlink): temp symlink + rename().
-        let tmp_link = state_dir.join(format!("current-theme.tmp.{}", std::process::id()));
+        let tmp_link = state_dir.join(format!(
+            "current-theme.tmp.{}.{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = fs::remove_file(&tmp_link);
 
         #[cfg(unix)]

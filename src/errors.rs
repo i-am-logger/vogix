@@ -100,7 +100,9 @@ pub enum VogixError {
     /// The resolved runtime base directory does not exist — either
     /// `XDG_RUNTIME_DIR` points at a missing directory, or it is unset and `/tmp`
     /// is absent.
-    #[error("runtime directory does not exist (check XDG_RUNTIME_DIR)")]
+    #[error(
+        "runtime directory does not exist (XDG_RUNTIME_DIR points at a missing directory, or is unset and /tmp is unavailable)"
+    )]
     NoRuntimeDir,
 }
 
