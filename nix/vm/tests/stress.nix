@@ -30,8 +30,9 @@ testLib.mkTest "stress" ''
       assert theme in status.lower(), f"Rapid switch {i}: theme should be {theme}!"
   print("    ✓ Rapid theme switching works")
 
-  # Note: -v dark/light selects by polarity, actual variant names may differ
-  # yoga uses night/day for dark/light polarities
+  # -v dark/light step one toward darker/lighter (aliases of -v darker/-v lighter).
+  # yoga has only night/day, so from day they simply alternate night/day.
+  machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v day'")
   variants_cycle = [("dark", "night"), ("light", "day"), ("dark", "night"), ("light", "day"), ("dark", "night")]
   for i, (polarity, expected_variant) in enumerate(variants_cycle):
       machine.succeed(f"su - vogix -c 'vogix theme set -v {polarity}'")
@@ -40,9 +41,10 @@ testLib.mkTest "stress" ''
   print("    ✓ Rapid variant switching works")
 
   print("\n=== Test: Rapid Combined Switching ===")
-  # Rapidly switch both theme and variant together
-  # Format: (theme, polarity_request, expected_variant_name)
-  # Different themes have different variant names for dark/light polarities
+  # Rapidly switch both theme and variant together. On a theme switch, -v dark/
+  # -v light land on that theme's darkest/lightest variant (its night/day here).
+  # Move off yoga first so the first (yoga, dark) entry is a real switch.
+  machine.succeed("su - vogix -c 'vogix theme set -t nordic'")
   combinations = [
       ("yoga", "dark", "night"),
       ("nordic", "light", "day"),

@@ -8,49 +8,62 @@ use crate::errors::{Result, VogixError};
 use crate::state::State;
 use crate::theme;
 
-/// Resolve the best variant for a new theme, matching the current polarity.
-pub fn resolve_polarity_variant(state: &State, new_theme: &str) -> Result<Option<String>> {
+/// On a theme switch with no explicit variant, match the current illumination:
+/// pick the new theme's variant whose normalized luminance rank is closest to
+/// the current variant's (falling back to the dark end if unknown). This keeps
+/// brightness consistent across themes; for the common two-variant theme it is
+/// identical to polarity-matching (dark→dark, light→light).
+pub fn resolve_illumination_variant(state: &State, new_theme: &str) -> Result<Option<String>> {
     let themes = theme::discover_themes()?;
-    let new_theme_info = match theme::get_theme(&themes, new_theme) {
-        Some(t) => t,
-        None => {
-            return Err(VogixError::InvalidTheme(format!(
-                "Theme '{}' not found",
-                new_theme
-            )));
-        }
-    };
+    let new_info = theme::get_theme(&themes, new_theme)
+        .ok_or_else(|| VogixError::InvalidTheme(format!("Theme '{}' not found", new_theme)))?;
 
-    let current_polarity = theme::get_theme(&themes, &state.current_theme)
-        .and_then(|t| {
-            t.variants
-                .iter()
-                .find(|v| v.name == state.current_variant)
-                .map(|v| v.polarity.clone())
-        })
-        .unwrap_or_else(|| "dark".to_string());
+    if new_info.variants.is_empty() {
+        return Err(VogixError::InvalidTheme(format!(
+            "Theme '{}' has no variants",
+            new_theme
+        )));
+    }
 
-    if let Some(default_var) = new_theme_info.default_variant_for_polarity(&current_polarity) {
-        Ok(Some(default_var.name.clone()))
-    } else {
-        Ok(None)
+    let current_frac = theme::get_theme(&themes, &state.current_theme)
+        .and_then(|t| t.order_fraction(&state.current_variant))
+        .unwrap_or(1.0);
+
+    Ok(Some(
+        new_info.nearest_by_fraction(current_frac).name.clone(),
+    ))
+}
+
+/// Direction along the luminance ramp.
+enum Direction {
+    Lighter,
+    Darker,
+}
+
+/// Parse a directional `-v` request. `light`/`lighter` move toward the lightest
+/// variant; `dark`/`darker` toward the darkest. Returns `None` for an exact name.
+fn parse_direction(requested_lower: &str) -> Option<Direction> {
+    match requested_lower {
+        "light" | "lighter" => Some(Direction::Lighter),
+        "dark" | "darker" => Some(Direction::Darker),
+        _ => None,
     }
 }
 
-/// Navigate to a darker or lighter variant based on luminance ordering.
-pub fn navigate_variant(state: &State, direction: &str) -> Result<String> {
-    let themes = theme::discover_themes()?;
-    let current_theme = theme::get_theme(&themes, &state.current_theme).ok_or_else(|| {
-        VogixError::InvalidTheme(format!("Theme '{}' not found", state.current_theme))
-    })?;
-    current_theme.navigate(&state.current_variant, direction)
-}
-
-/// Resolve a variant name: exact match, polarity request (dark/light), or error.
+/// Resolve a `-v` request for `theme_name`.
+///
+/// - exact variant name → that variant;
+/// - directional (`light`/`lighter`/`dark`/`darker`):
+///   - single-variant theme → its only variant;
+///   - same theme (`!is_switch`) → step one along the luminance ramp from
+///     `current_variant`, erroring at the boundary;
+///   - theme switch (`is_switch`) → that theme's lightest/darkest end, since
+///     there is no current position in the new theme to step from.
 pub fn resolve_variant(
     theme_name: &str,
     requested: &str,
-    _current_variant: &str,
+    current_variant: &str,
+    is_switch: bool,
 ) -> Result<String> {
     let themes = theme::discover_themes()?;
     let theme_info = theme::get_theme(&themes, theme_name)
@@ -58,51 +71,58 @@ pub fn resolve_variant(
 
     let requested_lower = requested.to_lowercase();
 
-    // Exact variant name match
-    for variant in &theme_info.variants {
-        if variant.name.to_lowercase() == requested_lower {
-            return Ok(variant.name.clone());
-        }
-    }
-
-    // Single-variant themes: always resolve to the only variant. A polarity
-    // request (`-v light`) on a single-variant theme intentionally resolves to
-    // that lone variant rather than erroring — there's no choice to honor, and
-    // the navigation VM test pins this lenient behavior.
-    if theme_info.variants.len() == 1 {
-        return Ok(theme_info.variants[0].name.clone());
-    }
-
-    // Polarity request (dark/light)
-    if requested_lower == "dark" || requested_lower == "light" {
-        if let Some(variant) = theme_info.default_variant_for_polarity(&requested_lower)
-            && variant.polarity == requested_lower
-        {
-            return Ok(variant.name.clone());
-        }
-        let available_polarities: Vec<_> = theme_info
-            .variants
-            .iter()
-            .map(|v| format!("{} ({})", v.name, v.polarity))
-            .collect();
-        return Err(VogixError::InvalidTheme(format!(
-            "Theme '{}' has no '{}' variant. Available: {}",
-            theme_name,
-            requested,
-            available_polarities.join(", ")
-        )));
-    }
-
-    // Not found
-    let available: Vec<_> = theme_info
+    // Exact variant name match.
+    if let Some(variant) = theme_info
         .variants
         .iter()
-        .map(|v| v.name.as_str())
-        .collect();
-    Err(VogixError::InvalidTheme(format!(
-        "Variant '{}' not found in theme '{}'. Available variants: {}",
-        requested,
-        theme_name,
-        available.join(", ")
-    )))
+        .find(|v| v.name.to_lowercase() == requested_lower)
+    {
+        return Ok(variant.name.clone());
+    }
+
+    match parse_direction(&requested_lower) {
+        Some(direction) => {
+            // A theme with no variants can't be resolved (degenerate manifest).
+            if theme_info.variants.is_empty() {
+                return Err(VogixError::InvalidTheme(format!(
+                    "Theme '{}' has no variants",
+                    theme_name
+                )));
+            }
+            // Single-variant theme: nowhere to step — use the only variant.
+            if theme_info.variants.len() == 1 {
+                return Ok(theme_info.variants[0].name.clone());
+            }
+            if is_switch {
+                // No current position in the new theme; jump to that ramp end.
+                let sorted = theme_info.variants_by_order(); // lightest (order 0) first
+                let pick = match direction {
+                    Direction::Lighter => sorted.first(),
+                    Direction::Darker => sorted.last(),
+                };
+                // Non-empty was checked above, so a variant always exists.
+                Ok(pick.expect("variants is non-empty").name.clone())
+            } else {
+                // Same theme: step one along the ramp from the current variant.
+                let dir = match direction {
+                    Direction::Lighter => "lighter",
+                    Direction::Darker => "darker",
+                };
+                theme_info.navigate(current_variant, dir)
+            }
+        }
+        None => {
+            let available: Vec<_> = theme_info
+                .variants
+                .iter()
+                .map(|v| v.name.as_str())
+                .collect();
+            Err(VogixError::InvalidTheme(format!(
+                "Variant '{}' not found in theme '{}'. Available variants: {}",
+                requested,
+                theme_name,
+                available.join(", ")
+            )))
+        }
+    }
 }

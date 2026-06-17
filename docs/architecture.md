@@ -23,7 +23,7 @@ This document gives a high-level overview of both.
 ### Runtime (vogix CLI)
 - **Symlink Management**: Updates `current-theme` symlink to switch between pre-generated configs
 - **State Persistence**: Tracks current scheme/theme/variant selection
-- **Variant Navigation**: Supports `darker`/`lighter` navigation through polarity-ordered variants
+- **Variant Navigation**: `dark`/`darker` and `light`/`lighter` step one along the luminance-ordered variants; a theme switch matches the current illumination
 - **Reload Mechanism**: Notifies applications to reload their configurations
 
 For detailed implementation of specific components, see the specialized documentation:

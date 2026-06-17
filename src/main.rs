@@ -313,21 +313,23 @@ fn cli_to_action(
                     ..
                 },
         } => {
-            // Resolve variant: navigation (darker/lighter), polarity (dark/light), or exact name
+            // Resolve variant: exact name, or directional (light/lighter/dark/darker).
+            // On a theme switch with no variant, keep the current illumination.
             let resolved_variant = if let Some(v) = variant {
-                if cli::is_variant_navigation(&Some(v.clone())) {
-                    Some(commands::theme_change::navigate_variant(state, v)?)
-                } else {
-                    let theme_name = theme.as_deref().unwrap_or(&state.current_theme);
-                    Some(commands::theme_change::resolve_variant(
-                        theme_name,
-                        v,
-                        &state.current_variant,
-                    )?)
-                }
+                let theme_name = theme.as_deref().unwrap_or(&state.current_theme);
+                let is_switch = theme.as_deref().is_some_and(|t| t != state.current_theme);
+                Some(commands::theme_change::resolve_variant(
+                    theme_name,
+                    v,
+                    &state.current_variant,
+                    is_switch,
+                )?)
             } else if theme.is_some() && theme.as_deref() != Some(&state.current_theme) {
-                // Theme changed, no variant specified — resolve polarity-matching variant
-                commands::theme_change::resolve_polarity_variant(state, theme.as_deref().unwrap())?
+                // Theme changed, no variant specified — match the current illumination.
+                commands::theme_change::resolve_illumination_variant(
+                    state,
+                    theme.as_deref().unwrap(),
+                )?
             } else {
                 None
             };

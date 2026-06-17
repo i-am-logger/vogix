@@ -10,41 +10,44 @@ The Vogix CLI is the primary user interface for managing themes in the Vogix sys
 # Set scheme, theme, and variant
 vogix theme set -s base16 -t catppuccin -v mocha
 
-# Set just the theme (keeps current scheme)
+# Set just the theme (keeps current scheme; the variant matches your current illumination)
 vogix theme set -t dracula
 
-# Set just the variant
-vogix theme set -v dark
+# Set just the variant, by exact name
+vogix theme set -v mocha
 ```
 
 ### Variant Navigation
 
-Navigate through variants by polarity (light-to-dark ordering):
+Variants form an ordered **luminance ramp** (lightest → darkest). `light`/`lighter`
+move **one step toward the lightest** variant; `dark`/`darker` move **one step toward
+the darkest**. `-v light` is exactly `-v lighter`, and `-v dark` is exactly `-v darker`
+— they step along the ramp, they do not jump to a polarity. (A theme may have several
+variants of the same polarity, so stepping is the only way to reach the ones in between.)
 
 ```bash
-# Move to the next darker variant
-vogix theme set -v darker
-
-# Move to the next lighter variant
+# Step one variant lighter (toward the lightest)
 vogix theme set -v lighter
+vogix theme set -v light     # identical to -v lighter
 
-# Jump to the theme's default dark variant
-vogix theme set -v dark
-
-# Jump to the theme's default light variant
-vogix theme set -v light
+# Step one variant darker (toward the darkest)
+vogix theme set -v darker
+vogix theme set -v dark      # identical to -v darker
 ```
 
-**Example with catppuccin** (variants ordered: latte → frappe → macchiato → mocha):
-- From `mocha`: `-v lighter` → `macchiato`
-- From `latte`: `-v darker` → `frappe`
-- From any: `-v dark` → `mocha` (default dark)
-- From any: `-v light` → `latte` (default light)
+**Example with catppuccin** (ordered: latte → frappe → macchiato → mocha):
+- From `mocha`: `-v lighter` (or `-v light`) → `macchiato` → `frappe` → `latte`
+- From `latte`: `-v lighter` → error (`Already at lightest variant`)
 
-**Single-variant themes** (like dracula): polarity requests resolve to the only variant —
-`-v dark` and `-v light` both select it. Step navigation does *not*: `-v darker` / `-v lighter`
-go through `ThemeInfo::navigate`, which errors at the boundary ("Already at darkest/lightest
-variant") since there is no adjacent variant to step to.
+**Single-variant themes** (like dracula): there is nowhere to step, so *all* of
+`-v light` / `-v dark` / `-v lighter` / `-v darker` resolve to the only variant.
+
+**On a theme switch** (`-t <theme>`):
+- With **no `-v`**, the new theme's variant is chosen to **match your current illumination**
+  (closest luminance rank), so brightness carries across themes — for the usual two-variant
+  theme this keeps dark↔dark / light↔light.
+- With an explicit **`-v dark` / `-v light`**, you land on the new theme's **darkest** /
+  **lightest** variant (there is no current position in the new theme to step from).
 
 ### Refresh
 

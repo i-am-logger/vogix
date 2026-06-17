@@ -151,7 +151,7 @@ vogix theme set -v darker
 # Navigate to a lighter variant
 vogix theme set -v lighter
 
-# Switch to default dark/light variant
+# `dark`/`light` are aliases of `darker`/`lighter` — one step toward dark/light
 vogix theme set -v dark
 vogix theme set -v light
 

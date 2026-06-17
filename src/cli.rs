@@ -293,45 +293,9 @@ impl Cli {
     }
 }
 
-/// Helper to check if a variant is a navigation command
-pub fn is_variant_navigation(variant: &Option<String>) -> bool {
-    if let Some(v) = variant {
-        matches!(v.to_lowercase().as_str(), "darker" | "lighter")
-    } else {
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_variant_navigation_darker() {
-        assert!(is_variant_navigation(&Some("darker".to_string())));
-    }
-
-    #[test]
-    fn test_is_variant_navigation_lighter() {
-        assert!(is_variant_navigation(&Some("lighter".to_string())));
-    }
-
-    #[test]
-    fn test_is_variant_navigation_case_insensitive() {
-        assert!(is_variant_navigation(&Some("DARKER".to_string())));
-        assert!(is_variant_navigation(&Some("Lighter".to_string())));
-    }
-
-    #[test]
-    fn test_is_variant_navigation_normal_variant() {
-        assert!(!is_variant_navigation(&Some("dark".to_string())));
-        assert!(!is_variant_navigation(&Some("light".to_string())));
-    }
-
-    #[test]
-    fn test_is_variant_navigation_none() {
-        assert!(!is_variant_navigation(&None));
-    }
 
     // ── CLI parsing tests ──
 
