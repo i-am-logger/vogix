@@ -65,7 +65,10 @@ pub fn resolve_variant(
         }
     }
 
-    // Single-variant themes: always use the only variant
+    // Single-variant themes: always resolve to the only variant. A polarity
+    // request (`-v light`) on a single-variant theme intentionally resolves to
+    // that lone variant rather than erroring — there's no choice to honor, and
+    // the navigation VM test pins this lenient behavior.
     if theme_info.variants.len() == 1 {
         return Ok(theme_info.variants[0].name.clone());
     }

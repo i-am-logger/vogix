@@ -89,7 +89,7 @@ pub fn handle_input_check(config: Option<&str>) -> Result<()> {
     }
 }
 
-/// `vogix input help` — show the resolved schema's keybindings.
+/// `vogix input keys` — show the resolved schema's keybindings.
 ///
 /// Materialized from the single resolved [`Schema`] (the selected paradigm's nav
 /// merged with the user overlay), so it reflects whatever paradigm is active —

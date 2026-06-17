@@ -72,7 +72,7 @@ base0F = "#7a5c42"  # special
 
 ### Automatic Variant Ordering
 
-Variants are automatically ordered by luminance (lightest to darkest) based on the `base00` (background) color. This enables the `vogix -v darker` and `vogix -v lighter` navigation commands.
+Variants are automatically ordered by luminance (lightest to darkest) based on the `base00` (background) color. This ordering is computed at **Nix build time** and persisted as a per-variant integer `order` field (`0` = lightest) in the generated `config.toml`. At runtime the Rust engine simply sorts by that stored `order` integer (falling back to array index when the field is absent) — it does **not** recompute luminance. This enables the `vogix theme set -v darker` and `vogix theme set -v lighter` navigation commands.
 
 For catppuccin, the auto-derived order is: `latte → frappe → macchiato → mocha`
 
@@ -123,7 +123,7 @@ Application generators convert theme colors into application-specific configurat
 # nix/modules/applications/alacritty.nix
 _:
 {
-  configFile = "alacritty/colors.toml";
+  configFile = "alacritty.toml";
   format = "toml";
   settingsPath = "programs.alacritty.settings";
   reloadMethod = { method = "touch"; };
@@ -151,10 +151,10 @@ _:
     };
     
     ansi16 = colors: {
-      # ANSI standard mapping
+      # ANSI standard mapping (the ansi16 loader emits color00..color15)
       colors.primary.background = colors.background;
       colors.primary.foreground = colors.foreground;
-      colors.normal.red = colors.red;
+      colors.normal.red = colors.color01;
     };
   };
 }
@@ -227,26 +227,32 @@ Themes are maintained in the [vogix16-themes](https://github.com/i-am-logger/vog
 
 3. **Create variant files**:
    ```toml
-   # themes/my-theme/dark.toml
+   # themes/my-theme/dark.toml — a Western theme (success green, danger red)
    polarity = "dark"
    
    [colors]
-   base00 = "#1a1a1a"
-   base01 = "#282828"
-   base02 = "#383838"
-   base03 = "#585858"
-   base04 = "#b8b8b8"
-   base05 = "#d8d8d8"
-   base06 = "#e8e8e8"
-   base07 = "#f8f8f8"
-   base08 = "#ab4642"
-   base09 = "#dc9656"
-   base0A = "#f7ca88"
-   base0B = "#a1b56c"
-   base0C = "#86c1b9"
-   base0D = "#7cafc2"
-   base0E = "#ba8baf"
-   base0F = "#a16946"
+   # Monochromatic ramp (background → foreground)
+   base00 = "#1a1a1a"  # background
+   base01 = "#282828"  # background_surface
+   base02 = "#383838"  # background_selection
+   base03 = "#585858"  # foreground_comment
+   base04 = "#b8b8b8"  # foreground_border
+   base05 = "#d8d8d8"  # foreground_text
+   base06 = "#e8e8e8"  # foreground_heading
+   base07 = "#f8f8f8"  # foreground_bright
+
+   # Functional accents — the SLOT fixes the role, the HUE is editorial.
+   # base08 is ALWAYS success and base0B is ALWAYS danger, regardless of hue:
+   # a Western theme paints success green / danger red, a Japanese theme reverses
+   # the hues but keeps the same roles.
+   base08 = "#a1b56c"  # success  (green here — Western)
+   base09 = "#dc9656"  # warning
+   base0A = "#f7ca88"  # notice
+   base0B = "#ab4642"  # danger   (red here — Western)
+   base0C = "#86c1b9"  # active
+   base0D = "#7cafc2"  # link
+   base0E = "#ba8baf"  # highlight
+   base0F = "#a16946"  # special
    ```
 
    ```toml

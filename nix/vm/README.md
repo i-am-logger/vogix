@@ -43,58 +43,62 @@ Once logged in, you can test Vogix features:
 
 ### 1. Check Status
 ```bash
-vogix status
+vogix theme status
 ```
 
 ### 2. List Available Themes
 ```bash
-vogix list
+vogix theme list
 # Should show: yoga, forest, etc.
 ```
 
 ### 3. Switch Themes
 ```bash
 # Switch to forest theme
-vogix -t forest -s vogix16
+vogix theme set -t forest -s vogix16
 
 # Check alacritty config was updated
 cat ~/.config/alacritty/colors.toml
 
 # Switch back
-vogix -t yoga -s vogix16
+vogix theme set -t yoga -s vogix16
 ```
 
 ### 4. Switch Variants
 ```bash
 # Switch to light variant
-vogix -v light
+vogix theme set -v light
 
 # Switch back to dark
-vogix -v dark
+vogix theme set -v dark
 ```
 
 ### 5. Test Daemon
+
+The `vogix-daemon` service is **disabled in this VM** (`enableDaemon = false` in
+`home.nix`), so `systemctl --user status vogix-daemon` reports the unit is not
+found. The daemon needs a live Hyprland session, which this terminal-only VM
+does not provide.
+
+For reference, when enabled the daemon (`vogix daemon`):
+- restores the last saved Hyprland session on start (into an empty desktop only),
+- re-applies the current theme's screen shader on start and on `configreloaded`,
+- auto-saves the session on window events (open/close/move/workspace change),
+- records submap-mode dwell times to `~/.local/state/vogix/modes.log` for
+  modal-keybinding ergonomics telemetry.
+
+It does **not** regenerate themes — theme files are produced by home-manager at
+build time, not watched at runtime.
+
 ```bash
-# Check daemon status
+# (No-op in this VM — the unit is not installed.)
 systemctl --user status vogix-daemon
 
-# View daemon logs
+# View daemon logs (empty here; the daemon is not running)
 journalctl --user -u vogix-daemon -f
 ```
 
-### 6. Test Auto-Regeneration
-```bash
-# Edit base config (simulating home-manager change)
-# The daemon should detect and regenerate themes
-
-# Watch daemon logs in one terminal
-journalctl --user -u vogix-daemon -f
-
-# In another terminal, touch a config file
-touch ~/.config/vogix/base-configs/alacritty/.keep
-```
-
-### 7. Generate Shell Completions
+### 6. Generate Shell Completions
 ```bash
 # Generate bash completions
 vogix completions bash > ~/.local/share/bash-completion/completions/vogix
@@ -106,10 +110,10 @@ source ~/.local/share/bash-completion/completions/vogix
 vogix <TAB>
 ```
 
-### 8. Check Paths
+### 7. Check Paths
 ```bash
-# System config
-cat /etc/vogix/config.toml
+# Config manifest
+cat ~/.local/state/vogix/config.toml
 
 # Theme packages
 ls -la ~/.local/share/vogix/themes/

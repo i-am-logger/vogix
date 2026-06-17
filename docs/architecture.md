@@ -39,7 +39,7 @@ For detailed implementation of specific components, see the specialized document
     ├── btop/btop.conf
     └── console/palette
 
-/etc/vogix/config.toml                         # System config (NixOS module)
+~/.local/state/vogix/config.toml               # User manifest (home-manager-generated; the CLI never reads /etc/vogix)
 
 ~/.local/share/vogix/themes/                   # Theme packages (home-manager)
     ├── base16-catppuccin-mocha -> /nix/store/...
@@ -86,9 +86,11 @@ The home-manager module (`programs.vogix`) handles all build-time generation:
   # Configure vogix
   programs.vogix = {
     enable = true;
-    scheme = "vogix16";
-    theme = "yoga";
-    variant = "dark";
+    appearance = {
+      scheme = "vogix16";
+      theme = "yoga";
+      variant = "dark";
+    };
   };
 }
 ```
@@ -101,7 +103,7 @@ The home-manager module (`programs.vogix`) handles all build-time generation:
 
 ## 5. Theme Switching Mechanism
 
-When a user runs `vogix -t catppuccin -v mocha` or `vogix -v darker`:
+When a user runs `vogix theme set -t catppuccin -v mocha` or `vogix theme set -v darker`:
 
 1. **Validate**: Verify the requested scheme-theme-variant exists in `~/.local/share/vogix/themes/`
 2. **Update Symlink**: Change `~/.local/state/vogix/current-theme` symlink to point to new theme
@@ -122,11 +124,11 @@ When a user runs `vogix -t catppuccin -v mocha` or `vogix -v darker`:
 6. **Application Generators** (`nix/modules/applications/`): Multi-scheme generators
 
 ### Runtime Components (Rust)
-1. **Commands** (`src/commands/`): cache, completions, list, refresh, status, theme_change, input
+1. **Commands** (`src/commands/`): cache, completions, daemon, input, list, modes, refresh, session, shader, status, theme_change
 2. **Theme Management** (`src/theme/`): discovery, loader (per-scheme), query, types
 3. **Template Rendering** (`src/template/`): Tera-based config rendering
 4. **Cache** (`src/cache/`): Theme cache paths and rendering
-5. **Input engine** (`src/input/`): device (pure Router + the evdev-grab/uinput loop), schema (input.json loader → praxis ModeGraph), hypr (compositor IPC + active-window stream), keys (chord ↔ praxis-Key codec), taphold (dual-role CapsLock detector)
+5. **Input engine** (`src/input/`): device (pure Router + the evdev-grab/uinput loop), schema (input.json loader → praxis ModeGraph), paradigm (project a praxis BindingSet + topology into a ModeGraph), catalog (vogix-native paradigm BindingSets), hypr (compositor IPC + active-window stream), keys (chord ↔ praxis-Key codec), taphold (dual-role CapsLock detector), devfilter (keyboard-device selection), health (daemon liveness/diagnostics)
 6. **Core modules**: cli.rs, config/, errors.rs, reload.rs, scheme.rs, state.rs, symlink.rs
 
 ## 7. Input Engine
@@ -173,15 +175,25 @@ paradigm is cited to its primary source in `defaults.nix`:
 
 | Paradigm | Style | Remap |
 |----------|-------|-------|
-| `default` | modal (CapsLock→desktop, bare hjkl/arrows) - the user's own config | macOS |
+| `vogix` (default) | the user's own live layout - flat `Super`-combos (hjkl/arrows nav) in one passthrough `app` mode | copy-paste |
+| `i3`      | tiling-WM: Super-chorded focus/move/workspace over a passthrough `app` root, plus a `resize` submap (`Super+r` enters, `hjkl` resize, `Escape` exits) | none |
+| `cua`     | chorded IBM/Windows shortcut standard (Ctrl/Alt shortcuts over a passthrough `app` root) | none |
+| `emacs`   | chorded C-f/C-b/C-n/C-p over a single passthrough `app` mode | none |
+| `vim`     | modal: a `normal` catchall root (hjkl nav, unbound keys swallowed) with an `i`→`insert` passthrough submode (`Escape` returns) | none |
 | `windows` | chorded (Super+arrow nav, Win+Ctrl+arrow virtual desktops, Alt+Tab) | none |
-| `mac`     | Control+arrow Spaces, Cmd+Tab, Ctrl+Cmd+F | macOS |
-| `emacs`   | modal C-f/C-b/C-n/C-p + a `C-x` prefix (key sequences as transient modes) | none |
+| `macos`   | Control+arrow Spaces, Cmd+Tab, Ctrl+Cmd+F | macos |
+| `linux`   | mainstream GNOME (floating, Super-based) chorded over a passthrough `app` root | none |
 
-A key *sequence* (e.g. `C-x C-c`) needs no special machinery: a prefix is a chord
-that enters a transient mode whose next chord completes it (a sequence = a modal
-state). Users layer their own bindings over a paradigm via
+Users layer their own bindings over a paradigm via
 `programs.vogix.behavior.modes` (recursiveUpdate per binding).
+
+**Future work — multi-key prefixes.** No multi-key-prefix machinery ships today.
+The only sub-states that exist are the `i3` `resize` submap and the `vim`
+`insert` submode (both single-level, declared in each paradigm's topology); the
+`emacs` paradigm is a single passthrough mode with no `C-x`-style prefix. A key
+*sequence* (e.g. `C-x C-c`) would be modelled the same way a submode is - a
+prefix chord enters a transient mode whose next chord completes it (a sequence =
+a modal state) - but that generalised prefix layer is not yet implemented.
 
 ### Mode-visibility surface
 

@@ -143,7 +143,7 @@ pub struct Binding {
     /// Re-run the action on key auto-repeat (focus/move/resize).
     #[serde(default)]
     pub repeat: bool,
-    /// Human-facing label, shown by `vogix input help`; mirrored from the Nix
+    /// Human-facing label, shown by `vogix input keys`; mirrored from the Nix
     /// attrset / the paradigm preset's `Action` description.
     #[serde(default)]
     pub description: Option<String>,

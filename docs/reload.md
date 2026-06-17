@@ -4,46 +4,40 @@ When a theme or variant is switched, applications need to be notified to reload 
 
 ## Configuration-Based Reload
 
-Instead of hardcoding application reload methods, each application defines its reload method in its theme configuration:
+Instead of hardcoding application reload methods, each application defines its reload method in the generated user manifest (`~/.local/state/vogix/config.toml`). Each app's metadata carries a flat `reload_method` field plus method-specific siblings (`reload_signal`, `process_name`, `reload_command`, `theme_file_path`):
 
-```nix
-# Example reload configurations
-{
-  name = "alacritty";
-  reload = {
-    type = "dbus";
-    interface = "org.alacritty.Window";
-    method = "Reload";
-  };
-}
+```toml
+# Example reload configurations (entries under [apps.<name>])
 
-{
-  name = "waybar";
-  reload = {
-    type = "signal";
-    signal = "SIGUSR1";
-  };
-}
+[apps.waybar]
+config_path = "/home/user/.config/waybar/colors.css"
+reload_method = "signal"
+reload_signal = "SIGUSR2"
+process_name = "waybar"
 
-{
-  name = "sway";
-  reload = {
-    type = "ipc";
-    command = "reload";
-  };
-}
+[apps.hyprland]
+config_path = "/home/user/.config/hypr/colors.conf"
+reload_method = "command"
+reload_command = "hyprctl reload"
+
+[apps.alacritty]
+config_path = "/home/user/.config/alacritty/colors.toml"
+reload_method = "touch"
+theme_file_path = "/home/user/.config/alacritty/theme.toml"
+
+[apps.fish]
+config_path = "/home/user/.config/fish/colors.fish"
+reload_method = "none"
 ```
 
 ## Supported Reload Methods
 
-The system supports multiple reload mechanisms:
+The `ReloadDispatcher` handles exactly four `reload_method` values. Any other value errors with `unknown reload method`:
 
-1. **DBus Methods**: For applications with DBus interfaces
-2. **Unix Signals**: For applications that reload on signals like SIGUSR1
-3. **IPC Commands**: For applications with custom IPC protocols
-4. **Socket Commands**: For applications that accept commands via sockets
-5. **Custom Shell Commands**: For applications requiring custom reload commands
-6. **Filesystem Watches**: For applications that automatically detect changes
+1. **`signal`**: Sends a Unix signal to `process_name` (defaulting to the app name). Requires `reload_signal`, which must be one of `SIGUSR1`, `SIGUSR2`, `SIGHUP`, `SIGTERM`, or `SIGINT` — any other signal is rejected as unsupported.
+2. **`command`**: Runs the shell command in `reload_command` (e.g. `hyprctl reload`).
+3. **`touch`**: Touches (or re-creates the symlink for) `config_path`, and `theme_file_path` if set, to trigger the application's own inotify-based auto-reload.
+4. **`none`**: No runtime reload; the new theme takes effect on next launch.
 
 ## Implementation
 
