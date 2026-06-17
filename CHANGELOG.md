@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.7.1...vogix-v0.8.0) (2026-06-17)
+
+
+### Features
+
+* variant-nav ramp-stepping + illumination-preserving theme switches (+ docs↔code audit) ([#177](https://github.com/i-am-logger/vogix/issues/177)) ([60fbe52](https://github.com/i-am-logger/vogix/commit/60fbe5264b39ccb925e2e80d97ed06030b5863be))
+
 ## [0.7.1](https://github.com/i-am-logger/vogix/compare/vogix-v0.7.0...vogix-v0.7.1) (2026-06-17)
 
 
