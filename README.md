@@ -19,7 +19,7 @@ Vogix is a declarative UX layer for NixOS that unifies desktop configuration - d
 > ```bash
 > nix run .#vogix-vm
 > ```
-> vogix is alpha, it is not battlefield tested though i'm working on integrating it to my system. 
+> vogix is alpha, however it is "battlefield tested" as it is integrated to [mynixos](https://github.com/i-am-logger/mynixos) and my [system](https://github.com/i-am-logger/flake). 
 
 ## Roadmap
 
