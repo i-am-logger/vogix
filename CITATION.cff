@@ -13,7 +13,7 @@ authors:
 repository-code: "https://github.com/i-am-logger/vogix"
 url: "https://github.com/i-am-logger/vogix"
 license: CC-BY-NC-SA-4.0
-version: 0.6.3
+version: 0.8.0
 keywords:
   - nixos
   - theming
