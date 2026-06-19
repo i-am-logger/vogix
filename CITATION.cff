@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use vogix, please cite it as below."
+title: vogix
+abstract: >-
+  Runtime theme management for NixOS with the vogix16 design system — a
+  declarative UX layer for unified desktop appearance and behavior across
+  compositors (Hyprland, Sway, i3), with runtime theme switching and no rebuilds.
+type: software
+authors:
+  - given-names: Ido
+    family-names: Samuelson
+    website: "https://github.com/i-am-logger"
+repository-code: "https://github.com/i-am-logger/vogix"
+url: "https://github.com/i-am-logger/vogix"
+license: CC-BY-NC-SA-4.0
+version: 0.6.3
+keywords:
+  - nixos
+  - theming
+  - base16
+  - hyprland
+  - ricing
