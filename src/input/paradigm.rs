@@ -110,7 +110,7 @@ pub fn project(bs: &BindingSet, topo: &Topology) -> (ModeGraphSpec, HashMap<Stri
     for b in &bs.bindings {
         let binding = Binding {
             key: render_combo(&b.combo),
-            action: b.action.command.clone(),
+            action: b.action.command(),
             exit_after: false,
             repeat: b.repeat,
             description: Some(b.action.description.clone()),
