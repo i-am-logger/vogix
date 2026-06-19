@@ -46,8 +46,8 @@ thiserror = "2.0"
 # both from git. buildRustPackage vendors the git workspace (resolving
 # `version.workspace = true`), needing the outputHash in nix/packages/vogix.nix.
 # Bump the rev to advance.
-pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "e75053aa54913a660b6320216bfbae878078430e" }
-pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "e75053aa54913a660b6320216bfbae878078430e" }
+pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "b84ebab5a4c5f1e8e8558457d09ec1cbee623866" }
+pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "b84ebab5a4c5f1e8e8558457d09ec1cbee623866" }
 
 # Date/time for state timestamps
 chrono = "0.4"
