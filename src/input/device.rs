@@ -1117,7 +1117,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                     // lockout-class bug release_held_modifiers guards on shutdown,
                     // here on the disconnect path, the mirror of the reconnect sync
                     // below.
-                    let mut survivor_held: Vec<u16> = Vec::new();
+                    let mut survivor_held: BTreeSet<u16> = BTreeSet::new();
                     for s in slots.iter().flatten() {
                         match s.dev.get_key_state() {
                             Ok(state) => survivor_held.extend(state.iter().map(|k| k.0)),
@@ -1131,6 +1131,10 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                             ),
                         }
                     }
+                    // Reconcile the stuck-key health tracker to the survivors too,
+                    // so the departed device's still-down keys aren't reported
+                    // stuck forever by `vogix input doctor`.
+                    held.retain_held(&survivor_held, ms(&start));
                     execute(&mut vdev, &mut hypr, router.resync_held_keys(survivor_held));
                 }
                 continue;
