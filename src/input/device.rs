@@ -534,14 +534,28 @@ impl Router {
     /// pointer binds) and the synthesized chord does NOT itself want Super, briefly
     /// RELEASE Super around the chord — otherwise the focused app would see e.g.
     /// Super+Ctrl+C instead of Ctrl+C and would not copy. Super is re-pressed after
-    /// (the user is still physically holding it). When Super is swallowed (the full
-    /// macOS remap, `super_passthrough = false`) this is a no-op.
+    /// (the user is still physically holding it). The mask uses the EXACT Meta
+    /// key(s) held (left and/or right, read from the tracked held set), so it never
+    /// strands a hardcoded left Meta when the right one is held. When Super is
+    /// swallowed (the full macOS remap, `super_passthrough = false`) this is a no-op.
     fn emit_chord_tap(&self, c: &Chord, fx: &mut Vec<Effect>) {
-        let super_code = modifier_code(Modifier::Super).0;
         let mask_super = self.super_passthrough && self.mods.sup && !c.mods.sup;
-        if mask_super {
+        // The exact Super keycode(s) we currently hold on the compositor, so the
+        // mask releases and re-presses the SAME key the user is holding rather
+        // than a hardcoded left Meta that would no-op a held right Meta and leave
+        // an untracked left Meta stuck down.
+        let held_super: Vec<u16> = if mask_super {
+            self.held_mod_codes
+                .iter()
+                .copied()
+                .filter(|&code| modifier_of(KeyCode(code)) == Some(Modifier::Super))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for code in &held_super {
             fx.push(Effect::Emit {
-                code: super_code,
+                code: *code,
                 value: 0,
             });
         }
@@ -572,9 +586,9 @@ impl Router {
         for m in mod_codes.iter().rev() {
             fx.push(Effect::Emit { code: *m, value: 0 });
         }
-        if mask_super {
+        for code in held_super.iter().rev() {
             fx.push(Effect::Emit {
-                code: super_code,
+                code: *code,
                 value: 1,
             });
         }
@@ -1519,6 +1533,57 @@ mod tests {
             r.on_key(C, 1, 31)
                 .contains(&Effect::Emit { code: C, value: 1 }),
             "bare Ctrl+C passes through native (SIGINT), not remapped"
+        );
+    }
+
+    #[test]
+    fn copy_paste_mask_releases_the_held_super_key_not_a_hardcoded_left() {
+        // The Super mask must release and re-press the SAME Meta key the user
+        // holds. With the RIGHT Meta held, masking a hardcoded LEFTMETA would
+        // no-op the release (Right Meta stays down, shadowing the synthesized
+        // Ctrl) AND strand an untracked LEFTMETA-down on the compositor — a stuck
+        // Super. The mask must use RIGHTMETA, the actual held key.
+        let mut r = router_copypaste();
+        let rmeta = KeyCode::KEY_RIGHTMETA.0;
+        assert_eq!(
+            r.on_key(rmeta, 1, 0),
+            vec![Effect::Emit {
+                code: rmeta,
+                value: 1
+            }],
+            "Right Meta re-emitted held (passthrough)"
+        );
+        assert_eq!(
+            r.on_key(C, 1, 10),
+            vec![
+                Effect::Emit {
+                    code: rmeta,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 1
+                },
+                Effect::Emit { code: C, value: 1 },
+                Effect::Emit { code: C, value: 0 },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: rmeta,
+                    value: 1
+                },
+            ],
+            "Super+C with RIGHT Meta held masks RIGHTMETA, never a hardcoded LEFTMETA"
+        );
+        // Releasing Right Meta clears it cleanly — no stray Meta left down.
+        assert_eq!(
+            r.on_key(rmeta, 0, 20),
+            vec![Effect::Emit {
+                code: rmeta,
+                value: 0
+            }]
         );
     }
 
