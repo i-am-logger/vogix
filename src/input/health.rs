@@ -16,7 +16,7 @@
 use super::device::Effect;
 use crate::config::Config;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
 /// A grabbed device's stable identity, captured once at grab time (the evdev
@@ -97,6 +97,18 @@ impl HeldKeys {
             }
         }
         (count, oldest)
+    }
+
+    /// Reconcile the held set to the keys still physically held across the
+    /// devices that remain after a disconnect. A key held on the departed device
+    /// never produced a key-up, so without this it would be reported stuck
+    /// forever; drop those, keep the survivors (with their original press time),
+    /// and record any newly-seen survivor-held key as down since `now`.
+    pub fn retain_held(&mut self, still_held: &BTreeSet<u16>, now: u64) {
+        self.down.retain(|code, _| still_held.contains(code));
+        for &code in still_held {
+            self.down.entry(code).or_insert(now);
+        }
     }
 }
 
@@ -203,6 +215,36 @@ mod tests {
         assert_eq!(h.stuck(6000, STUCK_MS).0, 1);
         h.on_event(30, 0, 6100); // up clears it
         assert_eq!(h.stuck(7000, STUCK_MS), (0, 0));
+    }
+
+    #[test]
+    fn retain_held_drops_a_departed_devices_keys() {
+        // A key held on a device that disconnects produces no key-up, so without
+        // reconciliation it would be reported stuck forever. retain_held keeps
+        // only keys still held on surviving devices.
+        let mut h = HeldKeys::default();
+        h.on_event(30, 1, 0); // KEY_A — on the device that will depart
+        h.on_event(42, 1, 0); // KEY_LEFTSHIFT — on a surviving device
+        assert_eq!(
+            h.stuck(10_000, STUCK_MS).0,
+            2,
+            "both held long → both stuck"
+        );
+        let survivors: BTreeSet<u16> = [42].into_iter().collect();
+        h.retain_held(&survivors, 100);
+        assert_eq!(
+            h.stuck(10_000, STUCK_MS).0,
+            1,
+            "departed device's key dropped; survivor's kept"
+        );
+        // A newly-seen survivor-held key is recorded as down from `now`.
+        let survivors2: BTreeSet<u16> = [42, 29].into_iter().collect();
+        h.retain_held(&survivors2, 200);
+        assert_eq!(
+            h.stuck(10_000, STUCK_MS).0,
+            2,
+            "newly-seen survivor key tracked"
+        );
     }
 
     #[test]

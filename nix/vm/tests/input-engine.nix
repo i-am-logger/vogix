@@ -344,14 +344,26 @@ let
         fail("hotplugged keyboard was not grabbed — its key was not re-emitted")
     print("PASS: hotplug — keyboard added after startup is grabbed")
 
-    # --- Test 1e: hotplug REMOVE is clean (unplug → slot freed, no wedge) ---
-    # Destroying the hotplugged keyboard raises POLLHUP on the engine's grab; the
-    # slot is freed (the Device ungrabs on Drop) and the engine keeps running —
-    # the ORIGINAL keyboard still types, no 100% CPU spin / wedge.
-    ui_hp.close()
-    time.sleep(1.0)  # let POLLHUP propagate and the slot drop
+    # --- Test 1e: hotplug REMOVE is clean AND releases a held modifier ---
+    # Hold Shift on the hotplugged keyboard, then destroy it. POLLHUP frees the
+    # slot, the engine keeps running (the ORIGINAL keyboard still types, no 100%
+    # CPU spin / wedge), AND the engine releases the Shift the unplugged device
+    # was holding — re-derived from the surviving keyboards — so the compositor is
+    # not left with a stuck modifier (the disconnect mirror of the shutdown
+    # release_held_modifiers guard).
+    emitted.clear()
+    ui_hp.write(e.EV_KEY, e.KEY_LEFTSHIFT, 1); ui_hp.syn()   # hold Shift, still plugged
+    time.sleep(0.3)
+    if (e.KEY_LEFTSHIFT, 1) not in emitted:
+        fail("Shift held on the hotplugged keyboard was not re-emitted (down)")
+    emitted.clear()
+    ui_hp.close()    # unplug WHILE Shift is held
+    time.sleep(1.0)  # let POLLHUP propagate, the slot drop, and the resync emit
     if proc.poll() is not None:
         fail("engine died after a hotplugged keyboard was removed")
+    if (e.KEY_LEFTSHIFT, 0) not in emitted:
+        fail("Shift held at unplug must be released (resync) — else a stuck modifier")
+    print("PASS: held modifier released on disconnect (no stuck Shift)")
     emitted.clear()
     tap(e.KEY_A); time.sleep(0.3)
     if e.KEY_A not in emitted_codes():
@@ -364,6 +376,13 @@ let
     if "vogix-hotplug-kbd" in [d["name"] for d in after["devices"]]:
         fail("removed keyboard still in health slots — POLLHUP drop did not free it")
     print("PASS: hotplug remove is clean (slot freed, original keyboard still types)")
+    # The complementary "a modifier still held on a SURVIVING keyboard is kept"
+    # case is covered by the unit test
+    # disconnect_resync_keeps_a_modifier_still_held_on_another_device. It is not
+    # asserted here because resync reads surviving-device state via get_key_state
+    # (a live EVIOCGKEY), and the synthetic uinput devices in this VM do not
+    # surface an injected held key through a grabbed fd, so it cannot be exercised
+    # end-to-end in the harness.
 
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
     received.clear()

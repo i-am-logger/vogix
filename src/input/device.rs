@@ -33,7 +33,7 @@ use pr4xis_domains::applied::hmi::input::keybindings::{
     Key, KeyCombo, Modifier as PxMod, RemapSet,
 };
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// The name of our virtual re-emit device. We must never grab it back, or the
 /// engine would capture its own emitted events; the device filter
@@ -80,6 +80,12 @@ pub struct Router {
     engine: Option<Engine<ModeTransition>>,
     detector: CapsDetector,
     mods: Mods,
+    /// The exact keycodes of the modifiers vogix currently holds down on the
+    /// compositor (left vs right kept distinct; passthrough Super included,
+    /// swallowed Super not). `mods` answers "is Shift held?" for chord matching;
+    /// this answers "which physical key must be released?" so a shutdown or a
+    /// disconnect emits a key-up for the SAME keycode that was pressed.
+    held_mod_codes: BTreeSet<u16>,
     /// mode name → (chord → binding).
     bindings: HashMap<String, HashMap<Chord, Resolved>>,
     /// mode name → catchall (swallows unbound keys).
@@ -175,6 +181,7 @@ impl Router {
             engine,
             detector: CapsDetector::new(schema.tap_hold_ms()),
             mods: Mods::default(),
+            held_mod_codes: BTreeSet::new(),
             bindings,
             catchall,
             remaps,
@@ -357,6 +364,18 @@ impl Router {
                 self.mods.set(m, value == 1);
             }
             if m != Modifier::Super || self.super_passthrough {
+                // Track the exact keycode we now hold on the compositor, so the
+                // matching release (shutdown / disconnect) emits the same
+                // left/right key — and only for a Super we actually emit.
+                match value {
+                    1 => {
+                        self.held_mod_codes.insert(code);
+                    }
+                    0 => {
+                        self.held_mod_codes.remove(&code);
+                    }
+                    _ => {}
+                }
                 fx.push(Effect::Emit { code, value });
             }
             return fx;
@@ -515,14 +534,28 @@ impl Router {
     /// pointer binds) and the synthesized chord does NOT itself want Super, briefly
     /// RELEASE Super around the chord — otherwise the focused app would see e.g.
     /// Super+Ctrl+C instead of Ctrl+C and would not copy. Super is re-pressed after
-    /// (the user is still physically holding it). When Super is swallowed (the full
-    /// macOS remap, `super_passthrough = false`) this is a no-op.
+    /// (the user is still physically holding it). The mask uses the EXACT Meta
+    /// key(s) held (left and/or right, read from the tracked held set), so it never
+    /// strands a hardcoded left Meta when the right one is held. When Super is
+    /// swallowed (the full macOS remap, `super_passthrough = false`) this is a no-op.
     fn emit_chord_tap(&self, c: &Chord, fx: &mut Vec<Effect>) {
-        let super_code = modifier_code(Modifier::Super).0;
         let mask_super = self.super_passthrough && self.mods.sup && !c.mods.sup;
-        if mask_super {
+        // The exact Super keycode(s) we currently hold on the compositor, so the
+        // mask releases and re-presses the SAME key the user is holding rather
+        // than a hardcoded left Meta that would no-op a held right Meta and leave
+        // an untracked left Meta stuck down.
+        let held_super: Vec<u16> = if mask_super {
+            self.held_mod_codes
+                .iter()
+                .copied()
+                .filter(|&code| modifier_of(KeyCode(code)) == Some(Modifier::Super))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for code in &held_super {
             fx.push(Effect::Emit {
-                code: super_code,
+                code: *code,
                 value: 0,
             });
         }
@@ -553,9 +586,9 @@ impl Router {
         for m in mod_codes.iter().rev() {
             fx.push(Effect::Emit { code: *m, value: 0 });
         }
-        if mask_super {
+        for code in held_super.iter().rev() {
             fx.push(Effect::Emit {
-                code: super_code,
+                code: *code,
                 value: 1,
             });
         }
@@ -570,29 +603,62 @@ impl Router {
         for code in held {
             if let Some(m) = modifier_of(KeyCode(code)) {
                 self.mods.set(m, true);
+                // Record the held keycode (only for a modifier we emit) so a
+                // later shutdown/disconnect releases the exact key.
+                if m != Modifier::Super || self.super_passthrough {
+                    self.held_mod_codes.insert(code);
+                }
             }
         }
     }
 
-    /// Key-up effects releasing every modifier the router currently believes is
-    /// held — for a clean shutdown. The engine re-emits Shift/Ctrl/Alt as the
-    /// user holds them; if it exits (SIGTERM on `systemctl stop`/restart) while
-    /// one is down, the compositor is left with a stuck modifier that corrupts
-    /// every later keystroke (a lockout-class bug). Super is never emitted (it is
-    /// swallowed), so it needs no release.
+    /// Key-up effects releasing every modifier vogix currently holds down on the
+    /// compositor — for a clean shutdown. The engine re-emits a modifier as the
+    /// user holds it; if it exits (SIGTERM on `systemctl stop`/restart) while one
+    /// is down, the compositor is left with a stuck modifier that corrupts every
+    /// later keystroke (a lockout-class bug). Emits the exact keycode held, so a
+    /// right-hand modifier is cleared by its right key, and a passthrough Super is
+    /// released too (a swallowed Super was never emitted, so it is not tracked).
     pub fn release_held_modifiers(&self) -> Vec<Effect> {
-        [
-            (self.mods.shift, Modifier::Shift),
-            (self.mods.ctrl, Modifier::Ctrl),
-            (self.mods.alt, Modifier::Alt),
-        ]
-        .into_iter()
-        .filter(|(held, _)| *held)
-        .map(|(_, m)| Effect::Emit {
-            code: modifier_code(m).0,
-            value: 0,
-        })
-        .collect()
+        self.held_mod_codes
+            .iter()
+            .map(|&code| Effect::Emit { code, value: 0 })
+            .collect()
+    }
+
+    /// On a hotplug change, re-derive the held-modifier state from the keyboards
+    /// that REMAIN and release any modifier the departed keyboard was holding, so
+    /// an unplug-while-held does not leave the compositor with a stuck modifier —
+    /// the disconnect counterpart of the shutdown `release_held_modifiers` guard.
+    /// A modifier still held on a surviving keyboard is kept. The release emits
+    /// the exact keycode held (left vs right), and a passthrough Super too; a
+    /// swallowed Super was never emitted, so it is not tracked and not released.
+    /// `held` is every key reported held across the surviving devices.
+    pub fn resync_held_keys(&mut self, held: impl IntoIterator<Item = u16>) -> Vec<Effect> {
+        let survivor_held: BTreeSet<u16> = held.into_iter().collect();
+        // Re-derive the chord-matching modifier state from the survivors.
+        let mut now = Mods::default();
+        for &code in &survivor_held {
+            if let Some(m) = modifier_of(KeyCode(code)) {
+                now.set(m, true);
+            }
+        }
+        self.mods = now;
+        // Release every modifier keycode we hold on the compositor that no
+        // surviving keyboard still has down — the departed keyboard's keys.
+        let to_release: Vec<u16> = self
+            .held_mod_codes
+            .iter()
+            .copied()
+            .filter(|code| !survivor_held.contains(code))
+            .collect();
+        for code in &to_release {
+            self.held_mod_codes.remove(code);
+        }
+        to_release
+            .into_iter()
+            .map(|code| Effect::Emit { code, value: 0 })
+            .collect()
     }
 }
 
@@ -1045,6 +1111,31 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                         "vogix input: keyboard {:?} disconnected — released",
                         g.meta.name
                     );
+                    // Re-derive held modifiers from the keyboards that remain and
+                    // release any the unplugged device was holding, so a modifier
+                    // held at unplug is not left stuck down in the compositor — the
+                    // lockout-class bug release_held_modifiers guards on shutdown,
+                    // here on the disconnect path, the mirror of the reconnect sync
+                    // below.
+                    let mut survivor_held: BTreeSet<u16> = BTreeSet::new();
+                    for s in slots.iter().flatten() {
+                        match s.dev.get_key_state() {
+                            Ok(state) => survivor_held.extend(state.iter().map(|k| k.0)),
+                            // If a survivor's state can't be read, it contributes
+                            // nothing — resync then errs toward releasing (a brief
+                            // re-press) over a stuck modifier. Surface it, never
+                            // silently.
+                            Err(e) => log::warn!(
+                                "vogix input: get_key_state failed for {:?} during disconnect resync: {e}",
+                                s.meta.name
+                            ),
+                        }
+                    }
+                    // Reconcile the stuck-key health tracker to the survivors too,
+                    // so the departed device's still-down keys aren't reported
+                    // stuck forever by `vogix input doctor`.
+                    held.retain_held(&survivor_held, ms(&start));
+                    execute(&mut vdev, &mut hypr, router.resync_held_keys(survivor_held));
                 }
                 continue;
             }
@@ -1446,6 +1537,57 @@ mod tests {
             r.on_key(C, 1, 31)
                 .contains(&Effect::Emit { code: C, value: 1 }),
             "bare Ctrl+C passes through native (SIGINT), not remapped"
+        );
+    }
+
+    #[test]
+    fn copy_paste_mask_releases_the_held_super_key_not_a_hardcoded_left() {
+        // The Super mask must release and re-press the SAME Meta key the user
+        // holds. With the RIGHT Meta held, masking a hardcoded LEFTMETA would
+        // no-op the release (Right Meta stays down, shadowing the synthesized
+        // Ctrl) AND strand an untracked LEFTMETA-down on the compositor — a stuck
+        // Super. The mask must use RIGHTMETA, the actual held key.
+        let mut r = router_copypaste();
+        let rmeta = KeyCode::KEY_RIGHTMETA.0;
+        assert_eq!(
+            r.on_key(rmeta, 1, 0),
+            vec![Effect::Emit {
+                code: rmeta,
+                value: 1
+            }],
+            "Right Meta re-emitted held (passthrough)"
+        );
+        assert_eq!(
+            r.on_key(C, 1, 10),
+            vec![
+                Effect::Emit {
+                    code: rmeta,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 1
+                },
+                Effect::Emit { code: C, value: 1 },
+                Effect::Emit { code: C, value: 0 },
+                Effect::Emit {
+                    code: CTRL,
+                    value: 0
+                },
+                Effect::Emit {
+                    code: rmeta,
+                    value: 1
+                },
+            ],
+            "Super+C with RIGHT Meta held masks RIGHTMETA, never a hardcoded LEFTMETA"
+        );
+        // Releasing Right Meta clears it cleanly — no stray Meta left down.
+        assert_eq!(
+            r.on_key(rmeta, 0, 20),
+            vec![Effect::Emit {
+                code: rmeta,
+                value: 0
+            }]
         );
     }
 
@@ -1878,6 +2020,125 @@ mod tests {
         // Releasing it normally clears the state (no double-release on shutdown).
         r.on_key(CTRL, 0, 10);
         assert!(r.release_held_modifiers().is_empty());
+    }
+
+    #[test]
+    fn disconnect_resync_releases_a_modifier_the_unplugged_device_held() {
+        // A keyboard holding Shift unplugs. vogix re-derives the held modifiers
+        // from the devices that remain (none here), so Shift must be released —
+        // otherwise the compositor is left with a stuck Shift, the same
+        // lockout-class bug release_held_modifiers() guards on shutdown, on the
+        // disconnect path. The mirror of grab_resync_picks_up_a_held_modifier.
+        let mut r = router();
+        r.sync_held_keys([KeyCode::KEY_LEFTSHIFT.0]);
+        assert_eq!(
+            r.resync_held_keys(std::iter::empty::<u16>()),
+            vec![Effect::Emit {
+                code: KeyCode::KEY_LEFTSHIFT.0,
+                value: 0
+            }]
+        );
+        // Idempotent: Shift is no longer tracked, so a second resync is a no-op.
+        assert!(r.resync_held_keys(std::iter::empty::<u16>()).is_empty());
+    }
+
+    #[test]
+    fn disconnect_resync_keeps_a_modifier_still_held_on_another_device() {
+        // Two keyboards both hold Shift; one unplugs. Shift is STILL held on the
+        // survivor, so re-deriving from the remaining set must NOT release it —
+        // releasing all held modifiers on any disconnect would be the wrong fix.
+        let mut r = router();
+        r.sync_held_keys([KeyCode::KEY_LEFTSHIFT.0]);
+        assert!(r.resync_held_keys([KeyCode::KEY_LEFTSHIFT.0]).is_empty());
+    }
+
+    #[test]
+    fn disconnect_resync_releases_every_modifier_the_unplugged_device_held() {
+        // Shift+Ctrl held on the keyboard that unplugs, nothing remains: both are
+        // released (order is the release set's deterministic keycode order).
+        let mut r = router();
+        r.sync_held_keys([KeyCode::KEY_LEFTSHIFT.0, CTRL]);
+        let mut released: Vec<u16> = r
+            .resync_held_keys(std::iter::empty::<u16>())
+            .into_iter()
+            .map(|e| match e {
+                Effect::Emit { code, value: 0 } => code,
+                other => panic!("expected a key-up, got {other:?}"),
+            })
+            .collect();
+        released.sort_unstable();
+        assert_eq!(released, vec![CTRL, KeyCode::KEY_LEFTSHIFT.0]);
+    }
+
+    #[test]
+    fn disconnect_resync_ignores_non_modifier_keys() {
+        // A surviving device reporting a letter held is not a modifier: re-derive
+        // tracks only modifiers and emits no spurious release for the letter.
+        let mut r = router();
+        r.sync_held_keys([KeyCode::KEY_LEFTSHIFT.0]);
+        assert!(
+            r.resync_held_keys([KeyCode::KEY_LEFTSHIFT.0, KeyCode::KEY_A.0])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn disconnect_resync_releases_the_exact_left_or_right_key_held() {
+        // The release must emit the SAME physical keycode that was held: a held
+        // RIGHT Ctrl clears with RIGHTCTRL-up, not a normalized LEFTCTRL-up, which
+        // would not clear the right-set modifier in the compositor.
+        let mut r = router();
+        let rctrl = KeyCode::KEY_RIGHTCTRL.0;
+        r.on_key(rctrl, 1, 0); // hold Right Ctrl (re-emitted as RIGHTCTRL)
+        assert_eq!(
+            r.resync_held_keys(std::iter::empty::<u16>()),
+            vec![Effect::Emit {
+                code: rctrl,
+                value: 0
+            }]
+        );
+    }
+
+    #[test]
+    fn disconnect_resync_releases_passthrough_super() {
+        // In the default passthrough config Super is re-emitted HELD (for pointer
+        // binds), so it can be stuck. A keyboard holding Super that unplugs must
+        // have Super released.
+        let mut r = router_no_remap();
+        let meta = KeyCode::KEY_LEFTMETA.0;
+        r.on_key(meta, 1, 0); // re-emitted held in passthrough
+        assert_eq!(
+            r.resync_held_keys(std::iter::empty::<u16>()),
+            vec![Effect::Emit {
+                code: meta,
+                value: 0
+            }]
+        );
+    }
+
+    #[test]
+    fn disconnect_resync_does_not_release_a_swallowed_super() {
+        // Under a remap paradigm Super is swallowed (never emitted to the
+        // compositor), so there is nothing stuck — resync emits no Super release.
+        let mut r = router(); // macOS remap: super_passthrough = false
+        r.on_key(KeyCode::KEY_LEFTMETA.0, 1, 0); // swallowed, not emitted
+        assert!(r.resync_held_keys(std::iter::empty::<u16>()).is_empty());
+    }
+
+    #[test]
+    fn release_held_modifiers_emits_the_exact_held_keycode() {
+        // The shutdown release must also use the physical keycode held: a held
+        // Right Shift clears with RIGHTSHIFT-up.
+        let mut r = router();
+        let rshift = KeyCode::KEY_RIGHTSHIFT.0;
+        r.on_key(rshift, 1, 0);
+        assert_eq!(
+            r.release_held_modifiers(),
+            vec![Effect::Emit {
+                code: rshift,
+                value: 0
+            }]
+        );
     }
 
     #[test]
