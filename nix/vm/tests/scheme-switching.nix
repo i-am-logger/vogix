@@ -111,13 +111,12 @@ testLib.mkTest "scheme-switching" ''
 
   print("\n=== Test: Full Scheme Switching Cycle ===")
 
-  def test_scheme_switch(from_scheme, to_scheme, expected_theme=None):
+  # expected_theme is required: switching by scheme alone lands on whichever
+  # theme resolves by default, which is not something a test should assert on.
+  def test_scheme_switch(from_scheme, to_scheme, expected_theme):
       print(f"\n  --- Switching from {from_scheme} to {to_scheme} ---")
 
-      if expected_theme:
-          switch_cmd = f"vogix theme set -s {to_scheme} -t {expected_theme}"
-      else:
-          switch_cmd = f"vogix theme set -s {to_scheme}"
+      switch_cmd = f"vogix theme set -s {to_scheme} -t {expected_theme}"
 
       switch_result = machine.execute(f"su - vogix -c '{switch_cmd} 2>&1'")
       if switch_result[0] != 0:
@@ -136,22 +135,18 @@ testLib.mkTest "scheme-switching" ''
 
   machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
 
-  # Test vogix16 -> base16
-  base16_themes_to_try = ["dracula", "gruvbox-dark-medium", "nord", "monokai"]
-  base16_success = False
-  for theme in base16_themes_to_try:
-      if test_scheme_switch("vogix16", "base16", theme):
-          base16_success = True
-          break
+  # Test vogix16 -> base16, naming the theme instead of probing a list until
+  # something sticks. Which themes exist is declared in nix/vm/home.nix, so a
+  # fixed name either works or is a genuine failure; probing would report
+  # success from whichever candidate happened to resolve, and stay green even
+  # if the first choices silently stopped working.
+  assert test_scheme_switch("vogix16", "base16", "dracula"), \
+      "FAILED: vogix16 -> base16 (dracula)"
+  print("✓ vogix16 -> base16 works!")
 
-  if base16_success:
-      print("✓ vogix16 -> base16 works!")
-
-      # Test back to vogix16
-      if test_scheme_switch("base16", "vogix16", "yoga"):
-          print("✓ base16 -> vogix16 (full circle) works!")
-  else:
-      print("⚠ No base16 themes available for testing")
+  assert test_scheme_switch("base16", "vogix16", "yoga"), \
+      "FAILED: base16 -> vogix16 (yoga)"
+  print("✓ base16 -> vogix16 (full circle) works!")
 
   machine.succeed("su - vogix -c 'vogix theme set -s vogix16 -t yoga -v night'")
   print("\n✓ Scheme switching test complete!")

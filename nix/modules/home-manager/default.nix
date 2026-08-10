@@ -74,9 +74,23 @@ let
   selectedVariantName = selectedTheme.defaults.${acfg.variant} or acfg.variant;
   selectedColors = selectedTheme.variants.${selectedVariantName}.colors;
 
+  # Themes staged into the store ahead of time. Every entry costs a derivation
+  # per variant plus one per themed app inside it, so this is the difference
+  # between a handful of builds and thousands. The selected theme is always
+  # included -- the activation symlink points at it, so leaving it out would
+  # produce a configuration that cannot start.
+  prebuiltThemes =
+    if acfg.prebuiltThemes == null then
+      allThemes
+    else
+      lib.getAttrs
+        (lib.unique ([ acfg.theme ] ++ (builtins.filter (n: allThemes ? ${n}) acfg.prebuiltThemes)))
+        allThemes;
+
   # Generate theme packages
   themeVariantPackages = generators.mkThemeVariantPackages {
-    inherit config cfg allThemes;
+    inherit config cfg;
+    allThemes = prebuiltThemes;
   };
 
   # Apps that will be themed
@@ -103,14 +117,21 @@ let
     cp -r ${templatesDir}/* $out/
   '';
 
-  # Compute templates hash for cache invalidation
-  templatesHash = builtins.hashString "sha256" (
-    builtins.readFile (
-      pkgs.runCommand "vogix-templates-hash" { } ''
-        find ${templatesPackage} -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 > $out
-      ''
-    )
-  );
+  # Compute templates hash for cache invalidation.
+  #
+  # Derived from templatesDir, which is a `builtins.path`: its store path
+  # already carries a NAR hash of the template sources, so this changes exactly
+  # when a template changes and is stable otherwise. The runtime treats the
+  # value as an opaque cache directory name (~/.cache/vogix/themes/<hash>/...)
+  # and never recomputes it, so the digest only has to be stable, not to match
+  # any particular formula.
+  #
+  # Reading it out of a derivation instead would be import-from-derivation,
+  # which forces a build during evaluation. That breaks every consumer
+  # evaluating on a store that does not already have the result -- notably
+  # `nix flake check --no-build` in CI, where it fails with "path
+  # '...-vogix-templates-hash.drv' is not valid".
+  templatesHash = builtins.hashString "sha256" "${templatesDir}";
 
   # Generate themes section for config.toml
   themesSection = concatMapStringsSep "\n\n"

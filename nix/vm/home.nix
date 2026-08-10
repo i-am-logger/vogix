@@ -23,13 +23,30 @@
       appearance = {
         theme = "yoga";
         variant = "dark";
+
+        # Themes are auto-discovered, but only these are staged into the store.
+        #
+        # Discovery finds every bundled scheme collection -- 180 base16, 159
+        # base24, 367 ansi16 -- which merges to hundreds of theme-variants,
+        # each a derivation, each containing another derivation per themed app.
+        # That is thousands of builds per VM, repeated for every test in `nix
+        # flake check`, to exercise the four themes below.
+        #
+        # Every theme a test selects has to be here: `vogix theme set` resolves
+        # against this staged tree, so anything left out fails with "theme
+        # variant <name> not found".
+        prebuiltThemes = [
+          "yoga" # the default the tests start from; stress cycles through it
+          "nordic" # stress: rapid-switch cycle and polarity combinations
+          "matrix" # stress: rapid-switch cycle and polarity combinations
+          "desert" # theme-switching, and the stress cycle
+          "dracula" # base16, scheme-switching
+          "catppuccin" # base16, its frappe variant is read by the palette test
+        ];
       };
       # Apps are auto-detected from enabled programs (alacritty, btop, bash, console)
       # You can disable individual apps with: alacritty.enable = false; etc.
       enableDaemon = false; # Disabled for tests - daemon requires home-manager/.config watch path
-
-      # Themes are auto-discovered from ../../themes directory
-      # No need to list them manually!
     };
 
     # Enable git for convenience
