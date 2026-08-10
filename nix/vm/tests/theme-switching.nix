@@ -167,10 +167,19 @@ testLib.mkTest "theme-switching" ''
   print("✓ Switched back to night (dark) variant")
 
   print("\n=== Test: Switch Theme and Verify Symlink Changes ===")
-  theme_names = [name for name in all_themes.keys() if name != 'yoga']
+
+  # Candidates are vogix16 themes (all_themes) that are also staged under
+  # ~/.local/share/vogix/themes. Both halves matter: appearance.prebuiltThemes
+  # decides what is built, so the discovered set alone would assert directories
+  # for a theme nobody staged; and this block switches with `-t` only, which
+  # keeps the current scheme, so a staged base16 theme like catppuccin would
+  # be looked up under vogix16 and not found.
+  staged_dirs = machine.succeed(f"su - vogix -c 'ls {vogix_themes}'").split()
+  staged_themes = {d.rsplit('-', 1)[0] for d in staged_dirs}
+  theme_names = sorted((set(all_themes.keys()) & staged_themes) - {'yoga'})
 
   if len(theme_names) == 0:
-      print("⚠ Only yoga theme available, skipping theme switch test")
+      print("⚠ Only yoga theme staged, skipping theme switch test")
   else:
       themes_to_test = theme_names[:3]  # Test first 3
 
