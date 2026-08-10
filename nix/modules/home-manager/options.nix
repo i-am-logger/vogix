@@ -92,6 +92,27 @@ in
         description = "Custom theme definitions.";
       };
 
+      prebuiltThemes = mkOption {
+        type = types.nullOr (types.listOf types.str);
+        default = null;
+        example = literalExpression ''[ "yoga" "dracula" ]'';
+        description = ''
+          Which themes to materialize under ~/.local/share/vogix/themes at build
+          time. `null`, the default, builds every discovered theme.
+
+          Every theme-variant is a derivation, and each themed app inside it is
+          another one -- with the bundled scheme collections that is hundreds of
+          theme-variants and thousands of derivations, rebuilt by anything that
+          realizes this profile. Narrowing the list is worth it wherever only a
+          few themes are ever selected, a VM test being the clearest case.
+
+          A theme left out cannot be selected: `vogix theme set` resolves
+          against this staged tree and reports "theme variant <name> not
+          found", even though config.toml still lists it. Narrow this only to
+          the themes a profile actually selects.
+        '';
+      };
+
       shader = {
         enable = mkOption {
           type = types.bool;

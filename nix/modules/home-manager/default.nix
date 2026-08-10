@@ -74,9 +74,23 @@ let
   selectedVariantName = selectedTheme.defaults.${acfg.variant} or acfg.variant;
   selectedColors = selectedTheme.variants.${selectedVariantName}.colors;
 
+  # Themes staged into the store ahead of time. Every entry costs a derivation
+  # per variant plus one per themed app inside it, so this is the difference
+  # between a handful of builds and thousands. The selected theme is always
+  # included -- the activation symlink points at it, so leaving it out would
+  # produce a configuration that cannot start.
+  prebuiltThemes =
+    if acfg.prebuiltThemes == null then
+      allThemes
+    else
+      lib.getAttrs
+        (lib.unique ([ acfg.theme ] ++ (builtins.filter (n: allThemes ? ${n}) acfg.prebuiltThemes)))
+        allThemes;
+
   # Generate theme packages
   themeVariantPackages = generators.mkThemeVariantPackages {
-    inherit config cfg allThemes;
+    inherit config cfg;
+    allThemes = prebuiltThemes;
   };
 
   # Apps that will be themed
