@@ -292,8 +292,34 @@ mod tests {
 
         // Listener gone but the file lingers (the crashed-instance case) → the
         // connection is refused, so it must read as not live.
+        //
+        // Closing the listener does not end the socket instantly in a process
+        // that forks: any concurrently spawned child holds copies of every fd
+        // until its exec, and those copies keep the socket connectable
+        // (O_CLOEXEC clears at exec, not at fork). Other tests in this binary
+        // spawn processes, so assert the EVENTUAL state with a deadline
+        // instead of the instant after drop — the production concern is a
+        // compositor that died seconds-to-minutes ago, not a microsecond
+        // fork window.
         drop(listener);
-        assert!(!Hypr::is_live(&sock));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match std::os::unix::net::UnixStream::connect(&sock) {
+                Err(e) => {
+                    assert_eq!(
+                        e.kind(),
+                        std::io::ErrorKind::ConnectionRefused,
+                        "a lingering dead socket must refuse, got: {e:?}"
+                    );
+                    assert!(!Hypr::is_live(&sock));
+                    break;
+                }
+                Ok(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Ok(_) => panic!("socket still connectable 5s after the listener closed"),
+            }
+        }
 
         let _ = std::fs::remove_file(&sock);
     }

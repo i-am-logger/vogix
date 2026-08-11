@@ -2227,7 +2227,25 @@ mod tests {
             "a second instance must be refused while the first holds the lock"
         );
         drop(held); // first instance exits → lock releases
-        let reacquired = super::lock_exclusive(&path).expect("re-acquirable after release");
+
+        // Dropping the file does not release the flock instantly in a process
+        // that forks: a concurrently spawned child holds copies of every fd
+        // until its exec, and a copy keeps the open-file-description — and its
+        // flock — alive (O_CLOEXEC clears at exec, not at fork). Other tests
+        // in this binary spawn processes, so retry the re-acquire with a
+        // deadline; what the guard promises is that a NEW engine can take the
+        // lock once the old one is gone, not that the kernel forgets the lock
+        // in the same microsecond.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let reacquired = loop {
+            match super::lock_exclusive(&path) {
+                Ok(f) => break f,
+                Err(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(e) => panic!("lock still held 5s after release: {e}"),
+            }
+        };
         drop(reacquired);
         let _ = std::fs::remove_file(&path);
     }
