@@ -721,7 +721,12 @@ mod tests {
 
     #[test]
     fn test_restore_file_dry_run() {
-        let tmp = std::env::temp_dir().join("vogix-test-dry-run.json");
+        // A unique directory per invocation: a fixed /tmp filename is shared
+        // by every concurrent run of this suite (two checkouts, a nix build
+        // beside a devenv test), and one run's cleanup races another's
+        // write-then-read into "EOF while parsing".
+        let dir = tempfile::TempDir::new().unwrap();
+        let tmp = dir.path().join("dry-run.json");
         let session = Session {
             windows: vec![HyprWindow {
                 class: "brave-browser".to_string(),
@@ -743,8 +748,6 @@ mod tests {
         // Dry run should succeed without launching anything
         let result = handle_session_restore_file(tmp.to_str().unwrap(), true);
         assert!(result.is_ok(), "Dry run should succeed: {:?}", result.err());
-
-        let _ = fs::remove_file(&tmp);
     }
 
     #[test]
