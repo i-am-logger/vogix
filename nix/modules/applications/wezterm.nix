@@ -24,7 +24,21 @@ _:
       {
         key = 'v',
         mods = 'CTRL',
-        action = wezterm.action.PasteFrom('Clipboard'),
+        action = wezterm.action_callback(function(window, pane)
+          -- Terminal paste can only ever insert TEXT. When the clipboard
+          -- holds an image, forward the raw keystroke instead, so
+          -- applications that read the clipboard themselves (image-aware
+          -- TUIs shell out to wl-paste) get their chance; PasteFrom would
+          -- silently insert nothing. Decided by clipboard CONTENT, not an
+          -- application list. Where wl-paste is absent (macOS), the probe
+          -- fails and this falls through to plain text paste.
+          local ok, stdout = wezterm.run_child_process { 'wl-paste', '-l' }
+          if ok and stdout and stdout:find('image/') then
+            window:perform_action(wezterm.action.SendKey{key='v', mods='CTRL'}, pane)
+          else
+            window:perform_action(wezterm.action.PasteFrom('Clipboard'), pane)
+          end
+        end),
       },
     }
 
