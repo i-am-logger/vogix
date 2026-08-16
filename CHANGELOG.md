@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4](https://github.com/i-am-logger/vogix/compare/vogix-v0.8.3...vogix-v0.8.4) (2026-08-16)
+
+
+### Bug Fixes
+
+* **wezterm:** let image-aware applications receive Ctrl+V ([#190](https://github.com/i-am-logger/vogix/issues/190)) ([5008eed](https://github.com/i-am-logger/vogix/commit/5008eeda33aafe6a68d58082ccab49b27844f81a))
+
 ## [0.8.3](https://github.com/i-am-logger/vogix/compare/vogix-v0.8.2...vogix-v0.8.3) (2026-08-10)
 
 
