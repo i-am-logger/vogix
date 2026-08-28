@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.8.4...vogix-v0.9.0) (2026-08-28)
+
+
+### Features
+
+* **hypr:** Hyprland Lua config engine — dual-mode runtime, dialect-aware verbs, Lua generation ([#193](https://github.com/i-am-logger/vogix/issues/193)) ([4826759](https://github.com/i-am-logger/vogix/commit/482675928a5734f1c05a902a24a3f5ba025ae667))
+
 ## [0.8.4](https://github.com/i-am-logger/vogix/compare/vogix-v0.8.3...vogix-v0.8.4) (2026-08-16)
 
 
