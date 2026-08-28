@@ -88,6 +88,14 @@ pub enum Commands {
     /// Run the vogix daemon (session auto-save, event monitoring)
     Daemon,
 
+    /// Talk to the Hyprland compositor in whichever IPC dialect it runs
+    /// (legacy hyprlang or the Lua engine) — for keybindings and scripts that
+    /// would otherwise hardcode `hyprctl dispatch`/`keyword` legacy syntax
+    Hypr {
+        #[command(subcommand)]
+        command: HyprCommands,
+    },
+
     /// Ontology-driven input engine (keybinding modes)
     Input {
         #[command(subcommand)]
@@ -130,6 +138,23 @@ pub enum InputCommands {
         /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
         #[arg(long)]
         config: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum HyprCommands {
+    /// Run a dispatcher, written in the legacy action form ("movefocus, l",
+    /// "togglespecialworkspace, console") — translated for the Lua engine
+    Dispatch {
+        /// The action, one argument (quote it)
+        action: String,
+    },
+    /// Set one or more config keywords, as KEY VALUE pairs
+    /// (e.g. general:gaps_out 5 general:gaps_in 6) — one atomic write
+    Keyword {
+        /// Alternating KEY VALUE arguments
+        #[arg(num_args = 2.., value_names = ["KEY", "VALUE"])]
+        args: Vec<String>,
     },
 }
 

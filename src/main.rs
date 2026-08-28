@@ -107,6 +107,8 @@ fn run(cli: &Cli) -> Result<()> {
 
         Commands::Completions { shell } => handle_completions(*shell),
 
+        Commands::Hypr { command } => commands::hypr::handle_hypr(command),
+
         Commands::Cache {
             command: CacheCommands::Clean,
         } => handle_cache_clean(),
