@@ -30,7 +30,11 @@ let
   # switch) — the engine stays in `app`, which re-emits unbound keys, so typing
   # reaches tmux. Toggling again hides it; the `grep -q vogix-console ||` guard
   # avoids relaunching an already-running session.
-  consoleToggleAction = "exec, hyprctl dispatch togglespecialworkspace console; hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console";
+  # `vogix hypr dispatch` speaks whichever IPC dialect the compositor runs
+  # (legacy hyprlang or the Lua engine); a raw `hyprctl dispatch <legacy>`
+  # here would break the moment the host flips to the Lua config. The
+  # `hyprctl clients -j` query is dialect-agnostic and stays.
+  consoleToggleAction = "exec, vogix hypr dispatch 'togglespecialworkspace, console'; hyprctl clients -j | grep -q vogix-console || wezterm start --class vogix-console -- tmux new-session -A -s console";
 in
 rec {
   # ── Input settings ──
@@ -170,8 +174,10 @@ rec {
         screenshotEdit = { key = "shift + print"; action = "exec, grimblast save area - | swappy -f -"; description = "Screenshot → editor"; };
 
         # ── Gaps ──
-        gapsOn = { key = "super + shift + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 5;keyword general:gaps_in 6"''; description = "Gaps on"; };
-        gapsOff = { key = "super + g"; action = ''exec, hyprctl --batch "keyword general:gaps_out 0;keyword general:gaps_in 0"''; description = "Gaps off"; };
+        # `vogix hypr keyword` writes both values in one dialect-correct IPC
+        # round trip (keyword batch on hyprlang, one eval on the Lua engine).
+        gapsOn = { key = "super + shift + g"; action = "exec, vogix hypr keyword general:gaps_out 5 general:gaps_in 6"; description = "Gaps on"; };
+        gapsOff = { key = "super + g"; action = "exec, vogix hypr keyword general:gaps_out 0 general:gaps_in 0"; description = "Gaps off"; };
 
         # ── System (console, notifications, undo, help) ──
         console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };

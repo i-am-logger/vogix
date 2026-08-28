@@ -51,11 +51,22 @@ let
     let parsed = parseKeyCombo modKey combo;
     in "${parsed.mods}, ${parsed.key}";
 
+  # Convert a parsed key combo to the Lua engine's keys-string: "MODS + key"
+  # (`parseKeyString` splits on `+`; modifier names are uppercase-exact,
+  # keysyms case-insensitive — "SUPER + SHIFT + x", "Print", "F12").
+  toLuaKeys = modKey: combo:
+    let
+      parsed = parseKeyCombo modKey combo;
+      mods = builtins.filter (m: m != "") (splitString " " parsed.mods);
+    in
+    concatStringsSep " + " (mods ++ [ parsed.key ]);
+
 in
 {
   inherit
     parseKeyCombo
     toHyprlandBind
+    toLuaKeys
     modifierMap
     ;
 }

@@ -140,7 +140,11 @@ let
     # A controllable mock compositor: binds a recording socket and returns its
     # server handle (so a test can CLOSE it to simulate a compositor crash) plus
     # its received-commands list. `received` below is mock #1 — existing tests use it.
-    def make_mock(sock_path):
+    # `provider` makes the mock answer the engine's `j/status` probe like a
+    # 0.55+ instance ("lua" = the Lua config engine); with the default None the
+    # probe gets "ok" (unparseable → the engine assumes legacy hyprlang, which
+    # is also what a pre-0.55 Hyprland without the endpoint looks like).
+    def make_mock(sock_path, provider=None):
         recv = []
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -157,7 +161,15 @@ let
                     return  # server closed → stop (compositor 'crashed')
                 data = conn.recv(4096)
                 if data:
-                    recv.append(data.decode(errors="replace"))
+                    text = data.decode(errors="replace")
+                    if provider is not None and text.strip().startswith("j/status"):
+                        try:
+                            conn.sendall(('{"configProvider": "' + provider + '"}').encode())
+                        except OSError:
+                            pass
+                        conn.close()
+                        continue
+                    recv.append(text)
                 try:
                     conn.sendall(b"ok")
                 except OSError:
@@ -787,7 +799,7 @@ let
     # reaches tmux). Bare key, no modifier.
     flat_expect("F12 system console",
         lambda: tap(e.KEY_F12, hold=0.03),
-        "exec hyprctl dispatch togglespecialworkspace console")
+        "exec vogix hypr dispatch 'togglespecialworkspace, console'")
     # Super+D / Super+Shift+D = dismiss notification(s) (makoctl).
     flat_expect("Super+D dismiss notification",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_D, hold=0.03), up(e.KEY_LEFTMETA)),
@@ -801,6 +813,36 @@ let
     flat_expect("Super+slash help popup",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_SLASH, hold=0.03), up(e.KEY_LEFTMETA)),
         "exec vogix input keys")
+
+    # ── Lua config engine: provider-aware dispatch (Hyprland ≥0.55) ──
+    # The compositor 'restarts' as a Lua-engine instance: its j/status reports
+    # configProvider=lua, so on re-discovery the engine must translate every
+    # legacy action into an hl.dsp.* expression — the Lua IPC rejects raw
+    # legacy dispatch strings, so one leaking through means dead keybindings
+    # on a 0.55+ host that flipped its config (and on every 0.57 host).
+    _srv2.close()
+    try:
+        os.unlink(SOCK2)
+    except OSError:
+        pass
+    time.sleep(0.3)
+    # Poke a dispatch into the dead socket so the engine drops its cached handle.
+    down(e.KEY_LEFTMETA); tap(e.KEY_H, hold=0.03); up(e.KEY_LEFTMETA)
+    time.sleep(0.3)
+    SOCKDIR3 = XDG + "/hypr/testsig3"
+    SOCK3 = SOCKDIR3 + "/.socket.sock"
+    os.makedirs(SOCKDIR3, exist_ok=True)
+    _srv3, received3 = make_mock(SOCK3, provider="lua")
+    time.sleep(0.3)
+    received3.clear()
+    down(e.KEY_LEFTMETA); tap(e.KEY_H, hold=0.03); up(e.KEY_LEFTMETA)
+    time.sleep(0.6)
+    joined3 = " ".join(received3)
+    if 'dispatch hl.dsp.focus({ direction = "l" })' not in joined3:
+        fail("Lua provider: Super+H must dispatch the hl.dsp.focus expression, got " + repr(received3))
+    if "dispatch movefocus" in joined3:
+        fail("Lua provider: a raw legacy dispatch string reached a Lua-engine compositor: " + repr(received3))
+    print("PASS: Lua config engine — provider detected, dispatches translated to hl.dsp.*")
 
     print("ALL VOGIX INPUT ENGINE TESTS PASSED")
   '';
