@@ -34,11 +34,14 @@ let
 in
 rec {
   # ── Input settings ──
+  # Handedness and pointer acceleration are properties of the PERSON, not of a
+  # theme system, so they default neutral here; a consumer (mynixos) wires them
+  # from its per-user input options.
   input = {
     repeatDelay = 200;
-    sensitivity = -0.3;
+    sensitivity = 0.0;
     naturalScroll = true;
-    leftHanded = true;
+    leftHanded = false;
     floatSwitchOverrideFocus = 2;
     numlockByDefault = false;
   };

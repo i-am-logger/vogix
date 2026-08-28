@@ -7,6 +7,8 @@
 { lib }:
 
 let
+  defaults = import ./defaults.nix { };
+
   inherit (lib)
     mkOption
     mkEnableOption
@@ -242,6 +244,76 @@ in
                 internal = true;
                 default = { };
                 description = "Per-mode border colors derived from vogix theme";
+              };
+            };
+          };
+        };
+
+        # ── Pointer/keyboard input ──
+        # Declared so a consumer can actually set them: the Hyprland generator
+        # has always read `cfg.input`/`cfg.touchpad`, but without declarations
+        # here the strict submodule rejected any definition and every install
+        # silently ran the defaults. Handedness and acceleration are properties
+        # of the PERSON, so the defaults are neutral — mynixos wires them from
+        # `my.users.<name>.input`.
+        input = mkOption {
+          description = "Pointer/keyboard input settings rendered into the Hyprland config";
+          default = { };
+          type = types.submodule {
+            options = {
+              repeatDelay = mkOption {
+                type = types.int;
+                default = defaults.input.repeatDelay;
+                description = "Key repeat delay in milliseconds";
+              };
+              sensitivity = mkOption {
+                type = types.float;
+                default = defaults.input.sensitivity;
+                description = "libinput pointer acceleration, -1.0 to 1.0 (0.0 = device default)";
+              };
+              naturalScroll = mkOption {
+                type = types.bool;
+                default = defaults.input.naturalScroll;
+                description = "Content follows finger/wheel direction";
+              };
+              leftHanded = mkOption {
+                type = types.bool;
+                default = defaults.input.leftHanded;
+                description = "Swap the primary and secondary pointer buttons";
+              };
+              floatSwitchOverrideFocus = mkOption {
+                type = types.int;
+                default = defaults.input.floatSwitchOverrideFocus;
+                description = "Hyprland input:float_switch_override_focus";
+              };
+              numlockByDefault = mkOption {
+                type = types.bool;
+                default = defaults.input.numlockByDefault;
+                description = "Enable numlock on startup";
+              };
+            };
+          };
+        };
+
+        touchpad = mkOption {
+          description = "Touchpad settings rendered into the Hyprland config";
+          default = { };
+          type = types.submodule {
+            options = {
+              naturalScroll = mkOption {
+                type = types.bool;
+                default = defaults.touchpad.naturalScroll;
+                description = "Content follows finger direction";
+              };
+              disableWhileTyping = mkOption {
+                type = types.bool;
+                default = defaults.touchpad.disableWhileTyping;
+                description = "Ignore the touchpad while typing";
+              };
+              scrollFactor = mkOption {
+                type = types.float;
+                default = defaults.touchpad.scrollFactor;
+                description = "Touchpad scroll speed multiplier";
               };
             };
           };
