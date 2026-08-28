@@ -59,17 +59,20 @@ pub fn extract_shader_color(palette: &Palette) -> ShaderColor {
             continue;
         };
 
-        // Use praxis Rgb methods for hue and saturation
-        let sat = rgb.saturation();
+        // Use praxis Rgb methods for hue and saturation. A praxis Quantity
+        // carries its SI value: saturation is unitless, and an angle's
+        // `.value` is RADIANS (the degree form is converted on construction),
+        // so the hue is already the angle — no degree scaling here.
+        let sat = rgb.saturation().value;
         if sat < 0.01 {
             continue;
         }
 
-        let Some(hue_deg) = rgb.hue() else {
+        let Some(hue) = rgb.hue() else {
             continue;
         };
 
-        let angle = (hue_deg / 360.0) * std::f64::consts::TAU;
+        let angle = hue.value;
         sum_sin += sat * angle.sin();
         sum_cos += sat * angle.cos();
         total_weight += sat;

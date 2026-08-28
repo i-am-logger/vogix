@@ -34,9 +34,10 @@ impl Scheme {
         }
     }
 
-    /// Number of color slots for this scheme (from ontology).
+    /// Number of color slots for this scheme (from ontology). praxis returns a
+    /// dimensionless typed Quantity; the raw count is its value.
     pub fn slot_count(self) -> usize {
-        self.to_praxis().slot_count()
+        self.to_praxis().slot_count().value as usize
     }
 }
 

@@ -49,9 +49,14 @@ in
 {
   inherit optionsModule defaults mkGeneratorConfig;
 
-  # Generate Hyprland config
+  # Generate Hyprland config (hyprlang) — { settings, extraConfig }
   mkHyprlandConfig = behaviorCfg:
     hyprlandGen.generate (mkGeneratorConfig behaviorCfg);
+
+  # Generate Hyprland config (Lua engine) — { settings, submaps }, the HM
+  # `configType = "lua"` shapes. Same resolved config, different projection.
+  mkHyprlandLuaConfig = behaviorCfg:
+    hyprlandGen.generateLua (mkGeneratorConfig behaviorCfg);
 
   # Render the behavior config to the JSON shape `src/input/schema.rs` expects.
   # The Rust side reads this via `Schema::load()` from

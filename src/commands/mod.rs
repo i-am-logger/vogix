@@ -11,6 +11,7 @@
 mod cache;
 mod completions;
 mod daemon;
+pub mod hypr;
 mod input;
 mod list;
 mod modes;

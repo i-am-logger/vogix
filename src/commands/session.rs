@@ -351,21 +351,43 @@ fn restore_from_path(path: &Path, label: &str, dry_run: bool) -> Result<()> {
     {
         let current: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)?;
 
+        // One provider-aware socket handle for every move — under the Lua
+        // engine the legacy dispatch string would be a Lua syntax error. On a
+        // rejected write the handle may have gone stale (compositor restarted
+        // mid-restore), so re-discover once and retry before giving up on
+        // that window — the same self-healing the engine's long-lived loop
+        // does, sized for a one-shot command.
+        let mut hypr = crate::input::hypr::Hypr::discover();
         for window in &session.windows {
             // Find matching window by class
             for client in &current {
                 let client_class = client["class"].as_str().unwrap_or("");
                 if client_class == window.class {
                     let addr = client["address"].as_str().unwrap_or("");
-                    if !addr.is_empty() {
-                        Command::new("hyprctl")
-                            .args([
-                                "dispatch",
-                                "movetoworkspacesilent",
-                                &format!("{},address:{}", window.workspace, addr),
-                            ])
-                            .output()
-                            .ok();
+                    if addr.is_empty() {
+                        continue;
+                    }
+                    let action = format!(
+                        "movetoworkspacesilent, {},address:{}",
+                        window.workspace, addr
+                    );
+                    let first = match &hypr {
+                        Some(h) => h.dispatch(&action),
+                        None => break,
+                    };
+                    if let Err(first_err) = first {
+                        hypr = crate::input::hypr::Hypr::discover();
+                        match &hypr {
+                            Some(h) => {
+                                if let Err(e) = h.dispatch(&action) {
+                                    warn!("Arranging {} failed: {}", window.class, e);
+                                }
+                            }
+                            None => warn!(
+                                "Arranging {} failed: {} (no live compositor to retry)",
+                                window.class, first_err
+                            ),
+                        }
                     }
                 }
             }
