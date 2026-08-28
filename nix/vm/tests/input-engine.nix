@@ -160,6 +160,7 @@ let
                 except OSError:
                     return  # server closed → stop (compositor 'crashed')
                 data = conn.recv(4096)
+                reply = b"ok"
                 if data:
                     text = data.decode(errors="replace")
                     if provider is not None and text.strip().startswith("j/status"):
@@ -169,9 +170,15 @@ let
                             pass
                         conn.close()
                         continue
+                    # A [[BATCH]] answers one "ok" PER COMMAND joined by blank
+                    # lines (the real 0.56.2 shape) — keeps the engine's reply
+                    # parser honest about multi-keyword border pushes.
+                    if text.startswith("[[BATCH]]"):
+                        n = text[len("[[BATCH]]"):].count(";") + 1
+                        reply = b"\n\n\n".join([b"ok"] * n)
                     recv.append(text)
                 try:
-                    conn.sendall(b"ok")
+                    conn.sendall(reply)
                 except OSError:
                     pass
                 conn.close()

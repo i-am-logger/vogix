@@ -254,25 +254,38 @@ impl Hypr {
         stream.set_write_timeout(Some(Duration::from_millis(200)))?;
         stream.write_all(command.as_bytes())?;
         // Hyprland replies "ok" on success, or an error string. Treat a
-        // non-empty, non-"ok" reply as a failure: a stale socket left by a
-        // *restarted* compositor frequently still `connect()`s and accepts the
-        // write but rejects the dispatch — and without inspecting the reply that
-        // silent drop looks like success. That is the "keybindings stopped
-        // working after Hyprland restarted" symptom: the engine keeps dispatching
-        // into a dead instance. Returning Err here lets the caller drop the stale
-        // handle and re-discover the live socket. An empty / timed-out read is
-        // tolerated as ok so a merely slow reply doesn't churn re-discovery.
+        // non-ok reply as a failure: a stale socket left by a *restarted*
+        // compositor frequently still `connect()`s and accepts the write but
+        // rejects the dispatch — and without inspecting the reply that silent
+        // drop looks like success. That is the "keybindings stopped working
+        // after Hyprland restarted" symptom: the engine keeps dispatching into
+        // a dead instance. Returning Err here lets the caller drop the stale
+        // handle and re-discover the live socket.
         let mut buf = Vec::new();
         let _ = stream.read_to_end(&mut buf);
         let reply = String::from_utf8_lossy(&buf);
-        let reply = reply.trim();
-        if !reply.is_empty() && reply != "ok" {
+        if !reply_is_ok(&reply) {
             return Err(std::io::Error::other(format!(
-                "hyprland rejected '{command}': {reply}"
+                "hyprland rejected '{command}': {}",
+                reply.trim()
             )));
         }
         Ok(())
     }
+}
+
+/// Is a control-socket reply a success? A single request answers exactly
+/// `ok`; a `[[BATCH]]` answers one `ok` per command joined by blank lines —
+/// `ok\n\n\nok` for a two-command batch (probed live on 0.56.2, hyprlang
+/// provider). Success = every non-empty line is `ok`. An empty / timed-out
+/// reply is tolerated as ok so a merely slow compositor doesn't churn
+/// re-discovery.
+fn reply_is_ok(reply: &str) -> bool {
+    reply
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .all(|line| line == "ok")
 }
 
 /// Extract the window class from a Hyprland `activewindow>>class,title` event
@@ -432,6 +445,21 @@ mod tests {
         // A pre-Lua Hyprland answers the unknown request with no such field.
         assert_eq!(parse_config_provider_json("unknown request"), None);
         assert_eq!(parse_config_provider_json("{}"), None);
+    }
+
+    #[test]
+    fn reply_parsing_accepts_batch_ok() {
+        // Single request: bare `ok`. `[[BATCH]]`: one `ok` per command joined
+        // by blank lines — the exact shape probed live on 0.56.2.
+        assert!(reply_is_ok("ok"));
+        assert!(reply_is_ok("ok\n\n\nok"));
+        // Empty / timed-out reads are tolerated (slow compositor ≠ stale).
+        assert!(reply_is_ok(""));
+        assert!(reply_is_ok("\n"));
+        // Any error text fails, alone or inside a batch reply.
+        assert!(!reply_is_ok("error: invalid keyword"));
+        assert!(!reply_is_ok("ok\n\n\nerror: invalid keyword"));
+        assert!(!reply_is_ok("unknown request"));
     }
 
     #[test]

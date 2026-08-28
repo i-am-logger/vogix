@@ -41,16 +41,20 @@ Wrong-dialect writes fail with stable text:
 
 ## Reply contract
 
-Success is `ok`. Errors are non-`ok` text; Lua-side failures are prefixed
-`error:` and include the Lua traceback position, e.g.
+Success is `ok` — for a **single** request, exactly that. A `[[BATCH]]`
+concatenates one reply per command joined by blank lines, so a two-command
+keyword batch answers `ok\n\n\nok` (probed live on 0.56.2, hyprlang provider).
+Errors are non-`ok` text; Lua-side failures are prefixed `error:` and include
+the Lua traceback position, e.g.
 
 ```
 error: return hl.config({ general = { definitely_not_a_key = 1 } });:1: unknown config key 'general.definitely_not_a_key'
 ```
 
-vogix's socket layer treats any non-empty, non-`ok` reply as a rejected write
-(see `Hypr::send`), which also covers wrong-dialect replies: the caller drops
-the handle and re-discovers, and discovery re-detects the engine.
+vogix's socket layer accepts a reply whose every non-empty line is `ok` and
+treats anything else as a rejected write (`reply_is_ok` in
+`src/input/hypr.rs`), which also covers wrong-dialect replies: the caller
+drops the handle and re-discovers, and discovery re-detects the engine.
 
 ## Values in `hl.config`
 
