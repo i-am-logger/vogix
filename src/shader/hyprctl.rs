@@ -1,11 +1,15 @@
 //! Hyprland IPC for shader management.
 //!
-//! Uses `hyprctl` to apply and clear screen shaders via Hyprland's
-//! `decoration:screen_shader` keyword.
+//! Applies and clears the `decoration:screen_shader` option over Hyprland's
+//! control socket ([`crate::input::hypr::Hypr`]), which speaks the dialect of
+//! whichever config engine the compositor runs — `keyword` under hyprlang,
+//! `eval hl.config({…})` under the Lua engine (where `keyword` is rejected).
+//! The `[[EMPTY]]` clear sentinel below is hyprlang's; the socket layer maps
+//! it to `""` for Lua, which reads back as a cleanly empty option.
 
 use crate::errors::{Result, VogixError};
+use crate::input::hypr::Hypr;
 use std::path::Path;
-use std::process::Command;
 
 /// Check that Hyprland is running.
 pub fn check_environment() -> Result<()> {
@@ -18,46 +22,22 @@ pub fn check_environment() -> Result<()> {
 /// Apply a screen shader from the given file path.
 pub fn set_shader(shader_path: &Path) -> Result<()> {
     log::info!("Applying shader: {}", shader_path.display());
-    run_hyprctl(&[
-        "keyword",
-        "decoration:screen_shader",
-        &shader_path.to_string_lossy(),
-    ])
+    set_screen_shader(&shader_path.to_string_lossy())
 }
 
 /// Clear the active screen shader.
 pub fn clear_shader() -> Result<()> {
     log::info!("Clearing screen shader");
-    run_hyprctl(&["keyword", "decoration:screen_shader", "[[EMPTY]]"])
+    set_screen_shader("[[EMPTY]]")
 }
 
-fn run_hyprctl(args: &[&str]) -> Result<()> {
-    let output = Command::new("hyprctl").args(args).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            VogixError::HyprctlNotFound
-        } else {
-            VogixError::HyprctlFailed {
-                code: -1,
-                detail: e.to_string(),
-            }
-        }
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if stderr.is_empty() {
-            stdout.into_owned()
-        } else {
-            stderr.into_owned()
-        };
-        return Err(VogixError::HyprctlFailed {
-            code: output.status.code().unwrap_or(-1),
-            detail,
-        });
-    }
-
-    Ok(())
+fn set_screen_shader(value: &str) -> Result<()> {
+    let hypr = Hypr::discover().ok_or(VogixError::HyprlandNotRunning)?;
+    hypr.set_keyword("decoration:screen_shader", value)
+        .map_err(|e| VogixError::HyprctlFailed {
+            code: -1,
+            detail: e.to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -91,23 +71,5 @@ mod tests {
             Some(val) => unsafe { std::env::set_var("HYPRLAND_INSTANCE_SIGNATURE", val) },
             None => unsafe { std::env::remove_var("HYPRLAND_INSTANCE_SIGNATURE") },
         }
-    }
-
-    #[test]
-    fn hyprctl_not_found_maps_error() {
-        let err = Command::new("nonexistent-binary-xyz")
-            .output()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    VogixError::HyprctlNotFound
-                } else {
-                    VogixError::HyprctlFailed {
-                        code: -1,
-                        detail: e.to_string(),
-                    }
-                }
-            })
-            .unwrap_err();
-        assert!(matches!(err, VogixError::HyprctlNotFound));
     }
 }

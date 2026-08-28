@@ -504,22 +504,16 @@ fn execute_side_effects(
         }
 
         Commands::Mode { target } => {
-            // Dispatch Hyprland submap change — "app" maps to "reset" (default submap)
+            // Dispatch Hyprland submap change — "app" maps to "reset" (default
+            // submap). Over the provider-aware socket handle: the Lua engine
+            // takes `hl.dsp.submap("<name>")`, not the legacy string.
             let submap = if target == "app" { "reset" } else { target };
-            match std::process::Command::new("hyprctl")
-                .args(["dispatch", "submap", submap])
-                .output()
-            {
-                Ok(output) if output.status.success() => {
-                    info!("Mode: {} → {}", state.current_mode, target);
-                }
-                Ok(output) => {
-                    warn!(
-                        "Mode switch failed: {}",
-                        String::from_utf8_lossy(&output.stderr).trim()
-                    );
-                }
-                Err(e) => warn!("hyprctl not available: {}", e),
+            match input::hypr::Hypr::discover() {
+                Some(hypr) => match hypr.dispatch(&format!("submap, {submap}")) {
+                    Ok(()) => info!("Mode: {} → {}", state.current_mode, target),
+                    Err(e) => warn!("Mode switch failed: {}", e),
+                },
+                None => warn!("Hyprland not running; mode not dispatched"),
             }
         }
 

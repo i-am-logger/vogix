@@ -11,6 +11,21 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// Which config engine the connected compositor runs. Hyprland ≥ 0.55 has two:
+/// the legacy hyprlang parser and the Lua engine (mandatory from 0.57). The
+/// wire dialect differs on every WRITE — `keyword` is rejected under Lua
+/// ("keyword can't work with non-legacy parsers. Use eval.") and a legacy
+/// `dispatch <name> <args>` line is parsed as a Lua expression — while reads
+/// (`j/…` queries, the `.socket2.sock` event stream) are identical. Reported
+/// by `j/status` as `configProvider`; an instance without that endpoint
+/// predates the Lua engine and is therefore hyprlang.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConfigProvider {
+    #[default]
+    Hyprlang,
+    Lua,
+}
+
 /// Translate a schema action (`"dispatcher, args"`) into a socket command
 /// (`"dispatch dispatcher args"`).
 ///
@@ -35,6 +50,11 @@ pub fn action_to_command(action: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct Hypr {
     socket: PathBuf,
+    /// The config engine behind this socket, detected once at discovery. A
+    /// compositor restart re-enters through [`Hypr::discover`] (the callers
+    /// drop the handle on a rejected write), so a provider change — e.g. the
+    /// hyprlang→Lua migration flip — is picked up with the new socket.
+    provider: ConfigProvider,
 }
 
 impl Hypr {
@@ -56,7 +76,38 @@ impl Hypr {
         Self::candidate_sockets()
             .into_iter()
             .find(|sock| Self::is_live(sock))
-            .map(|socket| Self { socket })
+            .map(|socket| {
+                let provider = Self::query_provider(&socket);
+                Self { socket, provider }
+            })
+    }
+
+    /// Which config engine this handle talks to.
+    pub fn provider(&self) -> ConfigProvider {
+        self.provider
+    }
+
+    /// Ask the instance which config engine it runs (`j/status` →
+    /// `"configProvider": "lua" | "hyprlang"`). Any failure — no such endpoint
+    /// (pre-Lua Hyprland), timeout, unparseable reply — falls back to
+    /// hyprlang: on such an instance the legacy dialect is the only one that
+    /// exists, so the fallback is also the correct answer.
+    fn query_provider(socket: &Path) -> ConfigProvider {
+        let reply = (|| -> std::io::Result<String> {
+            let mut stream = UnixStream::connect(socket)?;
+            stream.set_read_timeout(Some(Duration::from_millis(200)))?;
+            stream.set_write_timeout(Some(Duration::from_millis(200)))?;
+            stream.write_all(b"j/status")?;
+            let mut buf = String::new();
+            let _ = stream.read_to_string(&mut buf);
+            Ok(buf)
+        })();
+        match reply {
+            Ok(json) if parse_config_provider_json(&json) == Some(ConfigProvider::Lua) => {
+                ConfigProvider::Lua
+            }
+            _ => ConfigProvider::Hyprlang,
+        }
     }
 
     /// Candidate control-socket paths in priority order (see [`Self::discover`]).
@@ -115,15 +166,53 @@ impl Hypr {
         &self.socket
     }
 
-    /// Run a schema action by dispatching it over the socket.
+    /// Run a schema action by dispatching it over the socket. Under the Lua
+    /// engine the legacy string is translated to a `hl.dsp.*` expression
+    /// first ([`super::hypr_lua::action_to_lua`]); a dispatcher with no Lua
+    /// translation fails loudly rather than sending a guaranteed Lua syntax
+    /// error.
     pub fn dispatch(&self, action: &str) -> std::io::Result<()> {
-        self.send(&action_to_command(action))
+        match self.provider {
+            ConfigProvider::Hyprlang => self.send(&action_to_command(action)),
+            ConfigProvider::Lua => {
+                let expr = super::hypr_lua::action_to_lua(action).map_err(std::io::Error::other)?;
+                self.send(&format!("dispatch {expr}"))
+            }
+        }
     }
 
     /// Set a Hyprland config keyword at runtime (e.g. a per-mode border colour),
     /// as `hyprctl keyword <key> <value>` does but over the socket directly.
+    /// Under the Lua engine `keyword` no longer exists; the same change is an
+    /// incremental `eval hl.config({…})`.
     pub fn set_keyword(&self, key: &str, value: &str) -> std::io::Result<()> {
-        self.send(&format!("keyword {key} {value}"))
+        match self.provider {
+            ConfigProvider::Hyprlang => self.send(&format!("keyword {key} {value}")),
+            ConfigProvider::Lua => {
+                self.send(&format!("eval {}", keywords_to_eval(&[(key, value)])))
+            }
+        }
+    }
+
+    /// Set several keywords in one round trip. Hyprlang takes a `[[BATCH]]` of
+    /// `keyword` commands; the Lua engine takes a single `eval hl.config({…})`
+    /// with the key paths merged into one table (both border colours share
+    /// `general.col`, so one eval covers what two keywords did).
+    pub fn set_keywords(&self, pairs: &[(&str, &str)]) -> std::io::Result<()> {
+        if pairs.is_empty() {
+            return Ok(());
+        }
+        match self.provider {
+            ConfigProvider::Hyprlang => {
+                let body = pairs
+                    .iter()
+                    .map(|(k, v)| format!("keyword {k} {v}"))
+                    .collect::<Vec<_>>()
+                    .join(";");
+                self.send(&format!("[[BATCH]]{body}"))
+            }
+            ConfigProvider::Lua => self.send(&format!("eval {}", keywords_to_eval(pairs))),
+        }
     }
 
     /// Path of this instance's EVENT socket (`.socket2.sock`), derived from the
@@ -208,6 +297,70 @@ fn parse_active_class_json(json: &str) -> Option<String> {
     (!class.is_empty()).then(|| class.to_string())
 }
 
+/// Extract the config engine from a `j/status` reply (same minimal field scan
+/// as [`parse_active_class_json`]). `None` when the field is absent — a
+/// pre-Lua Hyprland, whose reply to the unknown request carries no such key.
+fn parse_config_provider_json(json: &str) -> Option<ConfigProvider> {
+    let key = "\"configProvider\":";
+    let after = json[json.find(key)? + key.len()..].trim_start();
+    let after = after.strip_prefix('"')?;
+    let value = &after[..after.find('"')?];
+    match value {
+        "lua" => Some(ConfigProvider::Lua),
+        "hyprlang" => Some(ConfigProvider::Hyprlang),
+        _ => None,
+    }
+}
+
+/// Render one or more `section:sub.key = value` keyword pairs as a single
+/// incremental `hl.config({…})` expression for the Lua engine's `eval`, in
+/// the flat bracketed-key form:
+///
+/// ```text
+/// hl.config({ ["general.col.active_border"] = "rgb(3366aa)" })
+/// ```
+///
+/// The Lua manager registers every hyprlang name with `:` → `.` and `-` → `_`
+/// (`luaConfigValueName`), and `hl.config` resolves a flat dotted key in one
+/// lookup — no nesting logic, no ambiguity about where a path segment ends.
+/// Values keep hyprlang's spelling: integers, floats and booleans go bare,
+/// everything else becomes a Lua string literal. The legacy `[[EMPTY]]`
+/// sentinel (hyprlang's "unset a string option") maps to `""` — verified on
+/// 0.56.2: clearing `decoration:screen_shader` with `""` reads back cleanly
+/// empty. A multi-pair call is one atomic eval and one refresh schedule.
+pub fn keywords_to_eval(pairs: &[(&str, &str)]) -> String {
+    let body = pairs
+        .iter()
+        .map(|(key, value)| {
+            let lua_key = key.replace(':', ".").replace('-', "_");
+            format!(
+                "[{}] = {}",
+                super::hypr_lua::lua_str(&lua_key),
+                lua_value(value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("hl.config({{ {body} }})")
+}
+
+/// Render a hyprlang keyword value as a Lua expression: numbers and booleans
+/// bare, everything else a quoted string. `[[EMPTY]]` is hyprlang's
+/// unset-a-string sentinel and becomes the empty string.
+fn lua_value(value: &str) -> String {
+    let v = value.trim();
+    if v == "[[EMPTY]]" {
+        return "\"\"".to_string();
+    }
+    if v == "true" || v == "false" {
+        return v.to_string();
+    }
+    if v.parse::<i64>().is_ok() || v.parse::<f64>().is_ok() {
+        return v.to_string();
+    }
+    super::hypr_lua::lua_str(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +412,81 @@ mod tests {
         assert_eq!(parse_activewindow_event("activewindow>>,"), None);
         // Unrelated events are ignored.
         assert_eq!(parse_activewindow_event("workspace>>2"), None);
+    }
+
+    #[test]
+    fn config_provider_json_is_scanned() {
+        // The exact reply shape observed on 0.56.2 (nested probe).
+        assert_eq!(
+            parse_config_provider_json(
+                "\n{\n    \"configProvider\": \"lua\",\n    \"backend\": \"wayland\"\n}"
+            ),
+            Some(ConfigProvider::Lua)
+        );
+        assert_eq!(
+            parse_config_provider_json(
+                "{\"configProvider\": \"hyprlang\", \"backend\": \"wayland\"}"
+            ),
+            Some(ConfigProvider::Hyprlang)
+        );
+        // A pre-Lua Hyprland answers the unknown request with no such field.
+        assert_eq!(parse_config_provider_json("unknown request"), None);
+        assert_eq!(parse_config_provider_json("{}"), None);
+    }
+
+    #[test]
+    fn keyword_renders_as_flat_bracketed_config() {
+        assert_eq!(
+            keywords_to_eval(&[("general:col.active_border", "rgb(3366aa)")]),
+            r#"hl.config({ ["general.col.active_border"] = "rgb(3366aa)" })"#
+        );
+    }
+
+    #[test]
+    fn keyword_pairs_share_one_atomic_eval() {
+        // The daemon's border pair must become ONE eval → one refresh.
+        assert_eq!(
+            keywords_to_eval(&[
+                ("general:col.active_border", "rgb(89b4fa)"),
+                ("general:col.inactive_border", "rgb(313244)"),
+            ]),
+            r#"hl.config({ ["general.col.active_border"] = "rgb(89b4fa)", ["general.col.inactive_border"] = "rgb(313244)" })"#
+        );
+    }
+
+    #[test]
+    fn keyword_values_keep_their_types() {
+        assert_eq!(
+            keywords_to_eval(&[("general:border_size", "5")]),
+            r#"hl.config({ ["general.border_size"] = 5 })"#
+        );
+        assert_eq!(
+            keywords_to_eval(&[("decoration:dim_strength", "0.3")]),
+            r#"hl.config({ ["decoration.dim_strength"] = 0.3 })"#
+        );
+        assert_eq!(
+            keywords_to_eval(&[("misc:disable_autoreload", "true")]),
+            r#"hl.config({ ["misc.disable_autoreload"] = true })"#
+        );
+    }
+
+    #[test]
+    fn keyword_names_map_like_lua_config_value_name() {
+        // luaConfigValueName: ':' → '.' and '-' → '_'.
+        assert_eq!(
+            keywords_to_eval(&[("some:dashed-name", "1")]),
+            r#"hl.config({ ["some.dashed_name"] = 1 })"#
+        );
+    }
+
+    #[test]
+    fn legacy_empty_sentinel_becomes_empty_string() {
+        // hyprlang clears a string option with [[EMPTY]]; the Lua engine
+        // clears with "" (verified on 0.56.2: screen_shader reads back "").
+        assert_eq!(
+            keywords_to_eval(&[("decoration:screen_shader", "[[EMPTY]]")]),
+            r#"hl.config({ ["decoration.screen_shader"] = "" })"#
+        );
     }
 
     #[test]

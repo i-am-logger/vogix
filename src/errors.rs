@@ -69,10 +69,6 @@ pub enum VogixError {
     #[error("{0}")]
     Generic(String),
 
-    /// hyprctl binary not found in PATH
-    #[error("hyprctl not found — is Hyprland installed?")]
-    HyprctlNotFound,
-
     /// Hyprland compositor is not running
     #[error("Hyprland is not running (HYPRLAND_INSTANCE_SIGNATURE not set)")]
     HyprlandNotRunning,

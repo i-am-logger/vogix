@@ -351,21 +351,23 @@ fn restore_from_path(path: &Path, label: &str, dry_run: bool) -> Result<()> {
     {
         let current: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)?;
 
+        // One provider-aware socket handle for every move — under the Lua
+        // engine the legacy dispatch string would be a Lua syntax error.
+        let hypr = crate::input::hypr::Hypr::discover();
         for window in &session.windows {
             // Find matching window by class
             for client in &current {
                 let client_class = client["class"].as_str().unwrap_or("");
                 if client_class == window.class {
                     let addr = client["address"].as_str().unwrap_or("");
-                    if !addr.is_empty() {
-                        Command::new("hyprctl")
-                            .args([
-                                "dispatch",
-                                "movetoworkspacesilent",
-                                &format!("{},address:{}", window.workspace, addr),
-                            ])
-                            .output()
-                            .ok();
+                    if !addr.is_empty()
+                        && let Some(h) = &hypr
+                        && let Err(e) = h.dispatch(&format!(
+                            "movetoworkspacesilent, {},address:{}",
+                            window.workspace, addr
+                        ))
+                    {
+                        warn!("Arranging {} failed: {}", window.class, e);
                     }
                 }
             }

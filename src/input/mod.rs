@@ -32,6 +32,7 @@ pub mod devfilter;
 pub mod device;
 pub mod health;
 pub mod hypr;
+pub mod hypr_lua;
 pub mod keys;
 pub mod paradigm;
 pub mod schema;

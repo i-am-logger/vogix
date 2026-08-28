@@ -282,6 +282,11 @@ pub fn handle_daemon() -> Result<()> {
                         if let Err(e) = reapply_existing_shader(&config, &state) {
                             error!("Re-applying shader after config reload failed: {}", e);
                         }
+                        // A reload also resets every runtime-pushed config
+                        // value (under the Lua engine, explicitly all of
+                        // them), so the mode border would sit at the static
+                        // default until the next mode change — repaint it.
+                        apply_mode_border(&state.current_mode);
                     }
                     _ => {
                         error!("Could not load config/state to re-apply shader after config reload")
@@ -375,12 +380,14 @@ fn apply_mode_border(mode: &str) {
         .get("background_selection")
         .map(|h| hex_to_hypr_rgb(h))
         .unwrap_or_else(|| "rgb(313244)".to_string());
-    let batch = format!(
-        "keyword general:col.active_border {active} ; keyword general:col.inactive_border {inactive}"
-    );
-    let _ = std::process::Command::new("hyprctl")
-        .args(["--batch", &batch])
-        .output();
+    // One provider-aware socket write: a keyword batch under hyprlang, a single
+    // atomic `eval hl.config({…})` under the Lua engine (which has no keyword).
+    if let Some(hypr) = crate::input::hypr::Hypr::discover() {
+        let _ = hypr.set_keywords(&[
+            ("general:col.active_border", active.as_str()),
+            ("general:col.inactive_border", inactive.as_str()),
+        ]);
+    }
 }
 
 /// Tracks submap transitions and writes them to ~/.local/state/vogix/modes.log.
