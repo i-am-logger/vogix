@@ -294,14 +294,18 @@ mod tests {
     // ── praxis-sourced paradigms (global, projected via a vogix topology) ──
 
     #[test]
-    fn cua_resolves_as_a_global_ctrl_shortcut_layer() {
+    fn cua_resolves_as_a_global_window_layer() {
+        // The de-stubbed CUA preset binds only WINDOW-level verbs; in-app keys
+        // (Ctrl+C/V/W…) pass through to the application by design.
         let (graph, modes) = project(&cua_preset(), &CUA_TOPO);
         assert_eq!(graph.root, "app");
         let app = modes.get("app").expect("app mode");
-        assert_eq!(app.bindings["copy"].key, "ctrl + c");
-        assert_eq!(app.bindings["copy"].action, "exec, wl-copy");
-        assert_eq!(app.bindings["quit"].key, "alt + F4");
+        assert!(!app.bindings.contains_key("copy"));
+        assert_eq!(app.bindings["switch_window"].key, "alt + tab");
         assert_eq!(app.bindings["switch_window"].action, "cyclenext,");
+        assert_eq!(app.bindings["close"].key, "alt + F4");
+        assert_eq!(app.bindings["close"].action, "killactive,");
+        assert_eq!(app.bindings["maximize"].action, "fullscreen, 1");
     }
 
     #[test]
@@ -502,8 +506,10 @@ mod tests {
         assert_eq!(app.bindings["workspace_next"].action, "workspace, +1");
         assert_eq!(app.bindings["move_to_prev"].action, "movetoworkspace, -1");
         assert_eq!(app.bindings["tile_left"].action, "movewindow, l");
-        // GNOME's Super+1..9 is app-LAUNCH, deliberately omitted (overlay scope).
-        assert!(!app.bindings.contains_key("workspace_1"));
+        // GNOME's documented numeric-workspace mechanism (Super+1..9), added
+        // to the praxis preset when its audit closed the gap.
+        assert_eq!(app.bindings["workspace_1"].key, "super + 1");
+        assert_eq!(app.bindings["workspace_1"].action, "workspace, 1");
     }
 
     #[test]

@@ -110,7 +110,9 @@ pub fn project(bs: &BindingSet, topo: &Topology) -> (ModeGraphSpec, HashMap<Stri
     for b in &bs.bindings {
         let binding = Binding {
             key: render_combo(&b.combo),
-            action: b.action.command(),
+            // The Hyprland wire form is vogix's own realization of the
+            // abstract action word — praxis carries no compositor rendering.
+            action: super::hypr_realize::realize_word(&b.action.actions),
             exit_after: false,
             repeat: b.repeat,
             description: Some(b.action.description.clone()),

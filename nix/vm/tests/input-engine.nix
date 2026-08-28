@@ -783,7 +783,7 @@ let
     # Super+Y = float + pin (the yuiop row).
     flat_expect("Super+Y float + pin (yuiop)",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Y, hold=0.03), up(e.KEY_LEFTMETA)),
-        "exec hyprctl dispatch togglefloating")
+        "exec vogix hypr dispatch 'togglefloating,'")
     # Super+O = toggle split — a dwindle layoutmsg (the bare `togglesplit`
     # dispatcher was removed from Hyprland); guards against regressing the name.
     flat_expect("Super+O toggle split (layoutmsg, not bare togglesplit)",

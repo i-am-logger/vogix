@@ -21,10 +21,10 @@ rustPlatform.buildRustPackage {
     # hash; cargo vendors the whole praxis workspace, so `version.workspace = true`
     # resolves against its root. All praxis crates share one git source ⇒ one hash.
     outputHashes = {
-      "pr4xis-0.25.4" = "sha256-6pmtkpKDnHh6jkygbvyGqi1xAjyy3t8KDKOmKc22JJU=";
-      "pr4xis-derive-0.25.4" = "sha256-6pmtkpKDnHh6jkygbvyGqi1xAjyy3t8KDKOmKc22JJU=";
-      "pr4xis-domains-0.25.4" = "sha256-6pmtkpKDnHh6jkygbvyGqi1xAjyy3t8KDKOmKc22JJU=";
-      "pr4xis-runtime-0.25.4" = "sha256-6pmtkpKDnHh6jkygbvyGqi1xAjyy3t8KDKOmKc22JJU=";
+      "pr4xis-0.29.1" = "sha256-Inp6/q6AOkTb6KHbTNbQZRTmNToYVWRnRqALyuk5ceE=";
+      "pr4xis-derive-0.29.1" = "sha256-Inp6/q6AOkTb6KHbTNbQZRTmNToYVWRnRqALyuk5ceE=";
+      "pr4xis-domains-0.29.1" = "sha256-Inp6/q6AOkTb6KHbTNbQZRTmNToYVWRnRqALyuk5ceE=";
+      "pr4xis-runtime-0.29.1" = "sha256-Inp6/q6AOkTb6KHbTNbQZRTmNToYVWRnRqALyuk5ceE=";
     };
   };
 

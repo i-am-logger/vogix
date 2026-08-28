@@ -35,9 +35,10 @@ glob = "0.3"
 # Error handling
 thiserror = "2.0"
 
-# Ontology-driven rule enforcement, pinned to praxis rev e75053a — v0.25.0 plus the
-# align/vogix16-underscore-keys commit (Vogix16Semantic::key() → snake_case, matching
-# the vogix loader/templates so praxis is the canonical vogix16 key source).
+# Ontology-driven rule enforcement, pinned to praxis master 2026-08 (6d93e65e):
+# the EWMH-grounded WmAction shape (State/FocusBy/Split), whose Hyprland wire
+# rendering vogix now owns itself (src/input/hypr_realize.rs) — praxis is the
+# keybinding MODEL, the compositor realization lives in the consumer.
 # `pr4xis` IS on crates.io (0.25.0), but `pr4xis-domains` — which vogix needs for
 # the input ontology — is still `publish = false` (its build-time `include_str!`
 # of workspace files fails `cargo publish --verify`; see praxis release-plz.toml).
@@ -46,8 +47,8 @@ thiserror = "2.0"
 # both from git. buildRustPackage vendors the git workspace (resolving
 # `version.workspace = true`), needing the outputHash in nix/packages/vogix.nix.
 # Bump the rev to advance.
-pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "b84ebab5a4c5f1e8e8558457d09ec1cbee623866" }
-pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "b84ebab5a4c5f1e8e8558457d09ec1cbee623866" }
+pr4xis = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "6d93e65e493f08a0863dd88cba271de358e3b455" }
+pr4xis-domains = { git = "https://github.com/i-am-logger/pr4xis.git", rev = "6d93e65e493f08a0863dd88cba271de358e3b455" }
 
 # Date/time for state timestamps
 chrono = "0.4"
