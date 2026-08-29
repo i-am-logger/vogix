@@ -77,6 +77,7 @@ let
     { config
     , colors
     , scheme
+    , meta
     ,
     }:
     app:
@@ -98,7 +99,14 @@ let
     in
     optionalString (appModule != null && generator != null) (
       let
-        generatedOutput = generator colors;
+        # A generator written as `{ colors, meta }:` additionally receives the
+        # theme identity (theme/variant/scheme/polarity) — the callPackage
+        # idiom, detected with functionArgs. Existing `colors:` generators are
+        # untouched.
+        generatedOutput =
+          if builtins.functionArgs generator ? meta
+          then generator { inherit colors meta; }
+          else generator colors;
         isHybrid = builtins.isAttrs generatedOutput && generatedOutput ? themeFile;
         isSettingsBased = settingsPath != null && !isHybrid;
         themeFileName = if appModule != null then appModule.themeFile or null else null;
@@ -172,6 +180,16 @@ let
               scheme = theme.scheme or "vogix16";
               colors = if scheme == "vogix16" then semanticColors rawColors else rawColors;
               themeVariantName = "${themeName}-${variantName}";
+              # The theme identity, for `{ colors, meta }:` generators.
+              # Polarity comes from the imported theme data — the same value
+              # the config.toml manifest carries, which is what the runtime
+              # reads, so the two render layers cannot disagree on it.
+              meta = {
+                theme = themeName;
+                variant = variantName;
+                inherit scheme;
+                polarity = variantData.polarity or "dark";
+              };
             in
             pkgs.runCommand "vogix-theme-${themeVariantName}" { } ''
               mkdir -p $out
@@ -180,6 +198,7 @@ let
                   config
                   colors
                   scheme
+                  meta
                   ;
               }) themedApps}
             ''

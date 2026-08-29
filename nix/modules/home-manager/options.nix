@@ -23,6 +23,11 @@ let
   # Bare option attrset (animations/decoration/blur/gaps/borderSize/group),
   # merged into the `appearance` group below.
   appearanceOptions = import ../appearance/options.nix { inherit lib; };
+  # The desktop shell fragment ({ desktop = mkOption …; }), merged at top
+  # level like the behavior fragment. The theme.json GENERATOR stays named
+  # applications/vogix-desktop.nix — an applications/desktop.nix would be
+  # silently clobbered by this merge.
+  desktopOptions = import ../desktop/options.nix { inherit lib; };
 
   # Per-app options (dynamically generated)
   appOptions = lib.listToAttrs (
@@ -196,7 +201,8 @@ in
 
   }
   // appOptions
-  // behaviorOptions;
+  // behaviorOptions
+  // desktopOptions;
 
   # Export for use by other modules
   inherit availableApps vogix;

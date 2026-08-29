@@ -96,6 +96,14 @@ pub enum Commands {
         command: HyprCommands,
     },
 
+    /// Talk to the vogix desktop shell (bar, notifications, lock, launcher).
+    /// These verbs are the CONTRACT: keybindings, reload entries and consumer
+    /// modules call these — never the shell's transport directly
+    Desktop {
+        #[command(subcommand)]
+        command: DesktopCommands,
+    },
+
     /// Ontology-driven input engine (keybinding modes)
     Input {
         #[command(subcommand)]
@@ -156,6 +164,14 @@ pub enum HyprCommands {
         #[arg(num_args = 2.., value_names = ["KEY", "VALUE"])]
         args: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum DesktopCommands {
+    /// Ask the running shell to re-read theme.json and desktop.json. With no
+    /// shell instance (TTY, tests, shell disabled) this exits 0 quietly — it
+    /// runs on every theme switch and must never fail one
+    Reload,
 }
 
 #[derive(Subcommand)]

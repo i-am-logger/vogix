@@ -260,6 +260,15 @@ in
   inherit (optionsModule) options;
 
   config = mkIf cfg.enable (mkMerge [
+    # The theme.json contract is generated only for desktop users: with the
+    # shell off, terminal-only profiles get no vogix-desktop/ in their theme
+    # packages, no [apps."vogix-desktop"] reload entry and no
+    # ~/.config/vogix-desktop symlink. Unconditional element (mkDefault, so a
+    # user can still force the contract on without the shell).
+    {
+      programs.vogix."vogix-desktop".enable = lib.mkDefault cfg.desktop.enable;
+    }
+
     # Behavior: generate the hyprland config
     # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
     # to avoid infinite recursion between config definition and evaluation)

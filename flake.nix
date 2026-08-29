@@ -191,12 +191,13 @@
                 appearance = (import ./nix/modules/appearance/tests.nix { inherit pkgs lib; }).passed;
                 behavior = (import ./nix/modules/behavior/tests.nix { inherit pkgs lib; }).passed;
                 hyprland = (import ./nix/modules/hyprland-tests.nix { inherit pkgs lib; }).passed;
+                contract = (import ./nix/modules/contract-tests.nix { inherit pkgs lib; }).passed;
               };
             in
             pkgs.runCommand "vogix-nix-unit"
               (builtins.mapAttrs (_: toString) suites)
               ''
-                echo "appearance: $appearance  behavior: $behavior  hyprland: $hyprland"
+                echo "appearance: $appearance  behavior: $behavior  hyprland: $hyprland  contract: $contract"
                 touch $out
               '';
 
