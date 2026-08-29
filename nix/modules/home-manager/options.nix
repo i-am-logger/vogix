@@ -20,6 +20,9 @@ let
 
   # Import behavior options
   behaviorOptions = import ../behavior/options.nix { inherit lib; };
+  # Bare option attrset (animations/decoration/blur/gaps/borderSize/group),
+  # merged into the `appearance` group below.
+  appearanceOptions = import ../appearance/options.nix { inherit lib; };
 
   # Per-app options (dynamically generated)
   appOptions = lib.listToAttrs (
@@ -142,7 +145,7 @@ in
           description = "Color saturation adjustment [0.0..2.0].";
         };
       };
-    };
+    } // appearanceOptions;
 
     enableDaemon = mkOption {
       type = types.bool;

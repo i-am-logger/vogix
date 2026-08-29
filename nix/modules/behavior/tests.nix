@@ -225,8 +225,15 @@ let
     # === The nav is the ENGINE's job — it must NOT be in the overlay ===
     (check "no focus/move/resize WM-nav action leaks into the overlay"
       (!(hasAction "movefocus") && !(hasAction "swapwindow") && !(hasAction "resizeactive")))
+    # The console toggle is a legitimate overlay exec whose action text
+    # contains "togglespecialworkspace, console" — match the workspace-SWITCH
+    # dispatcher precisely so it doesn't false-positive.
     (check "no workspace-switch nav leaks into the overlay"
-      (!(hasAction "workspace, ") && !(hasAction "movetoworkspace")))
+      (!(builtins.any
+        (b: lib.hasPrefix "workspace," (b.action or "")
+          || lib.hasPrefix "workspace, " (b.action or ""))
+        appBinds)
+      && !(hasAction "movetoworkspace")))
     (check "no window-state nav (close/fullscreen/pseudo) leaks into the overlay"
       (!(app ? closeWindow) && !(app ? floatPin) && !(app ? toggleGroup)))
   ];

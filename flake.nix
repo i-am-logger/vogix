@@ -3,6 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # The desktop shell's QML runtime, pinned to the v0.3.1 tag: nixpkgs still
+    # carries 0.3.0, and 0.3.1 fixes "session lock crashes on sleep, wake,
+    # DPMS, and unlocking" — a lock-screen must not ride the older build.
+    # `follows` is required: upstream warns that quickshell built against a
+    # different nixpkgs than its Qt deps crashes. Drop this input when nixpkgs
+    # reaches ≥0.3.1.
+    quickshell = {
+      url = "git+https://git.outfoxxed.me/quickshell/quickshell?ref=refs/tags/v0.3.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -114,10 +124,15 @@
         }
       );
 
-      # Overlay to make vogix available in pkgs
-      overlays.default = _final: prev: {
-        inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix;
-      };
+      # Overlay to make vogix (and the desktop shell's QML runtime) available
+      # in pkgs. quickshell's own overlay is COMPOSED — its package is built
+      # against the consumer's final pkgs, never re-exported as a foreign
+      # instance, so its Qt deps always match the host nixpkgs (upstream warns
+      # a mismatch crashes).
+      overlays.default = final: prev:
+        (inputs.quickshell.overlays.default final prev) // {
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix;
+        };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
       overlays.liquidctl = _final: prev: {
@@ -164,6 +179,74 @@
           };
         in
         {
+          # Pure-Nix unit tests for the config generators (appearance,
+          # behavior, the merged Hyprland render incl. the Lua projection).
+          # Each suite deepSeq-forces its assertions and THROWS on failure, so
+          # a broken generator fails this derivation at INSTANTIATION — it
+          # runs under `nix flake check --no-build` and never needs a builder.
+          nix-unit =
+            let
+              inherit (pkgs) lib;
+              suites = {
+                appearance = (import ./nix/modules/appearance/tests.nix { inherit pkgs lib; }).passed;
+                behavior = (import ./nix/modules/behavior/tests.nix { inherit pkgs lib; }).passed;
+                hyprland = (import ./nix/modules/hyprland-tests.nix { inherit pkgs lib; }).passed;
+              };
+            in
+            pkgs.runCommand "vogix-nix-unit"
+              (builtins.mapAttrs (_: toString) suites)
+              ''
+                echo "appearance: $appearance  behavior: $behavior  hyprland: $hyprland"
+                touch $out
+              '';
+
+          # The appearance options must actually REACH the rendered Hyprland
+          # config through the module system. They used to be declared behind
+          # an `options = { … }` wrapper that the merge site never unwrapped,
+          # so every `programs.vogix.appearance.{gaps,decoration,blur,…}`
+          # setting was silently discarded and the render always used
+          # defaults.nix. This evaluates a real home-manager configuration and
+          # asserts a non-default gap survives into the config text.
+          appearance-options =
+            let
+              hmConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                        gaps.inner = 33;
+                        decoration.rounding = 4;
+                      };
+                      enableDaemon = false;
+                    };
+                    wayland.windowManager.hyprland = {
+                      enable = true;
+                      package = null;
+                      portalPackage = null;
+                    };
+                  }
+                ];
+              };
+              inherit (hmConf.config.xdg.configFile."hypr/hyprland.conf") text;
+              ok = pkgs.lib.hasInfix "gaps_in=33" text && pkgs.lib.hasInfix "rounding=4" text;
+            in
+            assert ok || throw "programs.vogix.appearance.* did not reach the rendered Hyprland config";
+            pkgs.runCommand "vogix-appearance-options" { } ''
+              echo "appearance options reach the rendered config"
+              touch $out
+            '';
+
           # Quick sanity checks (binary, status, list, systemd)
           smoke = import ./nix/vm/tests/smoke.nix testArgs;
 
