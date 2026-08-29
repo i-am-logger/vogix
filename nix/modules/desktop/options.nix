@@ -34,6 +34,46 @@ let
 
   widgetNames = types.listOf types.str;
 
+  # A launcher menu entry. `action` is a shell command; `submenu` nests one
+  # level (the omarchy-menu shape); `when` guards visibility (entry shown
+  # only while the command exits 0, re-evaluated on menu open).
+  menuLeafOptions = {
+    id = mkOption {
+      type = types.str;
+      description = "Stable identifier (used by `vogix desktop menu --summon <id>`).";
+    };
+    icon = mkOption {
+      type = types.str;
+      default = "";
+      description = "Glyph shown before the label (a Nerd Font icon, or empty).";
+    };
+    label = mkOption {
+      type = types.str;
+      description = "Text shown in the menu.";
+    };
+    action = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Shell command run on selection (null for a pure submenu entry).";
+    };
+    when = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Guard command; the entry is shown only while it exits 0.";
+    };
+  };
+  menuEntryType = types.submodule {
+    options = menuLeafOptions // {
+      submenu = mkOption {
+        type = types.listOf (types.submodule { options = menuLeafOptions; });
+        default = [ ];
+        description = "Nested entries opened in place of running an action.";
+      };
+    };
+  };
+
+  launcherModeNames = [ "apps" "files" "calc" "emoji" "ssh" "clipboard" "theme" "background" ];
+
 in
 {
   desktop = mkOption {
@@ -175,6 +215,34 @@ in
             type = types.bool;
             default = defaults.background.enable;
             description = "Render the per-screen wallpaper layer from the theme's background set.";
+          };
+        };
+
+        launcher = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.launcher.enable;
+            description = "The shell's launcher overlay (apps, files, calc, emoji, ssh, clipboard, pickers, menu, dmenu mode).";
+          };
+          modes = lib.genAttrs launcherModeNames (mode: {
+            enable = mkOption {
+              type = types.bool;
+              default = defaults.launcher.modes.${mode}.enable;
+              description = "Offer the ${mode} launcher mode.";
+            };
+          });
+          menu = mkOption {
+            type = types.listOf menuEntryType;
+            default = defaults.launcher.menu;
+            description = "The root menu (opened by `vogix desktop menu`); a loaded list, never hardcoded in the shell.";
+          };
+        };
+
+        power = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.power.enable;
+            description = "The shell's power menu (lock, logout, suspend, reboot, poweroff).";
           };
         };
 

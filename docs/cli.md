@@ -138,7 +138,7 @@ vogix input check            # validate the input schema's mode graph + engine i
 vogix input run              # run the engine (grab evdev, drive modes, dispatch to Hyprland)
 vogix input doctor           # read-only diagnostics for a running engine
 vogix input doctor --watch   # repaint diagnostics continuously
-vogix input keys             # show the resolved schema's keybindings (via walker/notify-send)
+vogix input keys             # show the resolved schema's keybindings (via $LAUNCHER/notify-send)
 vogix input keys --print     # print the help text to stdout instead
 
 # check / run / keys accept --config <path> to override ~/.local/state/vogix/input.json

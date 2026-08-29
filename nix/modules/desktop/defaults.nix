@@ -61,6 +61,34 @@ _:
     enable = true;
   };
 
+  launcher = {
+    enable = true;
+    modes = {
+      apps.enable = true;
+      files.enable = true;
+      calc.enable = true;
+      emoji.enable = true;
+      ssh.enable = true;
+      clipboard.enable = true;
+      theme.enable = true;
+      background.enable = true;
+    };
+    # The root menu — vogix's own surfaces, so the menu is useful with zero
+    # host configuration. Hosts append or replace via desktop.launcher.menu.
+    menu = [
+      { id = "keybindings"; icon = "󰌌"; label = "Keybindings"; action = "vogix input keys"; }
+      { id = "theme"; icon = "󰏘"; label = "Theme…"; action = "vogix desktop launcher --mode theme"; }
+      { id = "background"; icon = "󰸉"; label = "Next background"; action = "vogix desktop background next"; }
+      { id = "dnd"; icon = "󰂛"; label = "Do not disturb"; action = "vogix desktop notify dnd toggle"; }
+      { id = "lock"; icon = "󰌾"; label = "Lock"; action = "vogix desktop lock"; }
+      { id = "power"; icon = "󰐥"; label = "Power…"; action = "vogix desktop power"; }
+    ];
+  };
+
+  power = {
+    enable = true;
+  };
+
   # Idle stages in seconds; null disables a stage. Suspend is off by
   # default — a desktop that vanishes mid-thought is a host decision.
   idle = {
@@ -114,6 +142,23 @@ _:
       foreground = "foreground_text";
       muted = "foreground_comment";
       accent = "active";
+      danger = "danger";
+    };
+    launcher = {
+      background = { slot = "background_surface"; alpha = 0.98; };
+      foreground = "foreground_text";
+      muted = "foreground_comment";
+      accent = "active";
+      border = "foreground_border";
+      selection = { slot = "background_selection"; alpha = 1.0; };
+    };
+    power = {
+      background = { slot = "background_surface"; alpha = 0.98; };
+      foreground = "foreground_text";
+      muted = "foreground_comment";
+      accent = "active";
+      border = "foreground_border";
+      selection = { slot = "background_selection"; alpha = 1.0; };
       danger = "danger";
     };
   };

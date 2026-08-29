@@ -7,7 +7,9 @@
 //! vogix-desktop's own socket — so swapping the shell renderer never touches
 //! a caller.
 
-use crate::cli::{BarCommands, DesktopCommands, DndCommands, LockCommands, NotifyCommands};
+use crate::cli::{
+    BarCommands, DesktopCommands, DndCommands, LockCommands, NotifyCommands, PowerCommands,
+};
 use crate::errors::{Result, VogixError};
 use log::debug;
 use std::process::{Command, Stdio};
@@ -34,6 +36,146 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
             muted,
             message,
         } => osd(kind, *value, *muted, message.as_deref()),
+        DesktopCommands::Launcher { mode, query } => launcher(
+            mode.as_deref().unwrap_or(""),
+            query.as_deref().unwrap_or(""),
+        ),
+        DesktopCommands::Menu { summon } => menu(summon.as_deref().unwrap_or("")),
+        DesktopCommands::Power { action } => power(action.as_ref()),
+        DesktopCommands::Select { prompt } => select(prompt.as_deref().unwrap_or(""), false),
+        DesktopCommands::Input { prompt } => select(prompt.as_deref().unwrap_or(""), true),
+    }
+}
+
+fn launcher(mode: &str, query: &str) -> Result<()> {
+    match qs_ipc(&["launcher", "open", mode, query]) {
+        Some(r) => println!("{r}"),
+        None => println!("no responsive shell instance"),
+    }
+    Ok(())
+}
+
+fn menu(summon: &str) -> Result<()> {
+    match qs_ipc(&["launcher", "menu", summon]) {
+        Some(r) => println!("{r}"),
+        None => println!("no responsive shell instance"),
+    }
+    Ok(())
+}
+
+/// With no action: toggle the shell's power menu. With one: run it directly —
+/// systemd verbs work without a shell, `lock` keeps its loud-failure path.
+fn power(action: Option<&PowerCommands>) -> Result<()> {
+    let Some(action) = action else {
+        match qs_ipc(&["power", "toggle"]) {
+            Some(r) => println!("{r}"),
+            None => println!("no responsive shell instance"),
+        }
+        return Ok(());
+    };
+    match action {
+        PowerCommands::Lock => lock(None),
+        PowerCommands::Logout => {
+            crate::commands::hypr::handle_hypr(&crate::cli::HyprCommands::Dispatch {
+                action: "exit".to_string(),
+            })
+        }
+        PowerCommands::Suspend | PowerCommands::Reboot | PowerCommands::Poweroff => {
+            let verb = match action {
+                PowerCommands::Suspend => "suspend",
+                PowerCommands::Reboot => "reboot",
+                _ => "poweroff",
+            };
+            let ok = Command::new("systemctl")
+                .arg(verb)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                Ok(())
+            } else {
+                Err(VogixError::Config(format!("systemctl {verb} failed")))
+            }
+        }
+    }
+}
+
+/// dmenu mode. Items come in on stdin (one per line; `input` takes none),
+/// go to the shell through a session file, and the choice comes back through
+/// a result file the shell writes on every exit path — pick, cancel, close.
+/// dmenu convention on cancel: exit 1, nothing on stdout.
+fn select(prompt: &str, text_only: bool) -> Result<()> {
+    use std::io::Read;
+
+    let items: Vec<String> = if text_only {
+        Vec::new()
+    } else {
+        let mut raw = String::new();
+        std::io::stdin()
+            .read_to_string(&mut raw)
+            .map_err(|e| VogixError::Config(format!("cannot read stdin: {e}")))?;
+        raw.lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+
+    let dir = crate::config::Config::state_dir().join("desktop");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| VogixError::Config(format!("cannot create {}: {e}", dir.display())))?;
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    let items_path = dir.join(format!("select-{id}.json"));
+    let result_path = dir.join(format!("select-{id}.result"));
+    std::fs::write(
+        &items_path,
+        serde_json::json!({ "items": items }).to_string(),
+    )
+    .map_err(|e| VogixError::Config(format!("cannot write {}: {e}", items_path.display())))?;
+
+    let verb = if text_only { "inputText" } else { "select" };
+    let opened = qs_ipc(&["launcher", verb, &id, prompt]);
+    if opened.is_none() {
+        let _ = std::fs::remove_file(&items_path);
+        return Err(VogixError::Config(
+            "cannot open the picker: no responsive vogix shell instance".to_string(),
+        ));
+    }
+
+    // Poll for the result; the human decides the pace, so the bound is only
+    // there to reap a session whose shell died mid-pick.
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let choice = loop {
+        if let Ok(raw) = std::fs::read_to_string(&result_path) {
+            break serde_json::from_str::<serde_json::Value>(&raw).ok();
+        }
+        if Instant::now() >= deadline {
+            let _ = std::fs::remove_file(&items_path);
+            return Err(VogixError::Config(
+                "picker session timed out with no result".to_string(),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let _ = std::fs::remove_file(&items_path);
+    let _ = std::fs::remove_file(&result_path);
+
+    match choice
+        .as_ref()
+        .and_then(|v| v.get("choice"))
+        .and_then(|c| c.as_str())
+    {
+        Some(picked) => {
+            println!("{picked}");
+            Ok(())
+        }
+        None => std::process::exit(1),
     }
 }
 

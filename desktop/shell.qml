@@ -11,9 +11,11 @@ import qs.Vogix
 import "Background"
 import "Bar"
 import "Idle"
+import "Launcher"
 import "Notifications"
 import "Osd"
 import "Polkit"
+import "Power"
 
 ShellRoot {
     id: root
@@ -22,7 +24,7 @@ ShellRoot {
     // services must run from startup (the notification server registers on
     // the bus, the idle monitors arm, the lock preflights its PAM check), so
     // reference them eagerly here.
-    readonly property list<QtObject> services: [Notifs, Audio, Osd, Idle, Lock, Backgrounds]
+    readonly property list<QtObject> services: [Notifs, Audio, Osd, Idle, Lock, Backgrounds, Launcher, Power]
 
     Bar {
         id: bar
@@ -51,6 +53,16 @@ ShellRoot {
     LazyLoader {
         active: (Config.doc.polkit ?? {}).enable ?? true
         component: PolkitDialog {}
+    }
+
+    LazyLoader {
+        active: (Config.doc.launcher ?? {}).enable ?? true
+        component: LauncherWindow {}
+    }
+
+    LazyLoader {
+        active: (Config.doc.power ?? {}).enable ?? true
+        component: PowerMenu {}
     }
 
     // IPC targets mirror the `vogix desktop …` verbs 1:1; nothing else may
@@ -103,6 +115,27 @@ ShellRoot {
         function next(): string { return Backgrounds.next(); }
         function clear(): string { return Backgrounds.clear(); }
         function status(): string { return Backgrounds.status(); }
+    }
+
+    IpcHandler {
+        target: "launcher"
+
+        function open(mode: string, query: string): string { return Launcher.openMode(mode, query); }
+        function menu(summon: string): string { return Launcher.openMenu(summon); }
+        function select(id: string, prompt: string): string { return Launcher.openSelect(id, prompt, false); }
+        function inputText(id: string, prompt: string): string { return Launcher.openSelect(id, prompt, true); }
+        function close(): string { return Launcher.close(); }
+        function toggle(): string { return Launcher.toggle(); }
+        function status(): string { return Launcher.status(); }
+    }
+
+    IpcHandler {
+        target: "power"
+
+        function open(): string { return Power.show(); }
+        function close(): string { return Power.close(); }
+        function toggle(): string { return Power.toggle(); }
+        function status(): string { return Power.status(); }
     }
 
     IpcHandler {

@@ -303,6 +303,8 @@ in
           polkit = { inherit (cfg.desktop.polkit) enable; };
           lock = { inherit (cfg.desktop.lock) enable pamService; };
           background = { inherit (cfg.desktop.background) enable; };
+          launcher = { inherit (cfg.desktop.launcher) enable modes menu; };
+          power = { inherit (cfg.desktop.power) enable; };
           idle = { inherit (cfg.desktop.idle) dim lock screenOff suspend; };
           surfaces = mergedSurfaces;
         };

@@ -140,7 +140,7 @@ pub enum InputCommands {
     /// nav merged with the overlay), materialized from the engine's single
     /// resolved schema — the engine-side replacement for the Nix help scripts.
     Keys {
-        /// Print the help text to stdout instead of showing it via walker/notify-send.
+        /// Print the help text to stdout instead of showing it via $LAUNCHER/notify-send.
         #[arg(long)]
         print: bool,
         /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
@@ -202,6 +202,40 @@ pub enum DesktopCommands {
     Background {
         #[command(subcommand)]
         command: BackgroundCommands,
+    },
+    /// Open the launcher overlay (apps, files, calc, emoji, ssh, clipboard,
+    /// theme and background pickers)
+    Launcher {
+        /// Provider mode (default: apps)
+        #[arg(long)]
+        mode: Option<String>,
+        /// Initial query
+        #[arg(long)]
+        query: Option<String>,
+    },
+    /// Open the root menu loaded from desktop.json (or one entry by id)
+    Menu {
+        /// Open (or run) this entry instead of the root menu
+        #[arg(long)]
+        summon: Option<String>,
+    },
+    /// The power menu; with an action, run it directly without the menu
+    Power {
+        #[command(subcommand)]
+        action: Option<PowerCommands>,
+    },
+    /// dmenu mode: read items from stdin, show the shell's picker, print the
+    /// chosen line to stdout (exit 1 on cancel)
+    Select {
+        /// Prompt shown above the picker
+        #[arg(short, long)]
+        prompt: Option<String>,
+    },
+    /// dmenu mode: free-text entry — print the typed line (exit 1 on cancel)
+    Input {
+        /// Prompt shown above the field
+        #[arg(short, long)]
+        prompt: Option<String>,
     },
     /// Flash the on-screen display (volume/brightness/caps/custom)
     Osd {
@@ -266,6 +300,20 @@ pub enum BackgroundCommands {
     Clear,
     /// Print what the wallpaper layer is showing
     Status,
+}
+
+#[derive(Subcommand)]
+pub enum PowerCommands {
+    /// Lock the session (through the shell, loud on failure)
+    Lock,
+    /// End the compositor session
+    Logout,
+    /// systemctl suspend (goes through sleep.target, so the lock engages first)
+    Suspend,
+    /// systemctl reboot
+    Reboot,
+    /// systemctl poweroff
+    Poweroff,
 }
 
 #[derive(Subcommand)]

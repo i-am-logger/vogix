@@ -164,9 +164,10 @@ rec {
         # command from the environment (like $TERMINAL/$BROWSER above) instead of
         # hardcoding a tool. The host exports $LAUNCHER/$LOCKER; the `:-` fallback
         # keeps vogix usable standalone.
-        launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-walker}"; description = "Launcher"; };
+        launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-vogix-launcher}"; description = "Launcher"; };
         colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
         lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-vogix-lock}"; description = "Lock screen"; };
+        powerMenu = { key = "super + escape"; action = "exec, vogix desktop power"; description = "Power menu"; };
 
         # ── Screenshots ──
         # --cursor is invalid with the `area` target in current grimblast.

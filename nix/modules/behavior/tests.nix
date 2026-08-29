@@ -186,9 +186,12 @@ let
     (assertEq "Launch: Super+E = browser ($BROWSER)"
       "exec, $BROWSER"
       (app.browser.action or ""))
-    (assertEq "Launch: Super+Space = launcher (env $LAUNCHER, walker fallback)"
-      "exec, \${LAUNCHER:-walker}"
+    (assertEq "Launch: Super+Space = launcher (env $LAUNCHER, vogix-launcher fallback)"
+      "exec, \${LAUNCHER:-vogix-launcher}"
       (app.launcher.action or ""))
+    (assertEq "System: Super+Escape = power menu (shell verb)"
+      "exec, vogix desktop power"
+      (app.powerMenu.action or ""))
 
     # Help is now an ENGINE view — `vogix input keys` materializes from the
     # resolved schema (this overlay + the paradigm nav), replacing the Nix script.

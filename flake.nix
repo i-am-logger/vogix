@@ -131,9 +131,39 @@
             runtimeInputs = [ vogix ];
             text = ''exec vogix desktop lock --wait-secure 4 "$@"'';
           };
+          # The launcher, shaped as its own package so it slots into
+          # environment.launcher / $LAUNCHER selectors. Speaks the
+          # walker-compatible `--dmenu [-p PROMPT]` picker form (items on
+          # stdin, choice on stdout, exit 1 on cancel) so `vogix input keys`
+          # and scripts keep a picker whichever launcher the host selects.
+          vogix-launcher = pkgs.writeShellApplication {
+            name = "vogix-launcher";
+            runtimeInputs = [ vogix ];
+            text = ''
+              if [ "''${1:-}" = "--dmenu" ]; then
+                shift
+                prompt=""
+                while [ $# -gt 0 ]; do
+                  case "$1" in
+                    -p)
+                      prompt="''${2:-}"
+                      shift
+                      if [ $# -gt 0 ]; then shift; fi
+                      ;;
+                    *) shift ;;
+                  esac
+                done
+                if [ -n "$prompt" ]; then
+                  exec vogix desktop select --prompt "$prompt"
+                fi
+                exec vogix desktop select
+              fi
+              exec vogix desktop launcher "$@"
+            '';
+          };
         in
         {
-          inherit vogix vogix-desktop-qml vogix-lock;
+          inherit vogix vogix-desktop-qml vogix-lock vogix-launcher;
           default = vogix;
         }
       );
@@ -145,7 +175,7 @@
       # a mismatch crashes).
       overlays.default = final: prev:
         (inputs.quickshell.overlays.default final prev) // {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher;
         };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
@@ -385,6 +415,10 @@
               qs -p $qml ipc call bar toggle >> $TMPDIR/result 2>&1
               qs -p $qml ipc call bar status >> $TMPDIR/result
               qs -p $qml ipc call theme reload >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call launcher status >> $TMPDIR/result
+              qs -p $qml ipc call power toggle >> $TMPDIR/result
+              qs -p $qml ipc call power status >> $TMPDIR/result
+              qs -p $qml ipc call power close >> $TMPDIR/result 2>&1
               kill \$QSPID 2>/dev/null || true
               INNER
               chmod +x inner.sh
@@ -396,6 +430,8 @@
               grep -q '^ALIVE$' $TMPDIR/result
               grep -q '^shown$' $TMPDIR/result
               grep -q '^hidden$' $TMPDIR/result
+              grep -q '^closed$' $TMPDIR/result
+              grep -q '^open$' $TMPDIR/result
               ! grep -iq 'is not a type\|module .* is not installed\|Failed to load configuration' $TMPDIR/qs.log
               touch $out
             '';

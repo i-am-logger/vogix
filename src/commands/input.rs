@@ -105,10 +105,10 @@ pub fn handle_input_help(print: bool, config: Option<&str>) -> Result<()> {
     }
     // Searchable picker menu if present, else a desktop notification. The
     // launcher is an ENVIRONMENT choice, not vogix's: consume $LAUNCHER (like
-    // the binds do) with walker as the standalone fallback. Whatever it
-    // resolves to must speak the walker-compatible `--dmenu -p PROMPT` form —
-    // the vogix launcher surface will, and so does walker itself.
-    let launcher = std::env::var("LAUNCHER").unwrap_or_else(|_| "walker".to_string());
+    // the binds do) with vogix-launcher as the standalone fallback. Whatever
+    // it resolves to must speak the walker-compatible `--dmenu -p PROMPT`
+    // form — vogix-launcher does, and so does walker itself.
+    let launcher = std::env::var("LAUNCHER").unwrap_or_else(|_| "vogix-launcher".to_string());
     if pipe_to(&launcher, &["--dmenu", "-p", "Keybindings"], &text).is_err() {
         let _ = std::process::Command::new("notify-send")
             .args(["-t", "10000", "Keybindings", &text])
