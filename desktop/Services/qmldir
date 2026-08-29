@@ -4,3 +4,4 @@ singleton Audio 1.0 Audio.qml
 singleton Osd 1.0 Osd.qml
 singleton Lock 1.0 Lock.qml
 singleton Idle 1.0 Idle.qml
+singleton Backgrounds 1.0 Backgrounds.qml

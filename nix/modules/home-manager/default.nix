@@ -91,6 +91,7 @@ let
   themeVariantPackages = generators.mkThemeVariantPackages {
     inherit config cfg;
     allThemes = prebuiltThemes;
+    inherit (cfg.appearance) extraBackgrounds;
   };
 
   # Apps that will be themed
@@ -301,6 +302,7 @@ in
           osd = { inherit (cfg.desktop.osd) enable timeout; };
           polkit = { inherit (cfg.desktop.polkit) enable; };
           lock = { inherit (cfg.desktop.lock) enable pamService; };
+          background = { inherit (cfg.desktop.background) enable; };
           idle = { inherit (cfg.desktop.idle) dim lock screenOff suspend; };
           surfaces = mergedSurfaces;
         };

@@ -114,6 +114,38 @@ in
     description = "Window border size in pixels.";
   };
 
+  # Curated backgrounds merged onto each variant's always-present generated
+  # one, keyed <theme>.<variant>. This is the drop-in point for the
+  # vogix-backgrounds data repo (and for host-local additions); every entry
+  # in that repo passes its SOURCES.toml licence gate before it can appear
+  # here. Store-path entries only — the theme package symlinks them under
+  # vogix-desktop/backgrounds/ and lists them in backgrounds.json.
+  extraBackgrounds = mkOption {
+    type = types.attrsOf (types.attrsOf (types.listOf (types.submodule {
+      options = {
+        kind = mkOption {
+          type = types.enum [ "image" "video" "shader" "generated" ];
+          description = "How the shell renders this entry.";
+        };
+        name = mkOption {
+          type = types.str;
+          description = "File name under vogix-desktop/backgrounds/ (unique per variant).";
+        };
+        path = mkOption {
+          type = types.path;
+          description = "The asset (a standalone derivation or data-repo file).";
+        };
+        attribution = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "Verbatim credit line, for licences that require one.";
+        };
+      };
+    })));
+    default = { };
+    description = "Extra backgrounds per theme and variant.";
+  };
+
   group = {
     fontFamily = mkOption {
       type = types.str;

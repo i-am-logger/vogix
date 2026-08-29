@@ -400,6 +400,57 @@
               touch $out
             '';
 
+          # Every desktop theme variant ships its backgrounds: the generated
+          # "veil" is always present (rendered from that variant's own
+          # palette), curated extras merge in through
+          # appearance.extraBackgrounds, and backgrounds.json lists them all —
+          # BESIDE theme.json, which must stay byte-identical between render
+          # layers and therefore cannot carry store paths.
+          desktop-backgrounds =
+            let
+              hmConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      desktop.enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                        extraBackgrounds.yoga.night = [{
+                          kind = "image";
+                          name = "extra.png";
+                          path = ./README.md;
+                        }];
+                      };
+                      enableDaemon = false;
+                    };
+                  }
+                ];
+              };
+            in
+            pkgs.runCommand "vogix-desktop-backgrounds"
+              {
+                themePkg = hmConf.config.xdg.dataFile."vogix/themes/yoga-night".source;
+                nativeBuildInputs = [ pkgs.jq ];
+              } ''
+              test -f "$themePkg/vogix-desktop/backgrounds.json"
+              test -e "$themePkg/vogix-desktop/backgrounds/veil"
+              jq -e '.backgrounds[0].kind == "generated" and (.backgrounds | length) == 2' \
+                "$themePkg/vogix-desktop/backgrounds.json"
+              jq -e '.backgrounds[1].name == "extra.png"' "$themePkg/vogix-desktop/backgrounds.json"
+              echo "backgrounds present, generated first, extras merged"
+              touch $out
+            '';
+
           # Quick sanity checks (binary, status, list, systemd)
           smoke = import ./nix/vm/tests/smoke.nix testArgs;
 

@@ -198,6 +198,11 @@ pub enum DesktopCommands {
     /// Restart the shell. REFUSED while the session is locked: the lock
     /// lives in the shell process, so a restart would unlock the screen
     Restart,
+    /// Control the wallpaper (the theme's background set)
+    Background {
+        #[command(subcommand)]
+        command: BackgroundCommands,
+    },
     /// Flash the on-screen display (volume/brightness/caps/custom)
     Osd {
         /// What to flash: volume, mic, brightness, caps, numlock, custom, …
@@ -245,6 +250,21 @@ pub enum DndCommands {
 #[derive(Subcommand)]
 pub enum LockCommands {
     /// Print the lock state: unlocked, locked (engaging) or secure
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum BackgroundCommands {
+    /// Override the wallpaper with an image file (persists across restarts)
+    Set {
+        /// Absolute path to the image
+        path: String,
+    },
+    /// Cycle to the next background in the theme's set (clears an override)
+    Next,
+    /// Drop the override and return to the theme's first background
+    Clear,
+    /// Print what the wallpaper layer is showing
     Status,
 }
 

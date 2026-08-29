@@ -57,6 +57,10 @@ _:
     pamService = "vogix-lock";
   };
 
+  background = {
+    enable = true;
+  };
+
   # Idle stages in seconds; null disables a stage. Suspend is off by
   # default — a desktop that vanishes mid-thought is a host decision.
   idle = {

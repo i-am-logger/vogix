@@ -27,6 +27,7 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
             None => lock(*wait_secure),
         },
         DesktopCommands::Restart => restart(),
+        DesktopCommands::Background { command } => background(command),
         DesktopCommands::Osd {
             kind,
             value,
@@ -161,6 +162,34 @@ fn history(count: usize) -> Result<()> {
             e["summary"].as_str().unwrap_or(""),
             e["body"].as_str().unwrap_or("")
         );
+    }
+    Ok(())
+}
+
+fn background(command: &crate::cli::BackgroundCommands) -> Result<()> {
+    use crate::cli::BackgroundCommands as B;
+    let reply = match command {
+        B::Set { path } => {
+            // The shell renders whatever it is handed; catch a missing file
+            // here, where the caller can read the error.
+            let p = std::path::Path::new(path);
+            if !p.is_file() {
+                return Err(VogixError::Config(format!(
+                    "background image not found: {path}"
+                )));
+            }
+            let canonical = p
+                .canonicalize()
+                .map_err(|e| VogixError::Config(format!("cannot resolve {path}: {e}")))?;
+            qs_ipc(&["background", "set", &canonical.to_string_lossy()])
+        }
+        B::Next => qs_ipc(&["background", "next"]),
+        B::Clear => qs_ipc(&["background", "clear"]),
+        B::Status => qs_ipc(&["background", "status"]),
+    };
+    match reply {
+        Some(r) => println!("{r}"),
+        None => println!("no responsive shell instance"),
     }
     Ok(())
 }

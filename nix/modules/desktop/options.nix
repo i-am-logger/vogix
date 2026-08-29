@@ -170,6 +170,14 @@ in
           };
         };
 
+        background = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.background.enable;
+            description = "Render the per-screen wallpaper layer from the theme's background set.";
+          };
+        };
+
         idle = {
           dim = mkOption {
             type = types.nullOr types.ints.positive;

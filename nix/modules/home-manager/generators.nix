@@ -12,7 +12,10 @@ let
 
   # Import vogix16-specific utilities (semantic color mapping)
   vogix16Lib = import ../lib/vogix16.nix { inherit lib; };
-  inherit (vogix16Lib) semanticColors;
+  inherit (vogix16Lib) semanticColors base16FromAnsi16;
+
+  backgroundsLib = import ../backgrounds { inherit lib pkgs; };
+  inherit (backgroundsLib) mkGeneratedBackground;
 
   # Import shared application discovery
   appDiscovery = import ../lib/applications.nix { inherit lib; };
@@ -164,6 +167,7 @@ let
     { config
     , cfg
     , allThemes
+    , extraBackgrounds ? { }
     ,
     }:
     let
@@ -180,6 +184,44 @@ let
               scheme = theme.scheme or "vogix16";
               colors = if scheme == "vogix16" then semanticColors rawColors else rawColors;
               themeVariantName = "${themeName}-${variantName}";
+
+              # ── Backgrounds (desktop users only) ──
+              # The generated "veil" is always present — rendered from THIS
+              # variant's 16 base slots (ansi16 goes through the praxis slot
+              # fill), so light/dark rides the variant axis for free. Curated
+              # entries (the vogix-backgrounds data repo, host additions)
+              # merge in through `extraBackgrounds.<theme>.<variant>`.
+              #
+              # The list lives in backgrounds.json BESIDE theme.json, not
+              # inside it: entries carry store paths only Nix can know, and
+              # theme.json must stay byte-identical between the Nix and
+              # on-demand cache render layers.
+              wantBackgrounds = builtins.elem "vogix-desktop" themedApps;
+              baseSlotColors =
+                if scheme == "ansi16" then base16FromAnsi16 rawColors else rawColors;
+              generated = mkGeneratedBackground {
+                themeVariant = themeVariantName;
+                colors = baseSlotColors;
+              };
+              backgroundEntries =
+                [{
+                  kind = "generated";
+                  name = "veil";
+                  path = "${generated}";
+                }]
+                ++ ((extraBackgrounds.${themeName} or { }).${variantName} or [ ]);
+              backgroundsJson = builtins.toJSON {
+                schema = 1;
+                backgrounds = backgroundEntries;
+              };
+              backgroundsSetup = optionalString wantBackgrounds ''
+                mkdir -p "$out/vogix-desktop/backgrounds"
+                ${concatMapStringsSep "\n"
+                  (e: ''ln -s ${lib.escapeShellArg e.path} "$out/vogix-desktop/backgrounds/${e.name}"'')
+                  backgroundEntries}
+                cp ${pkgs.writeText "vogix-backgrounds-${themeVariantName}.json" backgroundsJson} \
+                  "$out/vogix-desktop/backgrounds.json"
+              '';
               # The theme identity, for `{ colors, meta }:` generators.
               # Polarity comes from the imported theme data — the same value
               # the config.toml manifest carries, which is what the runtime
@@ -201,6 +243,7 @@ let
                   meta
                   ;
               }) themedApps}
+              ${backgroundsSetup}
             ''
           )
           theme.variants

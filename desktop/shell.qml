@@ -8,6 +8,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Services
 import qs.Vogix
+import "Background"
 import "Bar"
 import "Idle"
 import "Notifications"
@@ -21,7 +22,7 @@ ShellRoot {
     // services must run from startup (the notification server registers on
     // the bus, the idle monitors arm, the lock preflights its PAM check), so
     // reference them eagerly here.
-    readonly property list<QtObject> services: [Notifs, Audio, Osd, Idle, Lock]
+    readonly property list<QtObject> services: [Notifs, Audio, Osd, Idle, Lock, Backgrounds]
 
     Bar {
         id: bar
@@ -30,6 +31,11 @@ ShellRoot {
     LazyLoader {
         active: true
         component: DimOverlay {}
+    }
+
+    LazyLoader {
+        active: (Config.doc.background ?? {}).enable ?? true
+        component: Wallpaper {}
     }
 
     LazyLoader {
@@ -55,6 +61,7 @@ ShellRoot {
         function reload(): void {
             Theme.reload();
             Config.reload();
+            Backgrounds.reload();
         }
     }
 
@@ -87,6 +94,15 @@ ShellRoot {
 
         function lock(): string { return Lock.lock(); }
         function status(): string { return Lock.status(); }
+    }
+
+    IpcHandler {
+        target: "background"
+
+        function set(path: string): string { return Backgrounds.set(path); }
+        function next(): string { return Backgrounds.next(); }
+        function clear(): string { return Backgrounds.clear(); }
+        function status(): string { return Backgrounds.status(); }
     }
 
     IpcHandler {
