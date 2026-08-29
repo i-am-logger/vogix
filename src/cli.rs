@@ -49,6 +49,12 @@ pub enum Commands {
         command: ThemeCommands,
     },
 
+    /// The greeter's runtime follow (SDDM theme sync)
+    Greeter {
+        #[command(subcommand)]
+        command: GreeterCommands,
+    },
+
     /// Manage desktop sessions (save/restore workspaces)
     Session {
         #[command(subcommand)]
@@ -96,6 +102,14 @@ pub enum Commands {
         command: HyprCommands,
     },
 
+    /// Talk to the vogix desktop shell (bar, notifications, lock, launcher).
+    /// These verbs are the CONTRACT: keybindings, reload entries and consumer
+    /// modules call these — never the shell's transport directly
+    Desktop {
+        #[command(subcommand)]
+        command: DesktopCommands,
+    },
+
     /// Ontology-driven input engine (keybinding modes)
     Input {
         #[command(subcommand)]
@@ -132,7 +146,7 @@ pub enum InputCommands {
     /// nav merged with the overlay), materialized from the engine's single
     /// resolved schema — the engine-side replacement for the Nix help scripts.
     Keys {
-        /// Print the help text to stdout instead of showing it via walker/notify-send.
+        /// Print the help text to stdout instead of showing it via $LAUNCHER/notify-send.
         #[arg(long)]
         print: bool,
         /// Path to the input schema JSON (defaults to ~/.local/state/vogix/input.json)
@@ -156,6 +170,237 @@ pub enum HyprCommands {
         #[arg(num_args = 2.., value_names = ["KEY", "VALUE"])]
         args: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum DesktopCommands {
+    /// Ask the running shell to re-read theme.json and desktop.json. With no
+    /// shell instance (TTY, tests, shell disabled) this exits 0 quietly — it
+    /// runs on every theme switch and must never fail one
+    Reload,
+    /// Validate desktop.json against the praxis surface ontology: every
+    /// token's slot is one of the 16 semantic keys, every alpha in [0,1],
+    /// and (when a theme is active) every slot resolves in its palette —
+    /// to desktop.json what `vogix input check` is to input.json
+    Check {
+        /// Path to desktop.json (defaults to ~/.local/state/vogix/desktop.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
+    /// Report whether a shell instance is running (and the bar state)
+    Status,
+    /// Control the bar surface
+    Bar {
+        #[command(subcommand)]
+        command: BarCommands,
+    },
+    /// Control the notification surface (the shell's own server)
+    Notify {
+        #[command(subcommand)]
+        command: NotifyCommands,
+    },
+    /// Lock the session (the shell's WlSessionLock + PAM). Fails LOUDLY when
+    /// no shell is running or locking is refused — a locker that silently
+    /// doesn't lock is worse than none
+    Lock {
+        /// Wait up to SECS for the compositor to report the lock SECURE
+        /// (every output covered) and fail if it doesn't get there
+        #[arg(long, value_name = "SECS")]
+        wait_secure: Option<f64>,
+        #[command(subcommand)]
+        command: Option<LockCommands>,
+    },
+    /// Restart the shell. REFUSED while the session is locked: the lock
+    /// lives in the shell process, so a restart would unlock the screen
+    Restart,
+    /// Control the wallpaper (the theme's background set)
+    Background {
+        #[command(subcommand)]
+        command: BackgroundCommands,
+    },
+    /// Open the launcher overlay (apps, files, calc, emoji, ssh, clipboard,
+    /// theme and background pickers)
+    Launcher {
+        /// Provider mode (default: apps)
+        #[arg(long)]
+        mode: Option<String>,
+        /// Initial query
+        #[arg(long)]
+        query: Option<String>,
+    },
+    /// Open the root menu loaded from desktop.json (or one entry by id)
+    Menu {
+        /// Open (or run) this entry instead of the root menu
+        #[arg(long)]
+        summon: Option<String>,
+    },
+    /// The power menu; with an action, run it directly without the menu
+    Power {
+        #[command(subcommand)]
+        action: Option<PowerCommands>,
+    },
+    /// dmenu mode: read items from stdin, show the shell's picker, print the
+    /// chosen line to stdout (exit 1 on cancel)
+    Select {
+        /// Prompt shown above the picker
+        #[arg(short, long)]
+        prompt: Option<String>,
+    },
+    /// dmenu mode: free-text entry — print the typed line (exit 1 on cancel)
+    Input {
+        /// Prompt shown above the field
+        #[arg(short, long)]
+        prompt: Option<String>,
+    },
+    /// Toggle a bar panel popup (audio, network, bluetooth, power, monitor,
+    /// tailscale, calendar, weather); no name prints which one is open
+    Panel {
+        /// Panel to toggle
+        name: Option<String>,
+        /// Close whatever panel is open
+        #[arg(long)]
+        close: bool,
+    },
+    /// Night light (hyprsunset with the configured temperature)
+    Nightlight {
+        #[command(subcommand)]
+        state: SwitchCommands,
+    },
+    /// Hold every idle stage open (screensaver, dim, lock, screen-off, suspend)
+    StayAwake {
+        #[command(subcommand)]
+        state: SwitchCommands,
+    },
+    /// Timed reminders, fired through the shell's notification server
+    Remind {
+        #[command(subcommand)]
+        command: RemindCommands,
+    },
+    /// The dev gallery: every surface's tokens rendered as swatches
+    Gallery {
+        /// Close it instead of opening
+        #[arg(long)]
+        close: bool,
+    },
+    /// Flash the on-screen display (volume/brightness/caps/custom)
+    Osd {
+        /// What to flash: volume, mic, brightness, caps, numlock, custom, …
+        kind: String,
+        /// Gauge position in percent (omit for no gauge)
+        #[arg(long)]
+        value: Option<u8>,
+        /// Render the muted style
+        #[arg(long)]
+        muted: bool,
+        /// Free-text label overriding the derived one
+        #[arg(long)]
+        message: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NotifyCommands {
+    /// Dismiss the newest popup (or every popup with --all)
+    Dismiss {
+        #[arg(long)]
+        all: bool,
+    },
+    /// Do-not-disturb: critical and rule-exempt popups still show
+    Dnd {
+        #[command(subcommand)]
+        state: DndCommands,
+    },
+    /// Print recent notifications (works without a running shell)
+    History {
+        /// How many entries, newest last
+        #[arg(short = 'n', long, default_value_t = 20)]
+        count: usize,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DndCommands {
+    On,
+    Off,
+    Toggle,
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum LockCommands {
+    /// Print the lock state: unlocked, locked (engaging) or secure
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum BackgroundCommands {
+    /// Override the wallpaper with an image file (persists across restarts)
+    Set {
+        /// Absolute path to the image
+        path: String,
+    },
+    /// Cycle to the next background in the theme's set (clears an override)
+    Next,
+    /// Drop the override and return to the theme's first background
+    Clear,
+    /// Print what the wallpaper layer is showing
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum SwitchCommands {
+    On,
+    Off,
+    Toggle,
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum RemindCommands {
+    /// Set a reminder
+    Add {
+        /// What to be reminded of
+        text: String,
+        /// Delay, e.g. 10m, 1h30m, 45s
+        #[arg(long = "in", value_name = "DURATION")]
+        delay: String,
+    },
+    /// List pending reminders
+    List,
+    /// Drop every pending reminder
+    Clear,
+}
+
+#[derive(Subcommand)]
+pub enum GreeterCommands {
+    /// Copy the live theme (theme.json + the current background reference)
+    /// into /var/lib/vogix/greeter so the SDDM greeter follows the palette.
+    /// Wired as a themeApply hook by programs.vogix.greeter.sync
+    Sync,
+}
+
+#[derive(Subcommand)]
+pub enum PowerCommands {
+    /// Lock the session (through the shell, loud on failure)
+    Lock,
+    /// End the compositor session
+    Logout,
+    /// systemctl suspend (goes through sleep.target, so the lock engages first)
+    Suspend,
+    /// systemctl reboot
+    Reboot,
+    /// systemctl poweroff
+    Poweroff,
+}
+
+#[derive(Subcommand)]
+pub enum BarCommands {
+    /// Slide the bar back in
+    Show,
+    /// Park the bar off-screen (it stays warm; ~20ms to return)
+    Hide,
+    /// Toggle between shown and hidden
+    Toggle,
 }
 
 #[derive(Subcommand)]

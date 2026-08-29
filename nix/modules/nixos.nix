@@ -114,6 +114,24 @@ in
       description = "Theme variant (dark or light) for console colors (overrides auto-detection).";
     };
 
+    plymouth = {
+      enable = mkEnableOption "the vogix plymouth boot splash (text-only script theme from the first vogix user's palette)";
+    };
+
+    greeter = {
+      enable = mkEnableOption "the vogix SDDM greeter (SDDM under a Hyprland Lua compositor, themed from the first vogix user's palette)";
+
+      compositor = mkOption {
+        type = types.enum [ "hyprland" "weston" ];
+        default = "hyprland";
+        description = ''
+          The Wayland compositor SDDM hosts its greeter on. Hyprland (with a
+          minimal Lua config whose background is the theme's base00, so boot,
+          greeter and session are color-continuous) on real hosts; weston —
+          nixpkgs' default, no GL required — for VM tests.
+        '';
+      };
+    };
   };
 
   config = mkIf cfg.enable (mkMerge [
@@ -123,6 +141,23 @@ in
         pkgs.vogix
         pkgs.tmux # Required for F12 system console
       ];
+
+      # The shell's session lock authenticates against THIS service; the
+      # shell refuses to lock when the file is absent (never an unlockable
+      # screen), so the PAM declaration travels with the program that needs
+      # it. unix/u2f/fprintd follow the host's global PAM settings; the fail
+      # delay slows brute force on the lock screen.
+      security.pam.services.vogix-lock = {
+        failDelay = {
+          enable = true;
+          delay = 2000000;
+        };
+      };
+
+      # Bridge logind's lock/sleep signals to user-session targets, so
+      # `loginctl lock-session` and suspend reach the shell's lock through
+      # the vogix-lock.service unit (declared in the home-manager module).
+      services.systemd-lock-handler.enable = true;
 
       # Add security wrappers for console theme switching
       security.wrappers = {
@@ -188,6 +223,93 @@ in
         })
       ];
     })
+
+    # The boot splash: a text-only plymouth script theme from the same
+    # first-user palette the console and greeter use — boot, login and
+    # session are color-continuous with no recolored bitmaps anywhere.
+    # Build-time like console.colors (a theme switch reaches it at the
+    # next rebuild); mkDefault everywhere so a host keeps the last word.
+    (mkIf cfg.plymouth.enable (
+      let
+        semantic =
+          if hmVogixCfg != null then
+            lib.mapAttrs'
+              (n: lib.nameValuePair (builtins.replaceStrings [ "-" ] [ "_" ] n))
+              hmVogixCfg.colors
+          else
+            { };
+        theme = pkgs.callPackage ../packages/vogix-plymouth.nix { colors = semantic; };
+      in
+      {
+        boot.plymouth = {
+          themePackages = [ theme ];
+          theme = lib.mkDefault "vogix";
+        };
+      }
+    ))
+
+    # The greeter surface: SDDM with the vogix QML theme, its [General]
+    # palette rendered from the FIRST vogix user's semantic colors — the
+    # console.colors precedent, so every scheme (not just vogix16) reaches
+    # the greeter; never a re-render from theme files at this layer. The
+    # opt-in runtime follow (`vogix greeter sync`, programs.vogix.greeter
+    # .sync) copies the live theme.json into /var/lib/vogix/greeter, which
+    # the QML prefers over the build-time palette.
+    (mkIf cfg.greeter.enable (
+      let
+        semantic =
+          if hmVogixCfg != null then
+            lib.mapAttrs'
+              (n: lib.nameValuePair (builtins.replaceStrings [ "-" ] [ "_" ] n))
+              hmVogixCfg.colors
+          else
+            { };
+        fontFamily =
+          if hmVogixCfg != null then hmVogixCfg.desktop.font.family else "monospace";
+        sddmTheme = pkgs.callPackage ../packages/vogix-sddm-theme.nix {
+          conf = semantic // { font = fontFamily; };
+        };
+        bg6 = builtins.replaceStrings [ "#" ] [ "" ] (semantic.background or "181818");
+      in
+      {
+        services.displayManager.sddm = {
+          enable = lib.mkDefault true;
+          wayland.enable = true;
+          theme = "vogix";
+          extraPackages = [ pkgs.qt6.qtsvg ];
+          # The QML's runtime-follow reads /var/lib/vogix/greeter over
+          # XMLHttpRequest on file:// — Qt gates that behind this env var.
+          settings.General.GreeterEnvironment = "QML_XHR_ALLOW_FILE_READ=1";
+          wayland.compositorCommand = mkIf (cfg.greeter.compositor == "hyprland") "${pkgs.hyprland}/bin/start-hyprland -- --config /etc/vogix/greeter/hyprland.lua";
+        };
+
+        environment.systemPackages = [ sddmTheme ];
+
+        # The greeter compositor's config is Lua FROM DAY ONE (valid on
+        # 0.56.2 and 0.57): logo/splash off, no animations, first frame
+        # painted in the theme's base00.
+        environment.etc."vogix/greeter/hyprland.lua".text = ''
+          hl.config({
+            misc = {
+              disable_hyprland_logo = true,
+              disable_splash_rendering = true,
+              force_default_wallpaper = 0,
+              background_color = 0xff${bg6},
+            },
+            animations = { enabled = false },
+          })
+        '';
+
+        # Runtime-follow drop zone: group-writable so `vogix greeter sync`
+        # (run as a vogix user on theme switch) can copy the live palette.
+        # Theme + wallpaper are not secrets.
+        systemd.tmpfiles.rules = [ "d /var/lib/vogix/greeter 2775 root vogix -" ];
+        users.groups.vogix = { };
+        users.users = lib.genAttrs homeManagerUsers (_user: {
+          extraGroups = [ "vogix" ];
+        });
+      }
+    ))
 
     # Input engine: uinput + group membership wiring.
     # hardware.uinput exposes /dev/uinput; the vogix input daemon needs to open

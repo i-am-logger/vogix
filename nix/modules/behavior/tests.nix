@@ -186,9 +186,12 @@ let
     (assertEq "Launch: Super+E = browser ($BROWSER)"
       "exec, $BROWSER"
       (app.browser.action or ""))
-    (assertEq "Launch: Super+Space = launcher (env $LAUNCHER, walker fallback)"
-      "exec, \${LAUNCHER:-walker}"
+    (assertEq "Launch: Super+Space = launcher (env $LAUNCHER, vogix-launcher fallback)"
+      "exec, \${LAUNCHER:-vogix-launcher}"
       (app.launcher.action or ""))
+    (assertEq "System: Super+Escape = power menu (shell verb)"
+      "exec, vogix desktop power"
+      (app.powerMenu.action or ""))
 
     # Help is now an ENGINE view — `vogix input keys` materializes from the
     # resolved schema (this overlay + the paradigm nav), replacing the Nix script.
@@ -202,11 +205,11 @@ let
     (assertEq "System: F12 = toggle system console"
       "Toggle system console"
       (app.console.description or ""))
-    (assertEq "System: Super+D = dismiss notification (makoctl)"
-      "exec, makoctl dismiss"
+    (assertEq "System: Super+D = dismiss notification (the shell's server)"
+      "exec, vogix desktop notify dismiss"
       (app.dismissNotification.action or ""))
     (assertEq "System: Super+Shift+D = dismiss all"
-      "exec, makoctl dismiss --all"
+      "exec, vogix desktop notify dismiss --all"
       (app.dismissAll.action or ""))
     (assertEq "System: Super+Z = session undo"
       "super + z"
@@ -225,8 +228,15 @@ let
     # === The nav is the ENGINE's job — it must NOT be in the overlay ===
     (check "no focus/move/resize WM-nav action leaks into the overlay"
       (!(hasAction "movefocus") && !(hasAction "swapwindow") && !(hasAction "resizeactive")))
+    # The console toggle is a legitimate overlay exec whose action text
+    # contains "togglespecialworkspace, console" — match the workspace-SWITCH
+    # dispatcher precisely so it doesn't false-positive.
     (check "no workspace-switch nav leaks into the overlay"
-      (!(hasAction "workspace, ") && !(hasAction "movetoworkspace")))
+      (!(builtins.any
+        (b: lib.hasPrefix "workspace," (b.action or "")
+          || lib.hasPrefix "workspace, " (b.action or ""))
+        appBinds)
+      && !(hasAction "movetoworkspace")))
     (check "no window-state nav (close/fullscreen/pseudo) leaks into the overlay"
       (!(app ? closeWindow) && !(app ? floatPin) && !(app ? toggleGroup)))
   ];

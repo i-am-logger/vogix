@@ -40,11 +40,9 @@ let
       home-manager.nixosModules.home-manager
     ];
 
-    nixpkgs.overlays = [
-      (_final: _prev: {
-        inherit (self.packages.x86_64-linux) vogix;
-      })
-    ];
+    # The flake's own overlay (vogix + composed quickshell), not a hand copy —
+    # so the test nodes see exactly what a consumer's `overlays.default` sees.
+    nixpkgs.overlays = [ self.overlays.default ];
 
     home-manager = {
       useGlobalPkgs = true;

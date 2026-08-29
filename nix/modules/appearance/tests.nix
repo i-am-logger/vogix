@@ -235,8 +235,10 @@ let
     ];
 
   allTests = tests ++ propertyTests;
-  results = map (t: t) allTests;
-  passed = builtins.length results;
+  # FORCE every assertion: a failing check/assertEq THROWS, so deepSeq makes the
+  # eval fail loudly. (The old `map (t: t)` + `length` only counted unforced
+  # thunks — it never actually evaluated an assertion, so it always "passed".)
+  passed = builtins.deepSeq allTests (builtins.length allTests);
 
 in
 {

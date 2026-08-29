@@ -146,8 +146,24 @@ rec {
     };
   };
 
+  # The mode-visibility surface as DATA: each mode's border slot (one of
+  # the 16 semantic keys — the engine resolves the hex from the CURRENT
+  # theme at runtime) and the bar widget's label. Modes are NOT statuses:
+  # navigation modes use neutral/accent slots, never warning/danger/notice
+  # (those are reserved for real conditions). Covers every mode any
+  # shipped paradigm can enter. Deliberately NOT inside `modes` — that
+  # attrset carries binding overlays only (its shape is pinned by a test).
+  modeColors = {
+    app = { slot = "foreground_border"; label = "app"; };
+    desktop = { slot = "active"; label = "desktop"; };
+    move = { slot = "link"; label = "move"; };
+    resize = { slot = "highlight"; label = "resize"; };
+    console = { slot = "foreground_comment"; label = "console"; };
+  };
+
   # ── Modes ──
   modes = {
+
     # `app` holds ONLY the user's OVERLAY — launch / system / media bindings that
     # aren't the WM-navigation paradigm (and that use keys praxis can't express:
     # return/slash/print/XF86). The paradigm NAV (focus / move / resize /
@@ -164,9 +180,10 @@ rec {
         # command from the environment (like $TERMINAL/$BROWSER above) instead of
         # hardcoding a tool. The host exports $LAUNCHER/$LOCKER; the `:-` fallback
         # keeps vogix usable standalone.
-        launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-walker}"; description = "Launcher"; };
+        launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-vogix-launcher}"; description = "Launcher"; };
         colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
-        lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-hyprlock}"; description = "Lock screen"; };
+        lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-vogix-lock}"; description = "Lock screen"; };
+        powerMenu = { key = "super + escape"; action = "exec, vogix desktop power"; description = "Power menu"; };
 
         # ── Screenshots ──
         # --cursor is invalid with the `area` target in current grimblast.
@@ -181,8 +198,10 @@ rec {
 
         # ── System (console, notifications, undo, help) ──
         console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
-        dismissNotification = { key = "super + d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
-        dismissAll = { key = "super + shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all notifications"; };
+        # The shell's own notification server (mako is gone from the fleet).
+        dismissNotification = { key = "super + d"; action = "exec, vogix desktop notify dismiss"; description = "Dismiss notification"; };
+        dismissAll = { key = "super + shift + d"; action = "exec, vogix desktop notify dismiss --all"; description = "Dismiss all notifications"; };
+        dndToggle = { key = "super + ctrl + d"; action = "exec, vogix desktop notify dnd toggle"; description = "Toggle do-not-disturb"; };
         undoSession = { key = "super + z"; action = "exec, vogix session undo"; description = "Undo last window change"; };
         # Help is now an ENGINE view: it reads the resolved schema (paradigm nav +
         # this overlay) and renders it — replacing the build-time Nix help scripts.

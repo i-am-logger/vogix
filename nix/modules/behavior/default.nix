@@ -37,7 +37,7 @@ let
         modeGraph.modes;
       mouse = mergeOr (kb.mouse or { }) defaults.keybindings.mouse;
       layers = mergeOr (kb.layers or { }) defaults.keybindings.layers;
-      modeColors = userModes.modeColors or { };
+      modeColors = mergeOr (userModes.modeColors or { }) (defaults.modeColors or { });
       input = mergeOr (behaviorCfg.input or { }) defaults.input;
       touchpad = mergeOr (behaviorCfg.touchpad or { }) defaults.touchpad;
       layout = behaviorCfg.layout or defaults.layout;
@@ -98,10 +98,10 @@ in
       keybindings = engineKeybindings;
       # Top-level for the Rust `Schema.terminal_classes` (context-aware remap).
       terminalClasses = effectiveKeybindings.terminalClasses or [ ];
-      # Per-mode border colours for the mode-visibility surface (engine paints
-      # the border on a mode change). Theme-derived; set by the home-manager
-      # module's modeColors block.
-      modeColors = userModes.modeColors or { };
+      # The mode-visibility surface as data: border SLOT + widget label per
+      # mode, defaults merged under user entries. The engine resolves the
+      # slot against the CURRENT theme at runtime.
+      modeColors = mergeOr (userModes.modeColors or { }) (defaults.modeColors or { });
       # Top-level for the Rust `Schema.device_filter` — which devices the engine
       # may grab. Empty here = the engine's baked-in safe baseline applies (Yubico
       # / audio HID excluded); user entries EXTEND that baseline.

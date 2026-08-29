@@ -110,6 +110,19 @@ pub fn action_to_lua(action: &str) -> Result<String, String> {
                 "hl.dsp.group.move_window()".to_string()
             }
         }
+        // Legacy `dpms <on|off> [monitor]`. The Lua factory takes the bare
+        // mode (probed live on 0.56.2: `hl.dsp.dpms("on")` dispatches ok);
+        // a monitor selector has no verified Lua form — refuse it rather
+        // than mistranslate.
+        "dpms" => match args {
+            "on" | "off" => format!("hl.dsp.dpms({})", lua_str(args)),
+            _ => {
+                return Err(format!(
+                    "dpms takes 'on' or 'off' under the Lua engine (per-monitor \
+                     dpms has no verified Lua form), got '{args}'"
+                ));
+            }
+        },
         "exit" => "hl.dsp.exit()".to_string(),
         other => {
             return Err(format!(
@@ -328,9 +341,23 @@ mod tests {
     }
 
     #[test]
+    fn dpms_takes_the_bare_mode() {
+        assert_eq!(
+            action_to_lua("dpms, off").as_deref(),
+            Ok(r#"hl.dsp.dpms("off")"#)
+        );
+        assert_eq!(
+            action_to_lua("dpms, on").as_deref(),
+            Ok(r#"hl.dsp.dpms("on")"#)
+        );
+        let err = action_to_lua("dpms, off DP-1").unwrap_err();
+        assert!(err.contains("per-monitor"), "{err}");
+    }
+
+    #[test]
     fn untranslatable_dispatchers_fail_loudly() {
-        let err = action_to_lua("dpms, off").unwrap_err();
-        assert!(err.contains("dpms"), "{err}");
+        let err = action_to_lua("movecursor, 0 0").unwrap_err();
+        assert!(err.contains("movecursor"), "{err}");
         let err = action_to_lua("resizeactive, 10% 0").unwrap_err();
         assert!(err.contains("percentages"), "{err}");
         let err = action_to_lua("movewindow,").unwrap_err();

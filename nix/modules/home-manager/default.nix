@@ -91,6 +91,7 @@ let
   themeVariantPackages = generators.mkThemeVariantPackages {
     inherit config cfg;
     allThemes = prebuiltThemes;
+    inherit (cfg.appearance) extraBackgrounds;
   };
 
   # Apps that will be themed
@@ -260,6 +261,133 @@ in
   inherit (optionsModule) options;
 
   config = mkIf cfg.enable (mkMerge [
+    # The theme.json contract is generated only for desktop users: with the
+    # shell off, terminal-only profiles get no vogix-desktop/ in their theme
+    # packages, no [apps."vogix-desktop"] reload entry and no
+    # ~/.config/vogix-desktop symlink. Unconditional element (mkDefault, so a
+    # user can still force the contract on without the shell).
+    {
+      programs.vogix."vogix-desktop".enable = lib.mkDefault cfg.desktop.enable;
+    }
+
+    # The desktop shell: desktop.json (the per-user layout/token contract),
+    # the quickshell config registration, and the vogix-owned unit. The UNIT
+    # NAME, the contract file paths and the `vogix desktop` verbs are the
+    # v1→v2 seam: the Rust shell swaps ExecStart, nothing else moves.
+    (mkIf cfg.desktop.enable (
+      let
+        desktopDefaults = import ../desktop/defaults.nix { };
+        vogixDesktopQml =
+          pkgs.vogix-desktop-qml or (pkgs.callPackage ../../packages/vogix-desktop-qml.nix { });
+
+        # Defaults carry bare-slot shorthand; user tokens arrive complete
+        # from the option type. Normalize AFTER the merge so the emitted
+        # token shape is always { slot, alpha } — the praxis SlotMapping.
+        normalizeToken = t:
+          { alpha = 1.0; } // (if builtins.isString t then { slot = t; } else t);
+        mergedSurfaces =
+          lib.mapAttrs (_: lib.mapAttrs (_: normalizeToken))
+            (lib.recursiveUpdate desktopDefaults.surfaces cfg.desktop.surfaces);
+
+        desktopJson = builtins.toJSON {
+          schema = 1;
+          font = { inherit (cfg.desktop.font) family size; };
+          bar = {
+            inherit (cfg.desktop.bar) enable position height;
+            layout = { inherit (cfg.desktop.bar.layout) left center right; };
+          };
+          notifications = {
+            inherit (cfg.desktop.notifications) enable defaultTimeout maxVisible appRules;
+          };
+          osd = { inherit (cfg.desktop.osd) enable timeout; };
+          polkit = { inherit (cfg.desktop.polkit) enable; };
+          lock = { inherit (cfg.desktop.lock) enable pamService; };
+          background = { inherit (cfg.desktop.background) enable animate; };
+          launcher = { inherit (cfg.desktop.launcher) enable modes menu; };
+          power = { inherit (cfg.desktop.power) enable; };
+          weather = { inherit (cfg.desktop.weather) enable location; };
+          nightlight = { inherit (cfg.desktop.nightlight) temperature; };
+          idle = { inherit (cfg.desktop.idle) screensaver dim lock screenOff suspend; };
+          surfaces = mergedSurfaces;
+        };
+        desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;
+      in
+      {
+        home.file.".local/state/vogix/desktop.json".source = desktopJsonFile;
+
+        # Registers the QML tree as the `vogix` quickshell config
+        # (~/.config/quickshell/vogix → the package), so `qs -c vogix`
+        # resolves it. HM's own unit machinery stays off — the unit below is
+        # the contract, and its name must survive the v2 swap.
+        programs.quickshell = {
+          enable = true;
+          configs.vogix = lib.mkDefault "${vogixDesktopQml}";
+          systemd.enable = false;
+        };
+
+        systemd.user.services.vogix-desktop = {
+          Unit = {
+            Description = "Vogix Desktop Shell (bar, notifications, lock surfaces)";
+            After = [ "graphical-session.target" ];
+            PartOf = [ "graphical-session.target" ];
+            # Qt exits via _exit() on a lost Wayland connection (GPU reset);
+            # cap the restart loop like vogix-input does.
+            StartLimitBurst = 3;
+            StartLimitIntervalSec = 30;
+            # A desktop.json-only change reloads in place (sd-switch): the
+            # shell re-reads both contract files, MainPID unchanged. The
+            # store-symlink swap is invisible to file watchers, which is
+            # also why the watcher is disabled outright below.
+            X-Reload-Triggers = [ "${desktopJsonFile}" ];
+          };
+
+          Service = {
+            Type = "simple";
+            ExecStart = "${config.programs.quickshell.package}/bin/qs -n -c vogix";
+            ExecReload = "${cfg.package}/bin/vogix desktop reload";
+            Restart = "on-failure";
+            RestartSec = 2;
+            Environment = [
+              "QS_DISABLE_FILE_WATCHER=1"
+              "QS_NO_RELOAD_POPUP=1"
+              "RUST_LOG=vogix=${cfg.logLevel}"
+              # Video backgrounds import QtMultimedia, which quickshell's own
+              # Qt env doesn't carry; same-nixpkgs module dir, loaded lazily
+              # (the VideoLayer Loader), so a missing backend never crashes
+              # the shell.
+              "QML_IMPORT_PATH=${pkgs.qt6.qtmultimedia}/${pkgs.qt6.qtbase.qtQmlPrefix}"
+            ];
+          };
+
+          Install = {
+            WantedBy = [ "graphical-session.target" ];
+          };
+        };
+
+        # The lock hook: systemd-lock-handler (enabled by vogix's NixOS
+        # module) translates logind's lock/sleep signals into the user
+        # lock.target / sleep.target; this oneshot engages the shell's lock
+        # BEFORE either proceeds, and --wait-secure means suspend cannot race
+        # ahead of an uncovered output.
+        systemd.user.services.vogix-lock = lib.mkIf cfg.desktop.lock.enable {
+          Unit = {
+            Description = "Vogix session lock (locks before lock.target/sleep.target)";
+            PartOf = [ "lock.target" "sleep.target" ];
+            Before = [ "lock.target" "sleep.target" ];
+          };
+
+          Service = {
+            Type = "oneshot";
+            ExecStart = "${cfg.package}/bin/vogix desktop lock --wait-secure 4";
+          };
+
+          Install = {
+            WantedBy = [ "lock.target" "sleep.target" ];
+          };
+        };
+      }
+    ))
+
     # Behavior: generate the hyprland config
     # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
     # to avoid infinite recursion between config definition and evaluation)
@@ -270,22 +398,10 @@ in
         modes = {
           app = lib.mkDefault behaviorDefaults.modes.app;
 
-          # Derive the app-mode border color from the vogix semantic theme.
-          # Modes are NOT statuses — navigation modes use neutral/accent slots,
-          # never warning/danger/notice (those are reserved for real conditions).
-          # The flat default is a single `app` mode (no CapsLock sub-modes), so
-          # only `app` needs a colour.
-          modeColors =
-            let
-              colors = cfg.colors or { };
-              toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
-            in
-            {
-              app = {
-                active = toRgb (colors.foreground-border or "585b70");
-                inactive = toRgb (colors.background-selection or "313244");
-              };
-            };
+          # Mode border colors are NOT baked here any more: modeColors is a
+          # slot table (behavior/defaults.nix) and the ENGINE resolves the
+          # hex from the CURRENT theme at runtime — a theme switch recolors
+          # the mode cue without a rebuild.
         };
 
         # Generated outputs for downstream consumption
@@ -299,6 +415,14 @@ in
 
       # Expose semantic color API for application modules
       programs.vogix.colors = vogix16Lib.semanticColors selectedColors;
+
+      # Greeter runtime follow: ride the existing post-switch apply hook
+      # (warn-only by design — a broken greeter sync never fails a theme
+      # switch). The verb copies theme.json + the current background into
+      # /var/lib/vogix/greeter for the SDDM theme's XHR read.
+      programs.vogix.themeApply = lib.mkIf cfg.greeter.sync {
+        greeter = "${cfg.package}/bin/vogix greeter sync";
+      };
 
       # Create theme symlinks in ~/.local/share/vogix/themes/
       xdg.dataFile = lib.mkMerge [

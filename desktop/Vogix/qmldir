@@ -1,0 +1,6 @@
+module qs.Vogix
+singleton Paths 1.0 Paths.qml
+singleton Theme 1.0 Theme.qml
+singleton Config 1.0 Config.qml
+singleton Tokens 1.0 Tokens.qml
+singleton Mode 1.0 Mode.qml

@@ -19,13 +19,21 @@ let
     if expected == actual then { inherit name; passed = true; }
     else throw "FAILED: ${name} — expected ${toString expected}, got ${toString actual}";
 
-  assertContains = name: needle: haystack:
-    if lib.hasInfix needle haystack then { inherit name; passed = true; }
-    else throw "FAILED: ${name} — '${needle}' not found in output";
-
   # ── Generate both configs ──
   appearance = appearanceModule.mkHyprlandConfig appearanceModule.defaults;
   behavior = behaviorModule.mkHyprlandConfig behaviorModule.defaults;
+
+  # A behavior config whose mode graph declares the console passthrough —
+  # what gates the console window/workspace rules on.
+  behaviorWithConsole = behaviorModule.mkHyprlandConfig {
+    modeGraph = {
+      root = "app";
+      modes = {
+        app = { parent = null; type = "normal"; };
+        console = { parent = "app"; type = "passthrough"; };
+      };
+    };
+  };
 
   # Merge like the hyprland.nix module does
   merged = lib.recursiveUpdate appearance.settings behavior.settings;
@@ -69,23 +77,29 @@ let
     (check "behavior.general only has layout"
       (behavior.settings.general ? layout))
 
-    # === Behavior extraConfig has submaps ===
-    (check "behavior extraConfig is non-empty" (behavior.extraConfig != ""))
-    (assertContains "behavior has desktop submap" "submap = desktop" behavior.extraConfig)
-    (assertContains "behavior has console submap" "submap = console" behavior.extraConfig)
+    # === Behavior extraConfig carries no submaps by default ===
+    # The engine owns the mode statechart; only PASSTHROUGH submaps are ever
+    # emitted, and the default mode graph declares none — so the fallback
+    # config's extraConfig is empty. (This block used to assert desktop and
+    # console submaps from the pre-engine architecture.)
+    (assertEq "behavior extraConfig is empty by default" "" behavior.extraConfig)
 
     # === Appearance extraConfig is empty (no raw config needed) ===
     (assertEq "appearance extraConfig is empty" "" appearance.extraConfig)
 
-    # === Console window rules present ===
-    (check "merged has windowrule" (merged ? windowrule))
-    (check "console window rules exist"
-      (builtins.any (r: lib.hasInfix "vogix-console" r) (merged.windowrule or [ ])))
-
-    # === Console workspace rules present ===
-    (check "merged has workspace" (merged ? workspace))
-    (check "console workspace rule exists"
-      (builtins.any (r: lib.hasInfix "special:console" r) (merged.workspace or [ ])))
+    # === Console rules are GRAPH-GATED ===
+    # They render only when the mode graph declares a console mode; the
+    # default graph is `app`-only, so the default render carries none, and a
+    # console-bearing graph carries all four effects + the workspace rule.
+    (check "no console rules with the default (app-only) graph"
+      (!(builtins.any (r: lib.hasInfix "vogix-console" r) (merged.windowrule or [ ]))
+        && !(builtins.any (r: lib.hasInfix "special:console" r) (merged.workspace or [ ]))))
+    (check "console window rules exist when the graph declares console"
+      (builtins.any (r: lib.hasInfix "vogix-console" r)
+        (behaviorWithConsole.settings.windowrule or [ ])))
+    (check "console workspace rule exists when the graph declares console"
+      (builtins.any (r: lib.hasInfix "special:console" r)
+        (behaviorWithConsole.settings.workspace or [ ])))
 
     # === Keybindings present ===
     (check "merged has binds >20" (builtins.length (merged.bind or [ ]) > 20))
@@ -150,9 +164,56 @@ let
         (builtins.length (builtins.attrNames merged.general)))
     ];
 
-  allTests = tests ++ propertyTests;
-  results = map (t: t) allTests;
-  passed = builtins.length results;
+  # ── Lua projection (configType = "lua") ── the HM Lua shapes both modules
+  # render; the same merge the hyprland.nix module performs, other dialect.
+  appearanceLua = appearanceModule.mkHyprlandLuaConfig appearanceModule.defaults;
+  behaviorLua = behaviorModule.mkHyprlandLuaConfig { };
+  mergedLuaConfig = lib.recursiveUpdate appearanceLua.settings.config behaviorLua.settings.config;
+  firstCurveArgs = (builtins.head appearanceLua.settings.curve)._args;
+
+  luaTests = [
+    # One hl.config carrying both modules' sections, with REAL booleans — the
+    # Lua parser hard-rejects hyprlang's "yes"/"no"/"on"/"off" strings.
+    (check "L1: merged hl.config has appearance + behavior sections"
+      (mergedLuaConfig ? decoration && mergedLuaConfig ? input && mergedLuaConfig ? misc))
+    (assertEq "L1: natural_scroll is a real bool" true mergedLuaConfig.input.natural_scroll)
+    (assertEq "L1: numlock_by_default is a real bool" false mergedLuaConfig.input.numlock_by_default)
+    (assertEq "L1: touchpad natural_scroll is a real bool" true mergedLuaConfig.input.touchpad.natural_scroll)
+
+    # The legacy bezier string parses into the hl.curve(name, {type, points}) form.
+    (assertEq "L2: curve name" "myBezier" (builtins.head firstCurveArgs))
+    (assertEq "L2: curve points" [ [ 0.05 0.9 ] [ 0.1 1.05 ] ]
+      (builtins.elemAt firstCurveArgs 1).points)
+
+    # Every legacy animation rule becomes an hl.animation table, field for field.
+    (assertEq "L3: animation rule count" 9 (builtins.length appearanceLua.settings.animation))
+    (assertEq "L3: last animation keeps its style" "slidefadevert top"
+      (lib.last appearanceLua.settings.animation).style)
+
+    # Binds are {_args = [keys dispatcher opts?]} elements with `+`-joined keys
+    # and an hl.dsp.* inline dispatcher — never a bare legacy string.
+    (check "L4: every bind is an _args element with lua-inline dispatcher"
+      (builtins.all
+        (b:
+          b ? _args
+          && builtins.isString (builtins.head b._args)
+          && lib.isType "lua-inline" (builtins.elemAt b._args 1))
+        behaviorLua.settings.bind))
+    (check "L4: some bind carries the drag dispatcher"
+      (builtins.any
+        (b: (builtins.elemAt b._args 1).expr == "hl.dsp.window.drag()")
+        behaviorLua.settings.bind))
+    (check "L4: no legacy comma keys leak into the keys string"
+      (builtins.all
+        (b: !(lib.hasInfix ", " (builtins.head b._args)))
+        behaviorLua.settings.bind))
+  ];
+
+  allTests = tests ++ propertyTests ++ luaTests;
+  # FORCE every assertion: a failing check/assertEq THROWS, so deepSeq makes the
+  # eval fail loudly. (The old `map (t: t)` + `length` only counted unforced
+  # thunks — it never actually evaluated an assertion, so it always "passed".)
+  passed = builtins.deepSeq allTests (builtins.length allTests);
 
 in
 {

@@ -138,7 +138,7 @@ vogix input check            # validate the input schema's mode graph + engine i
 vogix input run              # run the engine (grab evdev, drive modes, dispatch to Hyprland)
 vogix input doctor           # read-only diagnostics for a running engine
 vogix input doctor --watch   # repaint diagnostics continuously
-vogix input keys             # show the resolved schema's keybindings (via walker/notify-send)
+vogix input keys             # show the resolved schema's keybindings (via $LAUNCHER/notify-send)
 vogix input keys --print     # print the help text to stdout instead
 
 # check / run / keys accept --config <path> to override ~/.local/state/vogix/input.json
@@ -155,6 +155,44 @@ vogix session restore --json <path>  # restore from a JSON file instead of a nam
 vogix session restore --dry-run      # validate and print the session without launching apps
 vogix session list                   # list saved sessions
 vogix session undo                   # undo the last window change (restore from autosave stack)
+```
+
+### Desktop
+
+The vogix desktop shell's verbs — the v1→v2 contract (the quickshell
+transport behind them is an implementation detail):
+
+```bash
+vogix desktop status                     # is a shell instance running (and the bar state)
+vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
+vogix desktop check                      # validate desktop.json: slots ∈ the 16 praxis keys, resolvable in the live palette
+vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
+vogix desktop bar show|hide|toggle       # the bar surface
+vogix desktop notify dismiss [--all]     # the notification surface
+vogix desktop notify dnd on|off|toggle|status
+vogix desktop notify history [-n N]      # recent notifications (works without a shell)
+vogix desktop lock [--wait-secure SECS]  # engage the session lock (fails LOUDLY)
+vogix desktop lock status                # unlocked | locked | secure
+vogix desktop background set|next|clear|status   # the wallpaper layer
+vogix desktop osd volume --value 40      # flash the on-screen display
+vogix desktop launcher [--mode M]        # the launcher overlay (apps files calc emoji ssh clipboard theme background)
+vogix desktop menu [--summon ID]         # the root menu from desktop.json
+vogix desktop power [ACTION]             # the power menu; lock|logout|suspend|reboot|poweroff run directly
+vogix desktop panel [NAME|--close]      # bar panels: audio network bluetooth power monitor tailscale calendar weather
+vogix desktop nightlight on|off|toggle|status   # hyprsunset night light
+vogix desktop stay-awake on|off|toggle|status   # hold every idle stage open
+vogix desktop remind add "text" --in 10m        # timed reminder (list|clear too)
+vogix desktop gallery [--close]          # the token/surface dev gallery
+vogix desktop select [-p PROMPT]         # dmenu mode: items on stdin, choice on stdout (exit 1 on cancel)
+vogix desktop input [-p PROMPT]          # dmenu mode: free-text entry
+```
+
+### Greeter
+
+```bash
+vogix greeter sync   # copy the live theme into /var/lib/vogix/greeter (the SDDM
+                     # greeter's runtime follow; wired as a themeApply hook by
+                     # programs.vogix.greeter.sync)
 ```
 
 ### Modes

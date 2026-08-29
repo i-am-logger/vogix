@@ -339,14 +339,19 @@ fn normalise_submap(payload: &str) -> String {
 ///   move    → link    (blue)
 ///   resize  → highlight (purple)
 ///   console → foreground_comment (muted passthrough)
-fn mode_border_slot(mode: &str) -> &'static str {
-    match mode {
-        "desktop" => "active",
-        "move" => "link",
-        "resize" => "highlight",
-        "console" => "foreground_comment",
-        _ => "foreground_border",
-    }
+/// The mode's border slot from the LOADED schema's modeColors table —
+/// input.json is the single source (the engine reads the same table), with
+/// foreground_border as the fallback for a mode the table doesn't name.
+/// The old hardcoded mode→slot match is gone: the table is data.
+fn mode_border_slot(mode: &str) -> String {
+    mode_border_slot_from(crate::input::schema::Schema::load().ok().as_ref(), mode)
+}
+
+fn mode_border_slot_from(schema: Option<&crate::input::schema::Schema>, mode: &str) -> String {
+    schema
+        .and_then(|s| s.mode_colors.get(mode).map(|c| c.slot.clone()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "foreground_border".to_string())
 }
 
 /// "#aabbcc" / "aabbcc" → "rgb(aabbcc)" for Hyprland's col.* keywords.
@@ -359,7 +364,7 @@ fn hex_to_hypr_rgb(hex: &str) -> String {
 /// reacts to submap-change events) so it can never delay a keybind — that
 /// async-on-the-critical-path mistake is exactly what broke momentary mode.
 /// Best-effort: any failure (no theme_sources, hyprctl missing) is silently skipped.
-fn apply_mode_border(mode: &str) {
+pub(crate) fn apply_mode_border(mode: &str) {
     let config = match crate::config::Config::load() {
         Ok(c) => c,
         Err(_) => return,
@@ -372,7 +377,7 @@ fn apply_mode_border(mode: &str) {
         Ok(c) => c,
         Err(_) => return,
     };
-    let active = match colors.get(mode_border_slot(mode)) {
+    let active = match colors.get(&mode_border_slot(mode)) {
         Some(h) => hex_to_hypr_rgb(h),
         None => return,
     };
@@ -531,7 +536,7 @@ mod tests {
         }
     }
 
-    use super::{hex_to_hypr_rgb, mode_border_slot, normalise_submap};
+    use super::{hex_to_hypr_rgb, mode_border_slot_from, normalise_submap};
 
     #[test]
     fn test_normalise_submap_empty_is_app() {
@@ -558,20 +563,40 @@ mod tests {
 
     #[test]
     fn test_mode_border_slot_uses_semantic_accents_not_status() {
-        // Modes map to neutral/accent slots — NEVER warning/danger (reserved).
-        // Keys are the underscore form the vogix16 loader emits.
-        assert_eq!(mode_border_slot("app"), "foreground_border");
-        assert_eq!(mode_border_slot("desktop"), "active");
-        assert_eq!(mode_border_slot("move"), "link");
-        assert_eq!(mode_border_slot("resize"), "highlight");
-        assert_eq!(mode_border_slot("console"), "foreground_comment");
-        // Unknown modes fall back to the neutral resting colour.
-        assert_eq!(mode_border_slot("whatever"), "foreground_border");
+        // The mode→slot table is DATA now (input.json modeColors, shipped in
+        // behavior/defaults.nix); this pins the shipped table's shape and the
+        // invariant that modes map to neutral/accent slots — NEVER
+        // warning/danger (reserved for real conditions).
+        let schema = crate::input::schema::Schema::from_json(
+            r#"{
+              "modeGraph": { "root": "app", "modes": { "app": { "parent": null, "type": "normal" } }},
+              "keybindings": { "modKey": "super" },
+              "modes": { "app": { "bindings": {} } },
+              "modeColors": {
+                "app":     { "slot": "foreground_border",  "label": "app" },
+                "desktop": { "slot": "active",             "label": "desktop" },
+                "move":    { "slot": "link",               "label": "move" },
+                "resize":  { "slot": "highlight",          "label": "resize" },
+                "console": { "slot": "foreground_comment", "label": "console" }
+              }
+            }"#,
+        )
+        .expect("schema parses");
+        let s = Some(&schema);
+        assert_eq!(mode_border_slot_from(s, "app"), "foreground_border");
+        assert_eq!(mode_border_slot_from(s, "desktop"), "active");
+        assert_eq!(mode_border_slot_from(s, "move"), "link");
+        assert_eq!(mode_border_slot_from(s, "resize"), "highlight");
+        assert_eq!(mode_border_slot_from(s, "console"), "foreground_comment");
+        // Unknown modes (and no schema at all) fall back to the neutral
+        // resting colour.
+        assert_eq!(mode_border_slot_from(s, "whatever"), "foreground_border");
+        assert_eq!(mode_border_slot_from(None, "desktop"), "foreground_border");
         // Guard the invariant: no mode is allowed to use a status slot.
         for m in ["app", "desktop", "move", "resize", "console", "x"] {
-            let slot = mode_border_slot(m);
+            let slot = mode_border_slot_from(s, m);
             assert!(
-                !["warning", "danger", "notice", "success"].contains(&slot),
+                !["warning", "danger", "notice", "success"].contains(&slot.as_str()),
                 "mode {m} must not use status slot {slot}"
             );
         }

@@ -3,6 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # The desktop shell's QML runtime, pinned to the v0.3.1 tag: nixpkgs still
+    # carries 0.3.0, and 0.3.1 fixes "session lock crashes on sleep, wake,
+    # DPMS, and unlocking" — a lock-screen must not ride the older build.
+    # `follows` is required: upstream warns that quickshell built against a
+    # different nixpkgs than its Qt deps crashes. Drop this input when nixpkgs
+    # reaches ≥0.3.1.
+    quickshell = {
+      url = "git+https://git.outfoxxed.me/quickshell/quickshell?ref=refs/tags/v0.3.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -64,6 +74,10 @@
         "aarch64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      # Every vogix-licensed (CC BY-NC-SA 4.0) package a pkgs instantiation
+      # may evaluate — ONE list, used by every allowUnfreePredicate here and
+      # mirrored by consumers (mynixos my.system.allowedUnfreePackages).
+      unfreePackageNames = [ "vogix" "vogix-desktop-qml" "vogix-sddm-theme" "vogix-plymouth" ];
     in
     {
       # NixOS module (console colors, security wrappers, hardware)
@@ -86,7 +100,7 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "vogix" ];
+            config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
           };
           # Built with nixpkgs' standard buildRustPackage (nix/packages/vogix.nix).
           # cargo's vendoring fetches the whole praxis repo, so its
@@ -107,17 +121,65 @@
               --zsh <($out/bin/vogix completions zsh) \
               --fish <($out/bin/vogix completions fish)
           '';
+          # The desktop shell's v1 QML tree (a quickshell config directory).
+          vogix-desktop-qml = pkgs.callPackage ./nix/packages/vogix-desktop-qml.nix { };
+          # The session locker, shaped as its own package so it slots into
+          # environment.locker / $LOCKER selectors: engage the shell's lock
+          # and fail unless the compositor reports it SECURE within 4s.
+          vogix-lock = pkgs.writeShellApplication {
+            name = "vogix-lock";
+            runtimeInputs = [ vogix ];
+            text = ''exec vogix desktop lock --wait-secure 4 "$@"'';
+          };
+          # The launcher, shaped as its own package so it slots into
+          # environment.launcher / $LAUNCHER selectors. Speaks the
+          # walker-compatible `--dmenu [-p PROMPT]` picker form (items on
+          # stdin, choice on stdout, exit 1 on cancel) so `vogix input keys`
+          # and scripts keep a picker whichever launcher the host selects.
+          vogix-launcher = pkgs.writeShellApplication {
+            name = "vogix-launcher";
+            runtimeInputs = [ vogix ];
+            text = ''
+              if [ "''${1:-}" = "--dmenu" ]; then
+                shift
+                prompt=""
+                while [ $# -gt 0 ]; do
+                  case "$1" in
+                    -p)
+                      prompt="''${2:-}"
+                      shift
+                      if [ $# -gt 0 ]; then shift; fi
+                      ;;
+                    *) shift ;;
+                  esac
+                done
+                if [ -n "$prompt" ]; then
+                  exec vogix desktop select --prompt "$prompt"
+                fi
+                exec vogix desktop select
+              fi
+              exec vogix desktop launcher "$@"
+            '';
+          };
+          # The SDDM greeter theme with its neutral fallback palette; the
+          # NixOS module rebuilds it with the real palette via callPackage.
+          vogix-sddm-theme = pkgs.callPackage ./nix/packages/vogix-sddm-theme.nix { };
         in
         {
-          inherit vogix;
+          inherit vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
           default = vogix;
         }
       );
 
-      # Overlay to make vogix available in pkgs
-      overlays.default = _final: prev: {
-        inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix;
-      };
+      # Overlay to make vogix (and the desktop shell's QML runtime) available
+      # in pkgs. quickshell's own overlay is COMPOSED — its package is built
+      # against the consumer's final pkgs, never re-exported as a foreign
+      # instance, so its Qt deps always match the host nixpkgs (upstream warns
+      # a mismatch crashes).
+      overlays.default = final: prev:
+        (inputs.quickshell.overlays.default final prev) // {
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
+        };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
       overlays.liquidctl = _final: prev: {
@@ -138,7 +200,7 @@
             nixpkgs.overlays = [ self.overlays.default ];
 
             # Allow unfree license for testing
-            nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "vogix" ];
+            nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
 
             home-manager.useGlobalPkgs = true;
             home-manager.useUserPackages = true;
@@ -156,7 +218,7 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "vogix" ];
+            config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
           };
           testArgs = {
             inherit pkgs home-manager self;
@@ -164,6 +226,290 @@
           };
         in
         {
+          # Pure-Nix unit tests for the config generators (appearance,
+          # behavior, the merged Hyprland render incl. the Lua projection).
+          # Each suite deepSeq-forces its assertions and THROWS on failure, so
+          # a broken generator fails this derivation at INSTANTIATION — it
+          # runs under `nix flake check --no-build` and never needs a builder.
+          nix-unit =
+            let
+              inherit (pkgs) lib;
+              suites = {
+                appearance = (import ./nix/modules/appearance/tests.nix { inherit pkgs lib; }).passed;
+                behavior = (import ./nix/modules/behavior/tests.nix { inherit pkgs lib; }).passed;
+                hyprland = (import ./nix/modules/hyprland-tests.nix { inherit pkgs lib; }).passed;
+                contract = (import ./nix/modules/contract-tests.nix { inherit pkgs lib; }).passed;
+              };
+            in
+            pkgs.runCommand "vogix-nix-unit"
+              (builtins.mapAttrs (_: toString) suites)
+              ''
+                echo "appearance: $appearance  behavior: $behavior  hyprland: $hyprland  contract: $contract"
+                touch $out
+              '';
+
+          # The appearance options must actually REACH the rendered Hyprland
+          # config through the module system. They used to be declared behind
+          # an `options = { … }` wrapper that the merge site never unwrapped,
+          # so every `programs.vogix.appearance.{gaps,decoration,blur,…}`
+          # setting was silently discarded and the render always used
+          # defaults.nix. This evaluates a real home-manager configuration and
+          # asserts a non-default gap survives into the config text.
+          appearance-options =
+            let
+              hmConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                        gaps.inner = 33;
+                        decoration.rounding = 4;
+                      };
+                      enableDaemon = false;
+                    };
+                    wayland.windowManager.hyprland = {
+                      enable = true;
+                      package = null;
+                      portalPackage = null;
+                    };
+                  }
+                ];
+              };
+              inherit (hmConf.config.xdg.configFile."hypr/hyprland.conf") text;
+              ok = pkgs.lib.hasInfix "gaps_in=33" text && pkgs.lib.hasInfix "rounding=4" text;
+            in
+            assert ok || throw "programs.vogix.appearance.* did not reach the rendered Hyprland config";
+            pkgs.runCommand "vogix-appearance-options" { } ''
+              echo "appearance options reach the rendered config"
+              touch $out
+            '';
+
+          # Lint the desktop shell's QML against the pinned quickshell's
+          # modules. Two categories are disabled because quickshell's
+          # published qmltypes cannot express them (PanelWindow is creatable
+          # and `margins` is a real grouped property — both verified against
+          # the 0.3.1 sources); everything else must be clean.
+          desktop-qmllint =
+            let
+              qsPkgs = import nixpkgs {
+                inherit system;
+                overlays = [ self.overlays.default ];
+                config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
+              };
+            in
+            pkgs.runCommand "vogix-desktop-qmllint"
+              {
+                nativeBuildInputs = [ pkgs.qt6.qtdeclarative ];
+                qml = qsPkgs.vogix-desktop-qml;
+                qsQml = "${qsPkgs.quickshell}/lib/qt-6/qml";
+                mmQml = "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml";
+              } ''
+              # quickshell maps the `qs.` module URI onto the config root at
+              # runtime; give qmllint the same view with a staged import root
+              # where qs/ IS the package.
+              mkdir lintroot
+              ln -s "$qml" lintroot/qs
+              find $qml -name '*.qml' -print0 | xargs -0 qmllint \
+                -I "$qsQml" -I "$mmQml" -I "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml" -I "$PWD/lintroot" \
+                --uncreatable-type disable --unresolved-type disable \
+                2>&1 | tee lint.out || true
+              if grep -E 'Warning|Error' lint.out | grep -v 'grouped property scope margins'; then
+                echo "qmllint found real issues"; exit 1
+              fi
+              touch $out
+            '';
+
+          # The shell actually RUNS: a headless cage compositor hosts the real
+          # quickshell loading the real QML against fixture contract files,
+          # and the bar IPC round-trips (status → toggle → status). The full
+          # Hyprland-hosted test comes with the VM desktop suite; this pins
+          # "the QML loads and the verbs answer" on every check, no VM needed.
+          desktop-smoke =
+            let
+              qsPkgs = import nixpkgs {
+                inherit system;
+                overlays = [ self.overlays.default ];
+                config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
+              };
+              themeJson = builtins.toJSON {
+                schema = 1;
+                theme = "smoke";
+                variant = "night";
+                scheme = "vogix16";
+                polarity = "dark";
+                backgrounds = [ ];
+                palette = { base00 = "#101010"; };
+                semantic = {
+                  active = "#1c1c1c";
+                  background = "#101010";
+                  background_selection = "#121212";
+                  background_surface = "#111111";
+                  danger = "#1b1b1b";
+                  foreground_border = "#141414";
+                  foreground_bright = "#171717";
+                  foreground_comment = "#131313";
+                  foreground_heading = "#161616";
+                  foreground_text = "#151515";
+                  highlight = "#1e1e1e";
+                  link = "#1d1d1d";
+                  notice = "#1a1a1a";
+                  special = "#1f1f1f";
+                  success = "#181818";
+                  warning = "#191919";
+                };
+              };
+              desktopJson = builtins.toJSON {
+                schema = 1;
+                font = { family = "monospace"; size = 13; };
+                bar = {
+                  enable = true;
+                  position = "top";
+                  height = 32;
+                  layout = { left = [ "workspaces" "mode" ]; center = [ "window" ]; right = [ "theme" "clock" ]; };
+                };
+                surfaces.bar = {
+                  background = { slot = "background"; alpha = 0.92; };
+                  foreground = { slot = "foreground_text"; alpha = 1.0; };
+                  muted = { slot = "foreground_comment"; alpha = 1.0; };
+                  accent = { slot = "active"; alpha = 1.0; };
+                  border = { slot = "foreground_border"; alpha = 1.0; };
+                  urgent = { slot = "danger"; alpha = 1.0; };
+                };
+              };
+            in
+            pkgs.runCommand "vogix-desktop-smoke"
+              {
+                nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell ];
+                qml = qsPkgs.vogix-desktop-qml;
+                inherit themeJson desktopJson;
+                passAsFile = [ "themeJson" "desktopJson" ];
+              } ''
+              export HOME=$TMPDIR/home
+              export XDG_CONFIG_HOME=$HOME/.config
+              export XDG_STATE_HOME=$HOME/.local/state
+              export XDG_RUNTIME_DIR=$TMPDIR/rt
+              mkdir -p $XDG_CONFIG_HOME/vogix-desktop $XDG_STATE_HOME/vogix/desktop $XDG_RUNTIME_DIR
+              chmod 700 $XDG_RUNTIME_DIR
+              cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
+              cp $desktopJsonPath $XDG_STATE_HOME/vogix/desktop.json
+
+              cat > inner.sh <<INNER
+              #!${pkgs.runtimeShell}
+              export QS_NO_RELOAD_POPUP=1 QS_DISABLE_FILE_WATCHER=1
+              # No GPU and no GL in the build sandbox: render the scene with
+              # Qt's software adaptation so the smoke also proves the bar
+              # actually paints, not just that the engine loads.
+              export QT_QUICK_BACKEND=software
+              qs -p $qml > $TMPDIR/qs.log 2>&1 &
+              QSPID=\$!
+              sleep 5
+              kill -0 \$QSPID 2>/dev/null && echo ALIVE >> $TMPDIR/result
+              qs -p $qml ipc call bar status >> $TMPDIR/result
+              qs -p $qml ipc call bar toggle >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call bar status >> $TMPDIR/result
+              qs -p $qml ipc call theme reload >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call launcher status >> $TMPDIR/result
+              qs -p $qml ipc call power toggle >> $TMPDIR/result
+              qs -p $qml ipc call power status >> $TMPDIR/result
+              qs -p $qml ipc call power close >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call panel toggle calendar >> $TMPDIR/result
+              qs -p $qml ipc call panel status >> $TMPDIR/result
+              qs -p $qml ipc call panel close >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call stayawake toggle >> $TMPDIR/result
+              qs -p $qml ipc call stayawake status >> $TMPDIR/result
+              qs -p $qml ipc call nightlight status >> $TMPDIR/result
+              qs -p $qml ipc call gallery open >> $TMPDIR/result
+              qs -p $qml ipc call gallery status >> $TMPDIR/result
+              qs -p $qml ipc call gallery close >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call reminders list >> $TMPDIR/result
+              kill \$QSPID 2>/dev/null || true
+              INNER
+              chmod +x inner.sh
+              WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
+                cage -- ./inner.sh || true
+
+              echo "── result:"; cat $TMPDIR/result || true
+              echo "── log tail:"; tail -5 $TMPDIR/qs.log || true
+              grep -q '^ALIVE$' $TMPDIR/result
+              grep -q '^shown$' $TMPDIR/result
+              grep -q '^hidden$' $TMPDIR/result
+              grep -q '^closed$' $TMPDIR/result
+              grep -q '^open$' $TMPDIR/result
+              grep -q '^calendar$' $TMPDIR/result
+              grep -q '^on$' $TMPDIR/result
+              grep -q '^off$' $TMPDIR/result
+              grep -q '^no reminders$' $TMPDIR/result
+              ! grep -iq 'is not a type\|module .* is not installed\|Failed to load configuration' $TMPDIR/qs.log
+              touch $out
+            '';
+
+          # Every desktop theme variant ships its backgrounds: the generated
+          # "veil" is always present (rendered from that variant's own
+          # palette), curated extras merge in through
+          # appearance.extraBackgrounds, and backgrounds.json lists them all —
+          # BESIDE theme.json, which must stay byte-identical between render
+          # layers and therefore cannot carry store paths.
+          desktop-backgrounds =
+            let
+              hmConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      desktop.enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                        extraBackgrounds.yoga.night = [{
+                          kind = "image";
+                          name = "extra.png";
+                          path = ./README.md;
+                        }];
+                      };
+                      enableDaemon = false;
+                    };
+                  }
+                ];
+              };
+            in
+            pkgs.runCommand "vogix-desktop-backgrounds"
+              {
+                themePkg = hmConf.config.xdg.dataFile."vogix/themes/yoga-night".source;
+                qmlPkg = self.packages.${system}.vogix-desktop-qml;
+                nativeBuildInputs = [ pkgs.jq ];
+              } ''
+              test -f "$themePkg/vogix-desktop/backgrounds.json"
+              test -e "$themePkg/vogix-desktop/backgrounds/veil"
+              jq -e '.backgrounds[0].kind == "generated" and (.backgrounds | length) == 3' \
+                "$themePkg/vogix-desktop/backgrounds.json"
+              jq -e '.backgrounds[1].kind == "shader" and .backgrounds[1].name == "aurora"' \
+                "$themePkg/vogix-desktop/backgrounds.json"
+              jq -e '.backgrounds[2].name == "extra.png"' "$themePkg/vogix-desktop/backgrounds.json"
+              # The shell ships the shader precompiled for the RHI backends.
+              test -f "$qmlPkg/data/aurora.frag.qsb"
+              echo "backgrounds present, generated first, aurora shader second, extras merged"
+              touch $out
+            '';
+
           # Quick sanity checks (binary, status, list, systemd)
           smoke = import ./nix/vm/tests/smoke.nix testArgs;
 
@@ -213,7 +559,7 @@
       #   let
       #     pkgs = import nixpkgs {
       #       inherit system;
-      #       config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "vogix" ];
+      #       config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
       #     };
       #   in
       #   {

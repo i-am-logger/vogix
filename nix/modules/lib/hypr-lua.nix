@@ -152,6 +152,12 @@ let
           if args == "b"
           then "hl.dsp.group.move_window({ forward = false })"
           else "hl.dsp.group.move_window()";
+        # `dpms <on|off>`: the Lua factory takes the bare mode (probed live);
+        # per-monitor dpms has no verified Lua form.
+        dpms =
+          if args == "on" || args == "off"
+          then "hl.dsp.dpms(${luaStr args})"
+          else throw "vogix: dpms takes 'on' or 'off' under the Lua engine, got '${args}'";
         exit = "hl.dsp.exit()";
       };
     in

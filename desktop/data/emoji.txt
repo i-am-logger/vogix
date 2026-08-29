@@ -1,0 +1,384 @@
+😀	grinning face smile happy
+😃	grinning face big eyes smile happy
+😄	grinning face smiling eyes happy laugh
+😁	beaming face smiling eyes grin
+😆	grinning squinting face laugh haha
+😅	grinning face sweat relief phew
+🤣	rolling on the floor laughing rofl
+😂	face with tears of joy lol laugh
+🙂	slightly smiling face
+😉	winking face wink
+😊	smiling face with smiling eyes blush
+😍	smiling face heart eyes love
+🥰	smiling face with hearts love adore
+😘	face blowing a kiss
+😋	face savoring food yum tasty
+😜	winking face with tongue silly
+🤪	zany face crazy wild
+🤔	thinking face hmm think
+🤨	face with raised eyebrow skeptical
+😐	neutral face meh
+😑	expressionless face blank
+🙄	face with rolling eyes
+😏	smirking face smirk
+😒	unamused face annoyed
+😞	disappointed face sad
+😔	pensive face sad
+😟	worried face concern
+😕	confused face
+🙁	slightly frowning face sad
+😣	persevering face struggle
+😖	confounded face frustrated
+😫	tired face exhausted
+😩	weary face tired
+🥺	pleading face puppy eyes please
+😢	crying face sad tear
+😭	loudly crying face sob bawl
+😤	face with steam from nose frustrated huff
+😠	angry face mad
+😡	pouting face rage furious
+🤬	face with symbols on mouth swearing curse
+🤯	exploding head mind blown
+😳	flushed face embarrassed blush
+🥵	hot face heat sweating
+🥶	cold face freezing ice
+😱	face screaming in fear scream shock
+😨	fearful face scared
+😰	anxious face with sweat nervous
+😥	sad but relieved face
+🤗	smiling face with open hands hug
+🤭	face with hand over mouth oops giggle
+🤫	shushing face quiet secret
+🤥	lying face pinocchio liar
+😶	face without mouth speechless
+😬	grimacing face awkward
+😮	face with open mouth surprised wow
+😲	astonished face shocked
+🥱	yawning face tired bored
+😴	sleeping face zzz sleep
+🤤	drooling face
+😪	sleepy face
+😷	face with medical mask sick
+🤒	face with thermometer sick fever
+🤕	face with head bandage injured
+🤢	nauseated face sick green
+🤮	face vomiting sick throw up
+🤧	sneezing face sick achoo
+😇	smiling face with halo angel innocent
+🥳	partying face celebration party
+🥸	disguised face glasses mustache
+😎	smiling face with sunglasses cool
+🤓	nerd face glasses geek
+🧐	face with monocle inspect
+😈	smiling face with horns devil evil
+👿	angry face with horns imp devil
+💀	skull death dead
+☠️	skull and crossbones danger poison
+👻	ghost boo halloween
+👽	alien extraterrestrial ufo
+🤖	robot bot machine
+💩	pile of poo poop
+🤡	clown face joker
+👋	waving hand wave hello goodbye
+🤚	raised back of hand
+✋	raised hand stop high five
+🖖	vulcan salute spock
+👌	ok hand okay perfect
+🤌	pinched fingers italian chef
+✌️	victory hand peace
+🤞	crossed fingers luck hope
+🤟	love-you gesture rock
+🤘	sign of the horns rock metal
+🤙	call me hand shaka
+👈	backhand index pointing left
+👉	backhand index pointing right
+👆	backhand index pointing up
+👇	backhand index pointing down
+☝️	index pointing up
+👍	thumbs up like yes approve
+👎	thumbs down dislike no
+✊	raised fist power
+👊	oncoming fist punch bro
+🤛	left-facing fist bump
+🤜	right-facing fist bump
+👏	clapping hands applause clap
+🙌	raising hands celebration hooray
+👐	open hands
+🤲	palms up together prayer
+🤝	handshake deal agreement
+🙏	folded hands please thanks prayer
+💪	flexed biceps muscle strong
+✍️	writing hand write
+💅	nail polish sassy
+🤳	selfie
+👀	eyes look see watching
+👁️	eye look
+🧠	brain smart mind
+🦴	bone
+🦷	tooth dentist
+👅	tongue taste
+👄	mouth lips
+💋	kiss mark lipstick
+❤️	red heart love
+🧡	orange heart
+💛	yellow heart
+💚	green heart
+💙	blue heart
+💜	purple heart
+🖤	black heart
+🤍	white heart
+🤎	brown heart
+💔	broken heart heartbreak
+❣️	heart exclamation
+💕	two hearts love
+💞	revolving hearts
+💓	beating heart
+💗	growing heart
+💖	sparkling heart
+💘	heart with arrow cupid
+💝	heart with ribbon gift
+💟	heart decoration
+💯	hundred points perfect score
+💢	anger symbol
+💥	collision boom explosion
+💫	dizzy stars
+💦	sweat droplets water splash
+💨	dashing away wind fast
+🕳️	hole
+💬	speech balloon chat
+💭	thought balloon thinking
+💤	zzz sleep
+🌋	volcano eruption
+🌊	water wave ocean sea
+🔥	fire flame hot lit
+✨	sparkles shiny magic
+🌟	glowing star
+⭐	star
+🌙	crescent moon night
+☀️	sun sunny
+⛅	sun behind cloud
+🌧️	cloud with rain
+⛈️	cloud with lightning and rain storm
+🌩️	cloud with lightning
+❄️	snowflake snow cold winter
+☃️	snowman snow winter
+🌈	rainbow pride
+🌸	cherry blossom flower spring
+🌹	rose flower
+🌻	sunflower
+🌲	evergreen tree pine
+🌴	palm tree tropical
+🍀	four leaf clover luck
+🍁	maple leaf autumn fall
+🍄	mushroom fungus
+🌍	globe europe africa earth world
+🚀	rocket launch space ship
+🛸	flying saucer ufo
+✈️	airplane flight travel
+🚗	car automobile drive
+🚲	bicycle bike
+🏠	house home
+🏢	office building work
+⌛	hourglass done time
+⏰	alarm clock wake
+⌚	watch time
+📅	calendar date
+📆	tear-off calendar
+🗓️	spiral calendar schedule
+📈	chart increasing up growth
+📉	chart decreasing down loss
+📊	bar chart statistics
+📋	clipboard list
+📌	pushpin pin
+📎	paperclip attach
+🔒	locked lock secure
+🔓	unlocked open
+🔑	key password access
+🔨	hammer tool build
+🛠️	hammer and wrench tools fix
+⚙️	gear settings configure
+🔧	wrench tool fix
+🔩	nut and bolt
+⚡	high voltage lightning zap fast
+🔋	battery power charge
+🔌	electric plug power
+💻	laptop computer
+🖥️	desktop computer
+🖨️	printer print
+⌨️	keyboard type
+🖱️	computer mouse click
+💾	floppy disk save
+💿	optical disk cd
+📀	dvd disk
+📱	mobile phone smartphone
+📞	telephone receiver call
+📷	camera photo
+🎥	movie camera film video
+📺	television tv
+📻	radio
+🎵	musical note music song
+🎶	musical notes music melody
+🎤	microphone sing karaoke
+🎧	headphone music listen
+🎮	video game controller gaming
+🎲	game die dice random
+🧩	puzzle piece jigsaw
+🎯	bullseye direct hit target goal
+🏆	trophy winner champion
+🥇	first place gold medal
+🥈	second place silver medal
+🥉	third place bronze medal
+⚽	soccer ball football
+🏀	basketball
+🎾	tennis ball
+🎳	bowling strike
+🎁	wrapped gift present
+🎉	party popper celebration tada
+🎊	confetti ball celebration
+🎂	birthday cake celebrate
+🍕	pizza slice
+🍔	hamburger burger
+🍟	french fries
+🌮	taco mexican
+🍣	sushi japanese
+🍜	steaming bowl ramen noodles
+🍩	doughnut donut
+🍪	cookie biscuit
+🍫	chocolate bar candy
+🍿	popcorn movie snack
+☕	hot beverage coffee tea
+🍵	teacup tea green
+🍺	beer mug drink
+🍷	wine glass drink
+🍸	cocktail glass martini
+🥂	clinking glasses cheers toast
+🥤	cup with straw soda
+🧊	ice cube cold
+🍎	red apple fruit
+🍌	banana fruit
+🍇	grapes fruit
+🍓	strawberry fruit
+🍉	watermelon fruit
+🍋	lemon citrus sour
+🥑	avocado
+🥕	carrot vegetable
+🌽	ear of corn maize
+🐶	dog face puppy pet
+🐱	cat face kitten pet
+🐭	mouse face
+🐹	hamster
+🐰	rabbit face bunny
+🦊	fox
+🐻	bear
+🐼	panda
+🐨	koala
+🐯	tiger face
+🦁	lion
+🐮	cow face
+🐷	pig face
+🐸	frog
+🐵	monkey face
+🐔	chicken
+🐧	penguin
+🐦	bird
+🦅	eagle
+🦉	owl wise night
+🦄	unicorn magic
+🐴	horse face
+🐝	honeybee bee
+🐛	bug insect caterpillar
+🦋	butterfly
+🐌	snail slow
+🐞	lady beetle ladybug
+🐢	turtle slow tortoise
+🐍	snake python
+🦖	t-rex dinosaur
+🐙	octopus
+🦑	squid
+🦀	crab rust
+🐟	fish
+🐬	dolphin
+🐳	spouting whale
+🦈	shark
+💧	droplet water drip
+🎨	artist palette art paint
+🧵	thread sewing string
+🧶	yarn knitting
+👑	crown king queen royal
+💍	ring engagement wedding
+💎	gem stone diamond jewel
+📢	loudspeaker announcement
+🔔	bell notification ring
+🔕	bell with slash mute silent
+📣	megaphone shout
+🔍	magnifying glass left search
+🔎	magnifying glass right search zoom
+🕯️	candle light
+💡	light bulb idea
+🔦	flashlight torch
+📖	open book read
+📚	books library study
+📝	memo note pencil write
+✏️	pencil write
+🖊️	pen write
+📄	page facing up document
+📃	page with curl document
+📜	scroll document ancient
+📰	newspaper news
+🗞️	rolled-up newspaper news
+📦	package box delivery shipping
+📫	closed mailbox with raised flag mail
+✉️	envelope mail letter
+📧	e-mail email
+💌	love letter
+💰	money bag cash rich
+💸	money with wings spend loss
+💳	credit card payment
+🪙	coin money
+⚖️	balance scale justice law
+🧲	magnet attract
+🔬	microscope science lab
+🔭	telescope astronomy stars
+🧪	test tube experiment science
+🧬	dna genetics
+💊	pill medicine drug
+💉	syringe injection vaccine
+🩹	adhesive bandage band-aid
+🚑	ambulance emergency
+🚨	police car light siren alert emergency
+🚦	vertical traffic light
+🚧	construction barrier work
+⛔	no entry forbidden
+🚫	prohibited banned no
+✅	check mark button done yes correct
+❌	cross mark wrong no
+❓	question mark
+❗	exclamation mark warning
+⚠️	warning caution alert
+♻️	recycling symbol
+🔄	counterclockwise arrows refresh reload
+🔁	repeat button loop
+▶️	play button start
+⏸️	pause button
+⏹️	stop button
+⏩	fast-forward button
+⏪	fast reverse button rewind
+🔀	shuffle tracks button random
+🔼	upwards button up
+🔽	downwards button down
+➕	plus add
+➖	minus subtract
+➗	divide division
+✖️	multiply times
+🟰	heavy equals sign
+♾️	infinity forever
+🆗	ok button okay
+🆕	new button
+🆓	free button
+🔟	keycap ten
+#️⃣	keycap number sign hash
+*️⃣	keycap asterisk star
+🏳️	white flag surrender
+🏴	black flag
+🏁	chequered flag finish race done
+🚩	triangular flag red warning

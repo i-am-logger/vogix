@@ -31,7 +31,7 @@ fn test_render_template_string_simple() {
     let colors = sample_colors();
     let template = r##"background = "{{ colors.base00 }}""##;
 
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
     assert_eq!(result, "background = \"#1e1e2e\"");
 }
 
@@ -46,7 +46,7 @@ foreground = "{{ colors.base05 }}"
 red = "{{ colors.base08 }}"
 green = "{{ colors.base0B }}""##;
 
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
     assert!(result.contains("background = \"#1e1e2e\""));
     assert!(result.contains("foreground = \"#cdd6f4\""));
     assert!(result.contains("red = \"#f38ba8\""));
@@ -62,7 +62,7 @@ size = 12
 [colors.primary]
 background = "{{ colors.base00 }}""##;
 
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
     assert!(result.contains("[font]"));
     assert!(result.contains("size = 12"));
     assert!(result.contains("background = \"#1e1e2e\""));
@@ -73,7 +73,7 @@ fn test_render_template_string_missing_variable() {
     let colors = sample_colors();
     let template = r##"background = "{{ colors.nonexistent }}""##;
 
-    let result = render_template_string(template, &colors);
+    let result = render_template_string(template, &colors, &HashMap::new());
     // Tera errors on missing variables by default (strict mode)
     assert!(result.is_err());
 }
@@ -84,7 +84,7 @@ fn test_render_template_string_invalid_syntax() {
     // Missing closing braces
     let template = r##"background = "{{ colors.base00 }""##;
 
-    let result = render_template_string(template, &colors);
+    let result = render_template_string(template, &colors, &HashMap::new());
     assert!(result.is_err());
 }
 
@@ -99,7 +99,7 @@ fn test_render_template_from_file() {
     )
     .unwrap();
 
-    let result = render_template(template_file.path(), &colors).unwrap();
+    let result = render_template(template_file.path(), &colors, &HashMap::new()).unwrap();
     assert!(result.contains("background = \"#1e1e2e\""));
     assert!(result.contains("foreground = \"#cdd6f4\""));
 }
@@ -107,7 +107,7 @@ fn test_render_template_from_file() {
 #[test]
 fn test_render_template_file_not_found() {
     let colors = sample_colors();
-    let result = render_template("/nonexistent/template.vogix", &colors);
+    let result = render_template("/nonexistent/template.vogix", &colors, &HashMap::new());
     assert!(result.is_err());
 }
 
@@ -142,7 +142,7 @@ magenta = "{{ colors.base0E }}"
 cyan = "{{ colors.base0C }}"
 white = "{{ colors.base07 }}""##;
 
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
 
     // Verify key color mappings
     assert!(result.contains("background = \"#1e1e2e\""));
@@ -162,7 +162,7 @@ fn test_render_base16_alacritty_template_file() {
     }
 
     let colors = sample_colors();
-    let result = render_template(template_path, &colors).unwrap();
+    let result = render_template(template_path, &colors, &HashMap::new()).unwrap();
 
     // Verify the template renders correctly
     assert!(result.contains("background = \"#1e1e2e\""));
@@ -203,7 +203,7 @@ fn test_render_vogix16_alacritty_template_file() {
     }
 
     let colors = sample_vogix16_colors();
-    let result = render_template(template_path, &colors).unwrap();
+    let result = render_template(template_path, &colors, &HashMap::new()).unwrap();
 
     // Verify semantic color mappings
     assert!(result.contains("background = \"#262626\""));
@@ -249,7 +249,7 @@ fn test_render_ansi16_alacritty_template_file() {
     }
 
     let colors = sample_ansi16_colors();
-    let result = render_template(template_path, &colors).unwrap();
+    let result = render_template(template_path, &colors, &HashMap::new()).unwrap();
 
     // Verify ANSI color mappings
     assert!(result.contains("background = \"#1d1f21\""));
@@ -264,7 +264,7 @@ fn test_hex_to_rgb_filter() {
     colors.insert("red".to_string(), "#FF5733".to_string());
 
     let template = "{{ colors.red | hex_to_rgb }}";
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
 
     assert_eq!(result, "0xFF,0x57,0x33");
 }
@@ -275,7 +275,7 @@ fn test_strip_hash_filter() {
     colors.insert("blue".to_string(), "#1e90ff".to_string());
 
     let template = "{{ colors.blue | strip_hash }}";
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
 
     assert_eq!(result, "1e90ff");
 }
@@ -286,7 +286,60 @@ fn test_hex_to_rgb_filter_lowercase() {
     colors.insert("color".to_string(), "#abcdef".to_string());
 
     let template = "{{ colors.color | hex_to_rgb }}";
-    let result = render_template_string(template, &colors).unwrap();
+    let result = render_template_string(template, &colors, &HashMap::new()).unwrap();
 
     assert_eq!(result, "0xab,0xcd,0xef");
+}
+
+/// The theme.json contract template must render BYTE-IDENTICAL to the Nix
+/// generator's `builtins.toJSON` output — the desktop shell reads whichever
+/// render layer produced the file (Nix-built theme package or the on-demand
+/// cache), so the two may never drift. The golden line below is the Nix
+/// generator's output for the same fixture (nix/modules/contract-tests.nix
+/// pins the Nix side to the identical string).
+#[test]
+fn theme_json_template_matches_nix_generator_bytes() {
+    let template = include_str!("../../templates/vogix16/theme.json.vogix");
+
+    // base00..base0F = #101010..#1f1f1f, keyed by the SNAKE semantic names
+    // the runtime colors map carries for vogix16.
+    let semantic_by_slot = [
+        "background",
+        "background_surface",
+        "background_selection",
+        "foreground_comment",
+        "foreground_border",
+        "foreground_text",
+        "foreground_heading",
+        "foreground_bright",
+        "success",
+        "warning",
+        "notice",
+        "danger",
+        "active",
+        "link",
+        "highlight",
+        "special",
+    ];
+    let colors: HashMap<String, String> = semantic_by_slot
+        .iter()
+        .enumerate()
+        .map(|(i, key)| {
+            let b = format!("{:02x}", 0x10 + i);
+            (key.to_string(), format!("#{b}{b}{b}"))
+        })
+        .collect();
+    let meta = HashMap::from([
+        ("theme".to_string(), "goldtest".to_string()),
+        ("variant".to_string(), "night".to_string()),
+        ("scheme".to_string(), "vogix16".to_string()),
+        ("polarity".to_string(), "dark".to_string()),
+    ]);
+
+    let rendered = render_template_string(template, &colors, &meta).unwrap();
+    let golden = concat!(
+        r##"{"backgrounds":[],"palette":{"base00":"#101010","base01":"#111111","base02":"#121212","base03":"#131313","base04":"#141414","base05":"#151515","base06":"#161616","base07":"#171717","base08":"#181818","base09":"#191919","base0A":"#1a1a1a","base0B":"#1b1b1b","base0C":"#1c1c1c","base0D":"#1d1d1d","base0E":"#1e1e1e","base0F":"#1f1f1f"},"polarity":"dark","schema":1,"scheme":"vogix16","semantic":{"active":"#1c1c1c","background":"#101010","background_selection":"#121212","background_surface":"#111111","danger":"#1b1b1b","foreground_border":"#141414","foreground_bright":"#171717","foreground_comment":"#131313","foreground_heading":"#161616","foreground_text":"#151515","highlight":"#1e1e1e","link":"#1d1d1d","notice":"#1a1a1a","special":"#1f1f1f","success":"#181818","warning":"#191919"},"theme":"goldtest","variant":"night"}"##,
+        "\n"
+    );
+    assert_eq!(rendered, golden);
 }

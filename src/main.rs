@@ -109,6 +109,10 @@ fn run(cli: &Cli) -> Result<()> {
 
         Commands::Hypr { command } => commands::hypr::handle_hypr(command),
 
+        Commands::Desktop { command } => commands::desktop::handle_desktop(command),
+
+        Commands::Greeter { command } => commands::greeter::handle_greeter(command),
+
         Commands::Cache {
             command: CacheCommands::Clean,
         } => handle_cache_clean(),
@@ -483,6 +487,10 @@ fn execute_side_effects(
             if let Err(e) = commands::shader::maybe_apply_shader(config, state) {
                 warn!("Shader apply failed: {}", e);
             }
+
+            // Repaint the current mode's border from the NEW palette — the
+            // mode's slot is data (input.json), the hex just changed.
+            commands::daemon::apply_mode_border(&state.current_mode);
 
             let theme_variant = format!("{}-{}", state.current_theme, state.current_variant);
             if reload_result.has_failures() {

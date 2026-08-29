@@ -10,7 +10,9 @@
 
 mod cache;
 mod completions;
-mod daemon;
+pub mod daemon;
+pub mod desktop;
+pub mod greeter;
 pub mod hypr;
 mod input;
 mod list;

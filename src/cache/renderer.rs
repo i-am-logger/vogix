@@ -45,6 +45,32 @@ pub fn render_to_cache(
     let variant_path = paths::theme_variant_path(theme_sources, scheme, theme, variant);
     let colors = theme::load_theme_colors(&variant_path, *scheme)?;
 
+    // The theme identity for `meta.*` template variables (the vogix-desktop
+    // theme.json contract embeds it). Polarity is read from the config.toml
+    // manifest — the SAME value the Nix render layer wrote there — so the two
+    // layers cannot disagree on it; the "dark" fallback mirrors the Nix
+    // side's `variantData.polarity or "dark"`.
+    let polarity = crate::theme::discover_themes()
+        .ok()
+        .and_then(|themes| {
+            themes
+                .into_iter()
+                .find(|t| t.name == theme && t.scheme == *scheme)
+        })
+        .and_then(|t| {
+            t.variants
+                .into_iter()
+                .find(|v| v.name == variant)
+                .map(|v| v.polarity)
+        })
+        .unwrap_or_else(|| "dark".to_string());
+    let meta = std::collections::HashMap::from([
+        ("theme".to_string(), theme.to_string()),
+        ("variant".to_string(), variant.to_string()),
+        ("scheme".to_string(), scheme.to_string()),
+        ("polarity".to_string(), polarity),
+    ]);
+
     // Find templates for this scheme
     let scheme_templates_path = templates_path.join(scheme.to_string());
     if !scheme_templates_path.exists() {
@@ -60,7 +86,7 @@ pub fn render_to_cache(
         let template_path = entry.path();
 
         if template_path.extension().is_some_and(|ext| ext == "vogix") {
-            render_template_file(&template_path, cache_path, &colors)?;
+            render_template_file(&template_path, cache_path, &colors, &meta)?;
         }
     }
 
@@ -72,6 +98,7 @@ fn render_template_file(
     template_path: &Path,
     cache_path: &Path,
     colors: &std::collections::HashMap<String, String>,
+    meta: &std::collections::HashMap<String, String>,
 ) -> Result<()> {
     // Get output filename (remove .vogix extension)
     let output_name = template_path
@@ -83,7 +110,7 @@ fn render_template_file(
     let output_path = cache_path.join(&output_name);
 
     // Render template
-    let rendered = template::render_template(template_path, colors)?;
+    let rendered = template::render_template(template_path, colors, meta)?;
 
     // Write to cache
     fs::write(&output_path, rendered)?;

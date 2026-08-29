@@ -20,6 +20,14 @@ let
 
   # Import behavior options
   behaviorOptions = import ../behavior/options.nix { inherit lib; };
+  # Bare option attrset (animations/decoration/blur/gaps/borderSize/group),
+  # merged into the `appearance` group below.
+  appearanceOptions = import ../appearance/options.nix { inherit lib; };
+  # The desktop shell fragment ({ desktop = mkOption …; }), merged at top
+  # level like the behavior fragment. The theme.json GENERATOR stays named
+  # applications/vogix-desktop.nix — an applications/desktop.nix would be
+  # silently clobbered by this merge.
+  desktopOptions = import ../desktop/options.nix { inherit lib; };
 
   # Per-app options (dynamically generated)
   appOptions = lib.listToAttrs (
@@ -142,7 +150,7 @@ in
           description = "Color saturation adjustment [0.0..2.0].";
         };
       };
-    };
+    } // appearanceOptions;
 
     enableDaemon = mkOption {
       type = types.bool;
@@ -191,9 +199,22 @@ in
       description = "Hardware theme apply commands. Keys are device names, values are shell commands with {{color}} placeholders resolved at runtime.";
     };
 
+    greeter = mkOption {
+      default = { };
+      description = "The greeter's runtime follow-through.";
+      type = types.submodule {
+        options.sync = mkEnableOption ''
+          copying the live theme into /var/lib/vogix/greeter on every theme
+          switch (`vogix greeter sync` through the themeApply hook), so the
+          SDDM greeter shows the CURRENT palette instead of the build-time
+          one. Needs the host's vogix.greeter.enable (the drop zone)'';
+      };
+    };
+
   }
   // appOptions
-  // behaviorOptions;
+  // behaviorOptions
+  // desktopOptions;
 
   # Export for use by other modules
   inherit availableApps vogix;
