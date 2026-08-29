@@ -251,6 +251,11 @@ impl Router {
             .clone()
     }
 
+    /// The graph's root mode name (what "no active mode" reads as).
+    pub fn root_mode(&self) -> String {
+        self.root.0.clone()
+    }
+
     /// The detector's next poll deadline (ms), if a caps gesture is pending.
     pub fn deadline(&self) -> Option<u64> {
         self.detector.deadline()
@@ -918,8 +923,11 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
 
     // Paint the current mode's border once at startup, so the mode-visibility cue
     // is correct from the start — a prior session/crash may have left the border
-    // at a non-app colour across this engine restart.
+    // at a non-app colour across this engine restart. Publish the mode file for
+    // the same reason: the bar's Mode widget reads it, and a stale value from a
+    // crashed session would otherwise stand until the first mode change.
     execute(&mut vdev, &mut hypr, router.paint_current_mode());
+    publish_mode(&router.mode());
 
     let start = Instant::now();
     let ms = move |start: &Instant| start.elapsed().as_millis() as u64;
@@ -1078,6 +1086,9 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         if have_shutdown_pipe && pollfds[shutdown_idx].revents & libc::POLLIN != 0 {
             log::info!("vogix input: shutdown signal received — releasing held modifiers");
             execute(&mut vdev, &mut hypr, router.release_held_modifiers());
+            // With the engine gone there is no mode: publish the root so the
+            // bar's Mode widget doesn't show a mode nothing will ever exit.
+            publish_mode(&router.root_mode());
             // Let the kernel deliver the key-up events before the uinput fd closes
             // on return (device teardown isn't ordered after the compositor reads
             // them) — otherwise a modifier could be left stuck across the restart.
