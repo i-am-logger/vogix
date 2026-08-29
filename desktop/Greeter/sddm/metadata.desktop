@@ -1,0 +1,9 @@
+[SddmGreeterTheme]
+Name=Vogix
+Description=Vogix-themed SDDM greeter (semantic slots from the active theme)
+Type=sddm-theme
+Version=1
+License=CC-BY-NC-SA-4.0
+Main=Main.qml
+ConfigFile=theme.conf
+QtVersion=6

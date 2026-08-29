@@ -49,6 +49,12 @@ pub enum Commands {
         command: ThemeCommands,
     },
 
+    /// The greeter's runtime follow (SDDM theme sync)
+    Greeter {
+        #[command(subcommand)]
+        command: GreeterCommands,
+    },
+
     /// Manage desktop sessions (save/restore workspaces)
     Session {
         #[command(subcommand)]
@@ -300,6 +306,14 @@ pub enum BackgroundCommands {
     Clear,
     /// Print what the wallpaper layer is showing
     Status,
+}
+
+#[derive(Subcommand)]
+pub enum GreeterCommands {
+    /// Copy the live theme (theme.json + the current background reference)
+    /// into /var/lib/vogix/greeter so the SDDM greeter follows the palette.
+    /// Wired as a themeApply hook by programs.vogix.greeter.sync
+    Sync,
 }
 
 #[derive(Subcommand)]

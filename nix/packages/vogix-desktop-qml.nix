@@ -10,6 +10,10 @@ runCommand "vogix-desktop-qml"
   src = builtins.path {
     path = ../../desktop;
     name = "vogix-desktop-qml-src";
+    # Greeter/ is SDDM's tree, not quickshell's: it rides its own package
+    # (vogix-sddm-theme) and leans on SDDM context properties (config,
+    # userModel, sddm) that only exist inside SDDM's engine.
+    filter = path: _type: builtins.baseNameOf path != "Greeter";
   };
   meta = {
     description = "vogix desktop shell (quickshell rendering layer)";

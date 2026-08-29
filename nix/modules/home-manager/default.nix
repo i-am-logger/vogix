@@ -421,6 +421,14 @@ in
       # Expose semantic color API for application modules
       programs.vogix.colors = vogix16Lib.semanticColors selectedColors;
 
+      # Greeter runtime follow: ride the existing post-switch apply hook
+      # (warn-only by design — a broken greeter sync never fails a theme
+      # switch). The verb copies theme.json + the current background into
+      # /var/lib/vogix/greeter for the SDDM theme's XHR read.
+      programs.vogix.themeApply = lib.mkIf cfg.greeter.sync {
+        greeter = "${cfg.package}/bin/vogix greeter sync";
+      };
+
       # Create theme symlinks in ~/.local/share/vogix/themes/
       xdg.dataFile = lib.mkMerge [
         # Theme variant symlinks

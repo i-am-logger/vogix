@@ -157,6 +157,38 @@ vogix session list                   # list saved sessions
 vogix session undo                   # undo the last window change (restore from autosave stack)
 ```
 
+### Desktop
+
+The vogix desktop shell's verbs — the v1→v2 contract (the quickshell
+transport behind them is an implementation detail):
+
+```bash
+vogix desktop status                     # is a shell instance running (and the bar state)
+vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
+vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
+vogix desktop bar show|hide|toggle       # the bar surface
+vogix desktop notify dismiss [--all]     # the notification surface
+vogix desktop notify dnd on|off|toggle|status
+vogix desktop notify history [-n N]      # recent notifications (works without a shell)
+vogix desktop lock [--wait-secure SECS]  # engage the session lock (fails LOUDLY)
+vogix desktop lock status                # unlocked | locked | secure
+vogix desktop background set|next|clear|status   # the wallpaper layer
+vogix desktop osd volume --value 40      # flash the on-screen display
+vogix desktop launcher [--mode M]        # the launcher overlay (apps files calc emoji ssh clipboard theme background)
+vogix desktop menu [--summon ID]         # the root menu from desktop.json
+vogix desktop power [ACTION]             # the power menu; lock|logout|suspend|reboot|poweroff run directly
+vogix desktop select [-p PROMPT]         # dmenu mode: items on stdin, choice on stdout (exit 1 on cancel)
+vogix desktop input [-p PROMPT]          # dmenu mode: free-text entry
+```
+
+### Greeter
+
+```bash
+vogix greeter sync   # copy the live theme into /var/lib/vogix/greeter (the SDDM
+                     # greeter's runtime follow; wired as a themeApply hook by
+                     # programs.vogix.greeter.sync)
+```
+
 ### Modes
 
 Switch the active desktop mode, and inspect submap-mode telemetry captured by the daemon:

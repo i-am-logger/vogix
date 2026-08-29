@@ -77,7 +77,7 @@
       # Every vogix-licensed (CC BY-NC-SA 4.0) package a pkgs instantiation
       # may evaluate — ONE list, used by every allowUnfreePredicate here and
       # mirrored by consumers (mynixos my.system.allowedUnfreePackages).
-      unfreePackageNames = [ "vogix" "vogix-desktop-qml" ];
+      unfreePackageNames = [ "vogix" "vogix-desktop-qml" "vogix-sddm-theme" ];
     in
     {
       # NixOS module (console colors, security wrappers, hardware)
@@ -161,9 +161,12 @@
               exec vogix desktop launcher "$@"
             '';
           };
+          # The SDDM greeter theme with its neutral fallback palette; the
+          # NixOS module rebuilds it with the real palette via callPackage.
+          vogix-sddm-theme = pkgs.callPackage ./nix/packages/vogix-sddm-theme.nix { };
         in
         {
-          inherit vogix vogix-desktop-qml vogix-lock vogix-launcher;
+          inherit vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
           default = vogix;
         }
       );
@@ -175,7 +178,7 @@
       # a mismatch crashes).
       overlays.default = final: prev:
         (inputs.quickshell.overlays.default final prev) // {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
         };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)

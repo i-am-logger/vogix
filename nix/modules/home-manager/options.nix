@@ -199,6 +199,18 @@ in
       description = "Hardware theme apply commands. Keys are device names, values are shell commands with {{color}} placeholders resolved at runtime.";
     };
 
+    greeter = mkOption {
+      default = { };
+      description = "The greeter's runtime follow-through.";
+      type = types.submodule {
+        options.sync = mkEnableOption ''
+          copying the live theme into /var/lib/vogix/greeter on every theme
+          switch (`vogix greeter sync` through the themeApply hook), so the
+          SDDM greeter shows the CURRENT palette instead of the build-time
+          one. Needs the host's vogix.greeter.enable (the drop zone)'';
+      };
+    };
+
   }
   // appOptions
   // behaviorOptions

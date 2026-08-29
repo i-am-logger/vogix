@@ -111,6 +111,8 @@ fn run(cli: &Cli) -> Result<()> {
 
         Commands::Desktop { command } => commands::desktop::handle_desktop(command),
 
+        Commands::Greeter { command } => commands::greeter::handle_greeter(command),
+
         Commands::Cache {
             command: CacheCommands::Clean,
         } => handle_cache_clean(),
