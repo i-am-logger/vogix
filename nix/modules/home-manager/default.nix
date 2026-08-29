@@ -295,6 +295,11 @@ in
             inherit (cfg.desktop.bar) enable position height;
             layout = { inherit (cfg.desktop.bar.layout) left center right; };
           };
+          notifications = {
+            inherit (cfg.desktop.notifications) enable defaultTimeout maxVisible appRules;
+          };
+          osd = { inherit (cfg.desktop.osd) enable timeout; };
+          polkit = { inherit (cfg.desktop.polkit) enable; };
           surfaces = mergedSurfaces;
         };
         desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;

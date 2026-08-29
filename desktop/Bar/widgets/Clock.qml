@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import qs.Bar.widgets
-import qs.Vogix
 
 BarText {
     SystemClock {

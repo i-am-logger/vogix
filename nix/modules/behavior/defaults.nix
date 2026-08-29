@@ -181,8 +181,10 @@ rec {
 
         # ── System (console, notifications, undo, help) ──
         console = { key = "F12"; action = consoleToggleAction; description = "Toggle system console"; };
-        dismissNotification = { key = "super + d"; action = "exec, makoctl dismiss"; description = "Dismiss notification"; };
-        dismissAll = { key = "super + shift + d"; action = "exec, makoctl dismiss --all"; description = "Dismiss all notifications"; };
+        # The shell's own notification server (mako is gone from the fleet).
+        dismissNotification = { key = "super + d"; action = "exec, vogix desktop notify dismiss"; description = "Dismiss notification"; };
+        dismissAll = { key = "super + shift + d"; action = "exec, vogix desktop notify dismiss --all"; description = "Dismiss all notifications"; };
+        dndToggle = { key = "super + ctrl + d"; action = "exec, vogix desktop notify dnd toggle"; description = "Toggle do-not-disturb"; };
         undoSession = { key = "super + z"; action = "exec, vogix session undo"; description = "Undo last window change"; };
         # Help is now an ENGINE view: it reads the resolved schema (paradigm nav +
         # this overlay) and renders it — replacing the build-time Nix help scripts.

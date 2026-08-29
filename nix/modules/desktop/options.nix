@@ -91,6 +91,68 @@ in
           };
         };
 
+        notifications = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.notifications.enable;
+            description = "Run the shell's notification server (the org.freedesktop.Notifications owner).";
+          };
+          defaultTimeout = mkOption {
+            type = types.ints.positive;
+            default = defaults.notifications.defaultTimeout;
+            description = "Popup lifetime in ms for normal notifications. Critical ones never expire.";
+          };
+          maxVisible = mkOption {
+            type = types.ints.positive;
+            default = defaults.notifications.maxVisible;
+            description = "Most popups shown at once; the rest queue.";
+          };
+          appRules = mkOption {
+            type = types.attrsOf (types.submodule {
+              options = {
+                timeout = mkOption {
+                  type = types.nullOr types.ints.positive;
+                  default = null;
+                  description = "Popup lifetime in ms for this app (null = the default).";
+                };
+                accent = mkOption {
+                  type = types.nullOr (types.enum v16.semanticKeys);
+                  default = null;
+                  description = "Semantic slot for this app's popup accent/border.";
+                };
+                bypassDnd = mkOption {
+                  type = types.bool;
+                  default = false;
+                  description = "Show this app's popups even in do-not-disturb.";
+                };
+              };
+            });
+            default = defaults.notifications.appRules;
+            description = "Per-app notification rules, keyed by app name.";
+          };
+        };
+
+        osd = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.osd.enable;
+            description = "Render the on-screen display (volume/brightness flashes).";
+          };
+          timeout = mkOption {
+            type = types.ints.positive;
+            default = defaults.osd.timeout;
+            description = "How long an OSD flash stays visible, in ms.";
+          };
+        };
+
+        polkit = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.polkit.enable;
+            description = "Run the shell's polkit authentication agent.";
+          };
+        };
+
         surfaces = mkOption {
           type = types.attrsOf (types.attrsOf tokenType);
           default = { };

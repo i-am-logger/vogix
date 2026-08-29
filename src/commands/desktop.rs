@@ -7,7 +7,7 @@
 //! vogix-desktop's own socket — so swapping the shell renderer never touches
 //! a caller.
 
-use crate::cli::{BarCommands, DesktopCommands};
+use crate::cli::{BarCommands, DesktopCommands, DndCommands, NotifyCommands};
 use crate::errors::Result;
 use log::debug;
 use std::process::{Command, Stdio};
@@ -18,7 +18,90 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::Reload => reload(),
         DesktopCommands::Status => status(),
         DesktopCommands::Bar { command } => bar(command),
+        DesktopCommands::Notify { command } => notify(command),
+        DesktopCommands::Osd {
+            kind,
+            value,
+            muted,
+            message,
+        } => osd(kind, *value, *muted, message.as_deref()),
     }
+}
+
+fn notify(command: &NotifyCommands) -> Result<()> {
+    match command {
+        NotifyCommands::Dismiss { all } => {
+            let verb = if *all { "dismissAll" } else { "dismiss" };
+            if qs_ipc(&["notify", verb]).is_none() {
+                debug!("desktop notify {verb}: no responsive shell instance");
+            }
+            Ok(())
+        }
+        NotifyCommands::Dnd { state } => dnd(state),
+        NotifyCommands::History { count } => history(*count),
+    }
+}
+
+fn dnd(state: &DndCommands) -> Result<()> {
+    match state {
+        DndCommands::On => {
+            if qs_ipc(&["notify", "dndOn"]).is_none() {
+                debug!("desktop notify dnd on: no responsive shell instance");
+            }
+        }
+        DndCommands::Off => {
+            if qs_ipc(&["notify", "dndOff"]).is_none() {
+                debug!("desktop notify dnd off: no responsive shell instance");
+            }
+        }
+        DndCommands::Toggle => match qs_ipc(&["notify", "dndToggle"]) {
+            Some(now) => println!("dnd: {now}"),
+            None => debug!("desktop notify dnd toggle: no responsive shell instance"),
+        },
+        DndCommands::Status => {
+            // Prefer the live shell; fall back to the state file it persists,
+            // so a TTY can still answer.
+            let state = qs_ipc(&["notify", "dndStatus"]).unwrap_or_else(|| {
+                let path = crate::config::Config::state_dir().join("desktop/dnd.json");
+                match std::fs::read_to_string(path) {
+                    Ok(s) if s.contains("true") => "on".to_string(),
+                    _ => "off".to_string(),
+                }
+            });
+            println!("dnd: {state}");
+        }
+    }
+    Ok(())
+}
+
+/// Recent notifications from the shell's capped history file — read
+/// directly, so it works with no shell running.
+fn history(count: usize) -> Result<()> {
+    let path = crate::config::Config::state_dir().join("desktop/notifications-history.json");
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        println!("no notification history at {}", path.display());
+        return Ok(());
+    };
+    let entries: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap_or_default();
+    for e in entries.iter().rev().take(count).rev() {
+        println!(
+            "{}  [{}] {}: {}",
+            e["at"].as_str().unwrap_or("?"),
+            e["appName"].as_str().unwrap_or("?"),
+            e["summary"].as_str().unwrap_or(""),
+            e["body"].as_str().unwrap_or("")
+        );
+    }
+    Ok(())
+}
+
+fn osd(kind: &str, value: Option<u8>, muted: bool, message: Option<&str>) -> Result<()> {
+    let value = value.map(|v| v.min(100) as i32).unwrap_or(-1).to_string();
+    let muted = if muted { "true" } else { "false" };
+    if qs_ipc(&["osd", "show", kind, &value, muted, message.unwrap_or("")]).is_none() {
+        debug!("desktop osd {kind}: no responsive shell instance");
+    }
+    Ok(())
 }
 
 /// Run one `qs ipc` call against the vogix shell instance, bounded. Returns

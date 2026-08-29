@@ -202,11 +202,11 @@ let
     (assertEq "System: F12 = toggle system console"
       "Toggle system console"
       (app.console.description or ""))
-    (assertEq "System: Super+D = dismiss notification (makoctl)"
-      "exec, makoctl dismiss"
+    (assertEq "System: Super+D = dismiss notification (the shell's server)"
+      "exec, vogix desktop notify dismiss"
       (app.dismissNotification.action or ""))
     (assertEq "System: Super+Shift+D = dismiss all"
-      "exec, makoctl dismiss --all"
+      "exec, vogix desktop notify dismiss --all"
       (app.dismissAll.action or ""))
     (assertEq "System: Super+Z = session undo"
       "super + z"

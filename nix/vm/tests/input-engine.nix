@@ -810,7 +810,7 @@ let
     # Super+D / Super+Shift+D = dismiss notification(s) (makoctl).
     flat_expect("Super+D dismiss notification",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_D, hold=0.03), up(e.KEY_LEFTMETA)),
-        "exec makoctl dismiss")
+        "exec vogix desktop notify dismiss")
     # Super+Z = undo last window change (super+u is taken by toggleGroup).
     flat_expect("Super+Z session undo",
         lambda: (down(e.KEY_LEFTMETA), tap(e.KEY_Z, hold=0.03), up(e.KEY_LEFTMETA)),

@@ -2,7 +2,6 @@
 // because the config is Nix-generated and a typo here is a generator bug.
 import QtQuick
 import qs.Bar.widgets
-import qs.Vogix
 
 BarText {
     text: "?widget"

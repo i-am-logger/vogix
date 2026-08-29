@@ -179,6 +179,53 @@ pub enum DesktopCommands {
         #[command(subcommand)]
         command: BarCommands,
     },
+    /// Control the notification surface (the shell's own server)
+    Notify {
+        #[command(subcommand)]
+        command: NotifyCommands,
+    },
+    /// Flash the on-screen display (volume/brightness/caps/custom)
+    Osd {
+        /// What to flash: volume, mic, brightness, caps, numlock, custom, …
+        kind: String,
+        /// Gauge position in percent (omit for no gauge)
+        #[arg(long)]
+        value: Option<u8>,
+        /// Render the muted style
+        #[arg(long)]
+        muted: bool,
+        /// Free-text label overriding the derived one
+        #[arg(long)]
+        message: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NotifyCommands {
+    /// Dismiss the newest popup (or every popup with --all)
+    Dismiss {
+        #[arg(long)]
+        all: bool,
+    },
+    /// Do-not-disturb: critical and rule-exempt popups still show
+    Dnd {
+        #[command(subcommand)]
+        state: DndCommands,
+    },
+    /// Print recent notifications (works without a running shell)
+    History {
+        /// How many entries, newest last
+        #[arg(short = 'n', long, default_value_t = 20)]
+        count: usize,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DndCommands {
+    On,
+    Off,
+    Toggle,
+    Status,
 }
 
 #[derive(Subcommand)]

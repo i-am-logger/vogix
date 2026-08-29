@@ -26,6 +26,32 @@ _:
     };
   };
 
+  notifications = {
+    enable = true;
+    # mako-parity behaviour, now rules the shell loads from desktop.json:
+    # normal notifications expire; CRITICAL never does (GPG/YubiKey prompts
+    # must outlive a glance away); per-app rules can pin a timeout, recolor
+    # the accent, and bypass do-not-disturb.
+    defaultTimeout = 5000;
+    maxVisible = 5;
+    appRules = {
+      "yubikey-touch-detector" = {
+        timeout = 15000;
+        accent = "danger";
+        bypassDnd = true;
+      };
+    };
+  };
+
+  osd = {
+    enable = true;
+    timeout = 1500;
+  };
+
+  polkit = {
+    enable = true;
+  };
+
   surfaces = {
     bar = {
       background = { slot = "background"; alpha = 0.92; };
@@ -41,6 +67,28 @@ _:
       muted = "foreground_comment";
       accent = "active";
       border = "foreground_border";
+    };
+    notification = {
+      background = { slot = "background_surface"; alpha = 0.98; };
+      foreground = "foreground_text";
+      muted = "foreground_comment";
+      accent = "active";
+      border = "foreground_border";
+      urgent = "danger";
+    };
+    osd = {
+      background = { slot = "background_surface"; alpha = 0.95; };
+      foreground = "foreground_text";
+      accent = "active";
+      muted = "foreground_comment";
+    };
+    polkit = {
+      background = { slot = "background_surface"; alpha = 1.0; };
+      foreground = "foreground_text";
+      muted = "foreground_comment";
+      accent = "active";
+      border = "foreground_border";
+      danger = "danger";
     };
   };
 }
