@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.9.0...vogix-v0.10.0) (2026-08-29)
+
+
+### Features
+
+* **desktop:** the vogix desktop shell v1 — bar to boot splash ([#195](https://github.com/i-am-logger/vogix/issues/195)) ([4241dee](https://github.com/i-am-logger/vogix/commit/4241dee7a245e808b143bf619bda25742feffde5))
+
 ## [0.9.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.8.4...vogix-v0.9.0) (2026-08-28)
 
 
