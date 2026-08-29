@@ -123,9 +123,17 @@
           '';
           # The desktop shell's v1 QML tree (a quickshell config directory).
           vogix-desktop-qml = pkgs.callPackage ./nix/packages/vogix-desktop-qml.nix { };
+          # The session locker, shaped as its own package so it slots into
+          # environment.locker / $LOCKER selectors: engage the shell's lock
+          # and fail unless the compositor reports it SECURE within 4s.
+          vogix-lock = pkgs.writeShellApplication {
+            name = "vogix-lock";
+            runtimeInputs = [ vogix ];
+            text = ''exec vogix desktop lock --wait-secure 4 "$@"'';
+          };
         in
         {
-          inherit vogix vogix-desktop-qml;
+          inherit vogix vogix-desktop-qml vogix-lock;
           default = vogix;
         }
       );
@@ -137,7 +145,7 @@
       # a mismatch crashes).
       overlays.default = final: prev:
         (inputs.quickshell.overlays.default final prev) // {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml;
+          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock;
         };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)

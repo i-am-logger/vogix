@@ -2,3 +2,5 @@ module qs.Services
 singleton Notifs 1.0 Notifs.qml
 singleton Audio 1.0 Audio.qml
 singleton Osd 1.0 Osd.qml
+singleton Lock 1.0 Lock.qml
+singleton Idle 1.0 Idle.qml

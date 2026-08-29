@@ -153,6 +153,46 @@ in
           };
         };
 
+        lock = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.lock.enable;
+            description = "The shell's session lock (WlSessionLock + PAM).";
+          };
+          pamService = mkOption {
+            type = types.str;
+            default = defaults.lock.pamService;
+            description = ''
+              PAM service the lock authenticates against. The shell REFUSES to
+              lock when /etc/pam.d/<service> is absent — never an unlockable
+              screen. vogix's NixOS module declares the default service.
+            '';
+          };
+        };
+
+        idle = {
+          dim = mkOption {
+            type = types.nullOr types.ints.positive;
+            default = defaults.idle.dim;
+            description = "Seconds of idle before the screens dim (null = never).";
+          };
+          lock = mkOption {
+            type = types.nullOr types.ints.positive;
+            default = defaults.idle.lock;
+            description = "Seconds of idle before the session locks (null = never).";
+          };
+          screenOff = mkOption {
+            type = types.nullOr types.ints.positive;
+            default = defaults.idle.screenOff;
+            description = "Seconds of idle before displays power off (null = never).";
+          };
+          suspend = mkOption {
+            type = types.nullOr types.ints.positive;
+            default = defaults.idle.suspend;
+            description = "Seconds of idle before the machine suspends (null = never).";
+          };
+        };
+
         surfaces = mkOption {
           type = types.attrsOf (types.attrsOf tokenType);
           default = { };

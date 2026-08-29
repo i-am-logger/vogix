@@ -9,6 +9,7 @@ import Quickshell.Io
 import qs.Services
 import qs.Vogix
 import "Bar"
+import "Idle"
 import "Notifications"
 import "Osd"
 import "Polkit"
@@ -16,8 +17,19 @@ import "Polkit"
 ShellRoot {
     id: root
 
+    // QML singletons are LAZY — they instantiate on first reference. These
+    // services must run from startup (the notification server registers on
+    // the bus, the idle monitors arm, the lock preflights its PAM check), so
+    // reference them eagerly here.
+    readonly property list<QtObject> services: [Notifs, Audio, Osd, Idle, Lock]
+
     Bar {
         id: bar
+    }
+
+    LazyLoader {
+        active: true
+        component: DimOverlay {}
     }
 
     LazyLoader {
@@ -68,6 +80,13 @@ ShellRoot {
         }
         function dndStatus(): string { return Notifs.dnd ? "on" : "off"; }
         function count(): int { return Notifs.popups.length; }
+    }
+
+    IpcHandler {
+        target: "lock"
+
+        function lock(): string { return Lock.lock(); }
+        function status(): string { return Lock.status(); }
     }
 
     IpcHandler {

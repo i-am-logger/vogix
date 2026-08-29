@@ -7,8 +7,8 @@
 //! vogix-desktop's own socket — so swapping the shell renderer never touches
 //! a caller.
 
-use crate::cli::{BarCommands, DesktopCommands, DndCommands, NotifyCommands};
-use crate::errors::Result;
+use crate::cli::{BarCommands, DesktopCommands, DndCommands, LockCommands, NotifyCommands};
+use crate::errors::{Result, VogixError};
 use log::debug;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -19,12 +19,82 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::Status => status(),
         DesktopCommands::Bar { command } => bar(command),
         DesktopCommands::Notify { command } => notify(command),
+        DesktopCommands::Lock {
+            wait_secure,
+            command,
+        } => match command {
+            Some(LockCommands::Status) => lock_status(),
+            None => lock(*wait_secure),
+        },
+        DesktopCommands::Restart => restart(),
         DesktopCommands::Osd {
             kind,
             value,
             muted,
             message,
         } => osd(kind, *value, *muted, message.as_deref()),
+    }
+}
+
+/// Engage the session lock. Unlike every other desktop verb, failure here is
+/// LOUD: a `vogix desktop lock` (or $LOCKER, or the sleep hook) that quietly
+/// does nothing leaves an unattended, unlocked machine.
+fn lock(wait_secure: Option<f64>) -> Result<()> {
+    let reply = qs_ipc(&["lock", "lock"]).ok_or_else(|| {
+        VogixError::Config("cannot lock: no responsive vogix shell instance".to_string())
+    })?;
+    if reply.starts_with("refused") {
+        return Err(VogixError::Config(format!("cannot lock: {reply}")));
+    }
+    if let Some(secs) = wait_secure {
+        let deadline = Instant::now() + Duration::from_secs_f64(secs);
+        loop {
+            match qs_ipc(&["lock", "status"]).as_deref() {
+                Some("secure") => break,
+                _ if Instant::now() >= deadline => {
+                    return Err(VogixError::Config(format!(
+                        "lock engaged but not SECURE within {secs}s — an output may be uncovered"
+                    )));
+                }
+                _ => std::thread::sleep(Duration::from_millis(50)),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn lock_status() -> Result<()> {
+    match qs_ipc(&["lock", "status"]) {
+        Some(state) => println!("{state}"),
+        None => println!("unlocked (no shell instance)"),
+    }
+    Ok(())
+}
+
+/// Restart the shell — refused while locked: the WlSessionLock lives in the
+/// shell process, so restarting it would drop the lock and expose the
+/// session.
+fn restart() -> Result<()> {
+    match qs_ipc(&["lock", "status"]).as_deref() {
+        Some("locked") | Some("secure") => Err(VogixError::Config(
+            "refusing to restart the shell while the session is locked \
+             (the lock lives in the shell; restarting would unlock the screen)"
+                .to_string(),
+        )),
+        _ => {
+            let ok = Command::new("systemctl")
+                .args(["--user", "restart", "vogix-desktop.service"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                Ok(())
+            } else {
+                Err(VogixError::Config(
+                    "systemctl --user restart vogix-desktop.service failed".to_string(),
+                ))
+            }
+        }
     }
 }
 

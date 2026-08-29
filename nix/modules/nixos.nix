@@ -124,6 +124,23 @@ in
         pkgs.tmux # Required for F12 system console
       ];
 
+      # The shell's session lock authenticates against THIS service; the
+      # shell refuses to lock when the file is absent (never an unlockable
+      # screen), so the PAM declaration travels with the program that needs
+      # it. unix/u2f/fprintd follow the host's global PAM settings; the fail
+      # delay slows brute force on the lock screen.
+      security.pam.services.vogix-lock = {
+        failDelay = {
+          enable = true;
+          delay = 2000000;
+        };
+      };
+
+      # Bridge logind's lock/sleep signals to user-session targets, so
+      # `loginctl lock-session` and suspend reach the shell's lock through
+      # the vogix-lock.service unit (declared in the home-manager module).
+      services.systemd-lock-handler.enable = true;
+
       # Add security wrappers for console theme switching
       security.wrappers = {
         chvt = {

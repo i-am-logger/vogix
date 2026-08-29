@@ -52,6 +52,20 @@ _:
     enable = true;
   };
 
+  lock = {
+    enable = true;
+    pamService = "vogix-lock";
+  };
+
+  # Idle stages in seconds; null disables a stage. Suspend is off by
+  # default — a desktop that vanishes mid-thought is a host decision.
+  idle = {
+    dim = 300;
+    lock = 600;
+    screenOff = 660;
+    suspend = null;
+  };
+
   surfaces = {
     bar = {
       background = { slot = "background"; alpha = 0.92; };
@@ -88,6 +102,14 @@ _:
       muted = "foreground_comment";
       accent = "active";
       border = "foreground_border";
+      danger = "danger";
+    };
+    lock = {
+      background = { slot = "background"; alpha = 1.0; };
+      surface = { slot = "background_surface"; alpha = 0.98; };
+      foreground = "foreground_text";
+      muted = "foreground_comment";
+      accent = "active";
       danger = "danger";
     };
   };

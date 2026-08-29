@@ -300,6 +300,8 @@ in
           };
           osd = { inherit (cfg.desktop.osd) enable timeout; };
           polkit = { inherit (cfg.desktop.polkit) enable; };
+          lock = { inherit (cfg.desktop.lock) enable pamService; };
+          idle = { inherit (cfg.desktop.idle) dim lock screenOff suspend; };
           surfaces = mergedSurfaces;
         };
         desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;
@@ -348,6 +350,28 @@ in
 
           Install = {
             WantedBy = [ "graphical-session.target" ];
+          };
+        };
+
+        # The lock hook: systemd-lock-handler (enabled by vogix's NixOS
+        # module) translates logind's lock/sleep signals into the user
+        # lock.target / sleep.target; this oneshot engages the shell's lock
+        # BEFORE either proceeds, and --wait-secure means suspend cannot race
+        # ahead of an uncovered output.
+        systemd.user.services.vogix-lock = lib.mkIf cfg.desktop.lock.enable {
+          Unit = {
+            Description = "Vogix session lock (locks before lock.target/sleep.target)";
+            PartOf = [ "lock.target" "sleep.target" ];
+            Before = [ "lock.target" "sleep.target" ];
+          };
+
+          Service = {
+            Type = "oneshot";
+            ExecStart = "${cfg.package}/bin/vogix desktop lock --wait-secure 4";
+          };
+
+          Install = {
+            WantedBy = [ "lock.target" "sleep.target" ];
           };
         };
       }

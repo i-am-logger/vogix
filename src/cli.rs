@@ -184,6 +184,20 @@ pub enum DesktopCommands {
         #[command(subcommand)]
         command: NotifyCommands,
     },
+    /// Lock the session (the shell's WlSessionLock + PAM). Fails LOUDLY when
+    /// no shell is running or locking is refused — a locker that silently
+    /// doesn't lock is worse than none
+    Lock {
+        /// Wait up to SECS for the compositor to report the lock SECURE
+        /// (every output covered) and fail if it doesn't get there
+        #[arg(long, value_name = "SECS")]
+        wait_secure: Option<f64>,
+        #[command(subcommand)]
+        command: Option<LockCommands>,
+    },
+    /// Restart the shell. REFUSED while the session is locked: the lock
+    /// lives in the shell process, so a restart would unlock the screen
+    Restart,
     /// Flash the on-screen display (volume/brightness/caps/custom)
     Osd {
         /// What to flash: volume, mic, brightness, caps, numlock, custom, …
@@ -225,6 +239,12 @@ pub enum DndCommands {
     On,
     Off,
     Toggle,
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum LockCommands {
+    /// Print the lock state: unlocked, locked (engaging) or secure
     Status,
 }
 

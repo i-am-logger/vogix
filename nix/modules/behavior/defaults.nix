@@ -166,7 +166,7 @@ rec {
         # keeps vogix usable standalone.
         launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-walker}"; description = "Launcher"; };
         colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
-        lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-hyprlock}"; description = "Lock screen"; };
+        lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-vogix-lock}"; description = "Lock screen"; };
 
         # ── Screenshots ──
         # --cursor is invalid with the `area` target in current grimblast.
