@@ -172,6 +172,23 @@ pub enum DesktopCommands {
     /// shell instance (TTY, tests, shell disabled) this exits 0 quietly — it
     /// runs on every theme switch and must never fail one
     Reload,
+    /// Report whether a shell instance is running (and the bar state)
+    Status,
+    /// Control the bar surface
+    Bar {
+        #[command(subcommand)]
+        command: BarCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum BarCommands {
+    /// Slide the bar back in
+    Show,
+    /// Park the bar off-screen (it stays warm; ~20ms to return)
+    Hide,
+    /// Toggle between shown and hidden
+    Toggle,
 }
 
 #[derive(Subcommand)]

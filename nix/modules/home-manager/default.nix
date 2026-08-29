@@ -269,6 +269,85 @@ in
       programs.vogix."vogix-desktop".enable = lib.mkDefault cfg.desktop.enable;
     }
 
+    # The desktop shell: desktop.json (the per-user layout/token contract),
+    # the quickshell config registration, and the vogix-owned unit. The UNIT
+    # NAME, the contract file paths and the `vogix desktop` verbs are the
+    # v1→v2 seam: the Rust shell swaps ExecStart, nothing else moves.
+    (mkIf cfg.desktop.enable (
+      let
+        desktopDefaults = import ../desktop/defaults.nix { };
+        vogixDesktopQml =
+          pkgs.vogix-desktop-qml or (pkgs.callPackage ../../packages/vogix-desktop-qml.nix { });
+
+        # Defaults carry bare-slot shorthand; user tokens arrive complete
+        # from the option type. Normalize AFTER the merge so the emitted
+        # token shape is always { slot, alpha } — the praxis SlotMapping.
+        normalizeToken = t:
+          { alpha = 1.0; } // (if builtins.isString t then { slot = t; } else t);
+        mergedSurfaces =
+          lib.mapAttrs (_: lib.mapAttrs (_: normalizeToken))
+            (lib.recursiveUpdate desktopDefaults.surfaces cfg.desktop.surfaces);
+
+        desktopJson = builtins.toJSON {
+          schema = 1;
+          font = { inherit (cfg.desktop.font) family size; };
+          bar = {
+            inherit (cfg.desktop.bar) enable position height;
+            layout = { inherit (cfg.desktop.bar.layout) left center right; };
+          };
+          surfaces = mergedSurfaces;
+        };
+        desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;
+      in
+      {
+        home.file.".local/state/vogix/desktop.json".source = desktopJsonFile;
+
+        # Registers the QML tree as the `vogix` quickshell config
+        # (~/.config/quickshell/vogix → the package), so `qs -c vogix`
+        # resolves it. HM's own unit machinery stays off — the unit below is
+        # the contract, and its name must survive the v2 swap.
+        programs.quickshell = {
+          enable = true;
+          configs.vogix = lib.mkDefault "${vogixDesktopQml}";
+          systemd.enable = false;
+        };
+
+        systemd.user.services.vogix-desktop = {
+          Unit = {
+            Description = "Vogix Desktop Shell (bar, notifications, lock surfaces)";
+            After = [ "graphical-session.target" ];
+            PartOf = [ "graphical-session.target" ];
+            # Qt exits via _exit() on a lost Wayland connection (GPU reset);
+            # cap the restart loop like vogix-input does.
+            StartLimitBurst = 3;
+            StartLimitIntervalSec = 30;
+            # A desktop.json-only change reloads in place (sd-switch): the
+            # shell re-reads both contract files, MainPID unchanged. The
+            # store-symlink swap is invisible to file watchers, which is
+            # also why the watcher is disabled outright below.
+            X-Reload-Triggers = [ "${desktopJsonFile}" ];
+          };
+
+          Service = {
+            Type = "simple";
+            ExecStart = "${config.programs.quickshell.package}/bin/qs -n -c vogix";
+            ExecReload = "${cfg.package}/bin/vogix desktop reload";
+            Restart = "on-failure";
+            RestartSec = 2;
+            Environment = [
+              "QS_DISABLE_FILE_WATCHER=1"
+              "QS_NO_RELOAD_POPUP=1"
+              "RUST_LOG=vogix=${cfg.logLevel}"
+            ];
+          };
+
+          Install = {
+            WantedBy = [ "graphical-session.target" ];
+          };
+        };
+      }
+    ))
+
     # Behavior: generate the hyprland config
     # Note: always active when vogix is enabled (no separate mkIf on behaviorCfg
     # to avoid infinite recursion between config definition and evaluation)
