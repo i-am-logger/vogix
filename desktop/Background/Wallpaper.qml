@@ -1,9 +1,12 @@
 pragma ComponentBehavior: Bound
 // The wallpaper: a background-layer window per screen, crossfading between
-// backgrounds so a theme switch dissolves with the palette instead of
-// popping. Non-image kinds (shader/video) arrive in a later increment; an
-// entry the renderer doesn't know falls back to the theme background color,
-// which is always correct.
+// image backgrounds so a theme switch dissolves with the palette instead
+// of popping. Live kinds render too: `shader` runs the built-in aurora
+// (palette as uniforms, one shader for every theme and polarity) and
+// `video` loops muted through QtMultimedia — both obey the animate policy
+// (pause on battery, while idle-dimmed, or entirely; desktop.json
+// background.animate = always | on-ac | never). An entry the renderer
+// doesn't know falls back to the theme background color, always correct.
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
@@ -18,11 +21,18 @@ Scope {
             id: wall
 
             required property var modelData
+            readonly property string kind: Backgrounds.current?.kind ?? ""
             readonly property string sourcePath:
-                (Backgrounds.current && Backgrounds.current.kind === "image")
-                    || (Backgrounds.current && Backgrounds.current.kind === "generated")
+                wall.kind === "image" || wall.kind === "generated"
                     ? "file://" + Backgrounds.current.path
                     : ""
+            // The animate policy: live kinds run always / on mains power /
+            // never — and always hold while the idle dim stage is up.
+            readonly property string animate:
+                (Config.doc.background ?? {}).animate ?? "on-ac"
+            readonly property bool liveAllowed:
+                wall.animate === "always"
+                    || (wall.animate === "on-ac" && !Battery.onBattery)
 
             screen: modelData
             visible: (Config.doc.background ?? {}).enable ?? true
@@ -54,6 +64,26 @@ Scope {
                 asynchronous: true
                 opacity: wall.showingA ? 0 : 1
                 Behavior on opacity { NumberAnimation { duration: 400 } }
+            }
+
+            // The live-background layers, above the image slots (which hold
+            // the fallback while a live kind is active).
+            Loader {
+                anchors.fill: parent
+                active: wall.kind === "shader"
+                sourceComponent: ShaderLayer {
+                    running: wall.visible && wall.liveAllowed && !Idle.dimmed
+                }
+            }
+
+            Loader {
+                anchors.fill: parent
+                active: wall.kind === "video"
+                source: "VideoLayer.qml"
+                onStatusChanged: {
+                    if (status === Loader.Error)
+                        console.warn("vogix: video backgrounds need QtMultimedia in the import path");
+                }
             }
 
             property bool showingA: true

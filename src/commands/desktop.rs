@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
     match command {
         DesktopCommands::Reload => reload(),
+        DesktopCommands::Check { config } => check(config.as_deref()),
         DesktopCommands::Status => status(),
         DesktopCommands::Bar { command } => bar(command),
         DesktopCommands::Notify { command } => notify(command),
@@ -149,6 +150,97 @@ fn parse_duration_ms(spec: &str) -> Result<u64> {
         )));
     }
     Ok(total)
+}
+
+/// Validate desktop.json's surface tokens against the praxis ontology:
+/// every `{ slot, alpha }` names one of the 16 semantic keys
+/// (Vogix16Semantic — praxis is the authority, nothing re-encoded here),
+/// alpha stays in [0,1], and when the current theme's contract file is
+/// readable, every referenced slot actually resolves in its semantic map
+/// (the SurfaceSlotsResolvable obligation, checked against the LIVE
+/// palette). Hard failure on any violation — the file is Nix-generated,
+/// so an error here is a generator bug, not user error.
+fn check(config: Option<&str>) -> Result<()> {
+    use pr4xis::category::FinitelyGenerated;
+    use pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic;
+
+    let path = config
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| crate::config::Config::state_dir().join("desktop.json"));
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| VogixError::Config(format!("cannot read {}: {e}", path.display())))?;
+    let doc: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| VogixError::Config(format!("{} is not valid JSON: {e}", path.display())))?;
+
+    let keys: Vec<String> = Vogix16Semantic::variants()
+        .iter()
+        .map(|s| s.key().to_string())
+        .collect();
+
+    // The live palette, when a theme with the desktop contract is active.
+    let semantic: Option<serde_json::Value> = std::fs::read_to_string(
+        crate::config::Config::state_dir().join("current-theme/vogix-desktop/theme.json"),
+    )
+    .ok()
+    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    .and_then(|t| t.get("semantic").cloned());
+
+    let mut errors: Vec<String> = Vec::new();
+    let mut tokens = 0usize;
+    let empty = serde_json::Map::new();
+    let surfaces = doc
+        .get("surfaces")
+        .and_then(|s| s.as_object())
+        .unwrap_or(&empty);
+    for (surface, table) in surfaces {
+        let Some(table) = table.as_object() else {
+            errors.push(format!("surface '{surface}' is not an object"));
+            continue;
+        };
+        for (token, value) in table {
+            tokens += 1;
+            let slot = value.get("slot").and_then(|s| s.as_str()).unwrap_or("");
+            if !keys.iter().any(|k| k == slot) {
+                errors.push(format!(
+                    "{surface}.{token}: slot '{slot}' is not one of the 16 semantic keys"
+                ));
+                continue;
+            }
+            if let Some(alpha) = value.get("alpha").and_then(|a| a.as_f64())
+                && !(0.0..=1.0).contains(&alpha)
+            {
+                errors.push(format!("{surface}.{token}: alpha {alpha} outside [0,1]"));
+            }
+            if let Some(sem) = &semantic
+                && sem.get(slot).and_then(|v| v.as_str()).is_none()
+            {
+                errors.push(format!(
+                    "{surface}.{token}: slot '{slot}' does not resolve in the current theme"
+                ));
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        println!(
+            "desktop.json OK — {} surfaces, {tokens} tokens, every slot {}",
+            surfaces.len(),
+            if semantic.is_some() {
+                "resolves in the current theme"
+            } else {
+                "names a valid semantic key (no active theme contract to resolve against)"
+            }
+        );
+        Ok(())
+    } else {
+        for e in &errors {
+            eprintln!("✗ {e}");
+        }
+        Err(VogixError::Config(format!(
+            "desktop.json failed validation with {} error(s)",
+            errors.len()
+        )))
+    }
 }
 
 fn launcher(mode: &str, query: &str) -> Result<()> {

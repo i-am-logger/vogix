@@ -10,7 +10,7 @@ Singleton {
 
     readonly property list<string> known: [
         "audio", "network", "bluetooth", "power",
-        "monitor", "tailscale", "calendar", "weather",
+        "monitor", "tailscale", "calendar", "weather", "agents",
     ]
 
     property string open: ""

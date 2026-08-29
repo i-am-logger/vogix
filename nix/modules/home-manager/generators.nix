@@ -204,11 +204,23 @@ let
                 colors = baseSlotColors;
               };
               backgroundEntries =
-                [{
-                  kind = "generated";
-                  name = "veil";
-                  path = "${generated}";
-                }]
+                [
+                  {
+                    kind = "generated";
+                    name = "veil";
+                    path = "${generated}";
+                  }
+                  # The built-in live shader: the shell renders it from its
+                  # own precompiled aurora (palette as uniforms — one shader,
+                  # every theme, both polarities), so the entry names the
+                  # kind, not a file. Second in the cycle: `background next`
+                  # reaches it, the veil stays the default.
+                  {
+                    kind = "shader";
+                    name = "aurora";
+                    path = "";
+                  }
+                ]
                 ++ ((extraBackgrounds.${themeName} or { }).${variantName} or [ ]);
               backgroundsJson = builtins.toJSON {
                 schema = 1;
@@ -218,7 +230,7 @@ let
                 mkdir -p "$out/vogix-desktop/backgrounds"
                 ${concatMapStringsSep "\n"
                   (e: ''ln -s ${lib.escapeShellArg e.path} "$out/vogix-desktop/backgrounds/${e.name}"'')
-                  backgroundEntries}
+                  (builtins.filter (e: e.path != "") backgroundEntries)}
                 cp ${pkgs.writeText "vogix-backgrounds-${themeVariantName}.json" backgroundsJson} \
                   "$out/vogix-desktop/backgrounds.json"
               '';

@@ -178,6 +178,15 @@ pub enum DesktopCommands {
     /// shell instance (TTY, tests, shell disabled) this exits 0 quietly — it
     /// runs on every theme switch and must never fail one
     Reload,
+    /// Validate desktop.json against the praxis surface ontology: every
+    /// token's slot is one of the 16 semantic keys, every alpha in [0,1],
+    /// and (when a theme is active) every slot resolves in its palette —
+    /// to desktop.json what `vogix input check` is to input.json
+    Check {
+        /// Path to desktop.json (defaults to ~/.local/state/vogix/desktop.json)
+        #[arg(long)]
+        config: Option<String>,
+    },
     /// Report whether a shell instance is running (and the bar state)
     Status,
     /// Control the bar surface

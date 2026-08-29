@@ -488,6 +488,10 @@ fn execute_side_effects(
                 warn!("Shader apply failed: {}", e);
             }
 
+            // Repaint the current mode's border from the NEW palette — the
+            // mode's slot is data (input.json), the hex just changed.
+            commands::daemon::apply_mode_border(&state.current_mode);
+
             let theme_variant = format!("{}-{}", state.current_theme, state.current_variant);
             if reload_result.has_failures() {
                 warn!(

@@ -77,7 +77,7 @@
       # Every vogix-licensed (CC BY-NC-SA 4.0) package a pkgs instantiation
       # may evaluate — ONE list, used by every allowUnfreePredicate here and
       # mirrored by consumers (mynixos my.system.allowedUnfreePackages).
-      unfreePackageNames = [ "vogix" "vogix-desktop-qml" "vogix-sddm-theme" ];
+      unfreePackageNames = [ "vogix" "vogix-desktop-qml" "vogix-sddm-theme" "vogix-plymouth" ];
     in
     {
       # NixOS module (console colors, security wrappers, hardware)
@@ -313,6 +313,7 @@
                 nativeBuildInputs = [ pkgs.qt6.qtdeclarative ];
                 qml = qsPkgs.vogix-desktop-qml;
                 qsQml = "${qsPkgs.quickshell}/lib/qt-6/qml";
+                mmQml = "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml";
               } ''
               # quickshell maps the `qs.` module URI onto the config root at
               # runtime; give qmllint the same view with a staged import root
@@ -320,7 +321,7 @@
               mkdir lintroot
               ln -s "$qml" lintroot/qs
               find $qml -name '*.qml' -print0 | xargs -0 qmllint \
-                -I "$qsQml" -I "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml" -I "$PWD/lintroot" \
+                -I "$qsQml" -I "$mmQml" -I "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml" -I "$PWD/lintroot" \
                 --uncreatable-type disable --unresolved-type disable \
                 2>&1 | tee lint.out || true
               if grep -E 'Warning|Error' lint.out | grep -v 'grouped property scope margins'; then
@@ -493,14 +494,19 @@
             pkgs.runCommand "vogix-desktop-backgrounds"
               {
                 themePkg = hmConf.config.xdg.dataFile."vogix/themes/yoga-night".source;
+                qmlPkg = self.packages.${system}.vogix-desktop-qml;
                 nativeBuildInputs = [ pkgs.jq ];
               } ''
               test -f "$themePkg/vogix-desktop/backgrounds.json"
               test -e "$themePkg/vogix-desktop/backgrounds/veil"
-              jq -e '.backgrounds[0].kind == "generated" and (.backgrounds | length) == 2' \
+              jq -e '.backgrounds[0].kind == "generated" and (.backgrounds | length) == 3' \
                 "$themePkg/vogix-desktop/backgrounds.json"
-              jq -e '.backgrounds[1].name == "extra.png"' "$themePkg/vogix-desktop/backgrounds.json"
-              echo "backgrounds present, generated first, extras merged"
+              jq -e '.backgrounds[1].kind == "shader" and .backgrounds[1].name == "aurora"' \
+                "$themePkg/vogix-desktop/backgrounds.json"
+              jq -e '.backgrounds[2].name == "extra.png"' "$themePkg/vogix-desktop/backgrounds.json"
+              # The shell ships the shader precompiled for the RHI backends.
+              test -f "$qmlPkg/data/aurora.frag.qsb"
+              echo "backgrounds present, generated first, aurora shader second, extras merged"
               touch $out
             '';
 

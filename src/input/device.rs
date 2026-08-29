@@ -98,8 +98,18 @@ pub struct Router {
     /// The focused window's class (fed by the I/O shell from Hyprland's
     /// active-window event stream); drives the terminal-aware remap policy.
     active_class: Option<String>,
-    /// Per-mode border colours (active, inactive) for the visibility surface.
-    mode_colors: HashMap<String, (String, String)>,
+    /// Per-mode border SLOTS (semantic keys) for the visibility surface.
+    mode_colors: HashMap<String, String>,
+    /// The current theme's semantic palette (slot → "#rrggbb"), the border
+    /// slots resolve through it. Seeded/refreshed OFF the keypress path:
+    /// once at startup and, when auto-refresh is armed, re-read on a mode
+    /// change if the theme state changed since (one mtime stat — mode
+    /// changes are human-rate, never per-key).
+    semantic: HashMap<String, String>,
+    /// Arm the mtime-guarded semantic refresh (the run path; tests seed
+    /// `semantic` directly and leave this off so no host files are read).
+    semantic_auto: bool,
+    semantic_mtime: Option<std::time::SystemTime>,
     /// Timestamp (ms) of the last input event — drives sticky-mode idle revert.
     last_activity: u64,
     /// Idle threshold (ms) after which a sticky mode auto-reverts (loaded).
@@ -191,8 +201,12 @@ impl Router {
             mode_colors: schema
                 .mode_colors
                 .iter()
-                .map(|(m, c)| (m.clone(), (c.active.clone(), c.inactive.clone())))
+                .filter(|(_, c)| !c.slot.is_empty())
+                .map(|(m, c)| (m.clone(), c.slot.clone()))
                 .collect(),
+            semantic: HashMap::new(),
+            semantic_auto: false,
+            semantic_mtime: None,
             last_activity: 0,
             sticky_idle_ms: schema.sticky_idle_ms(),
             caps_target: schema.caps_target().map(ModeId::new),
@@ -287,27 +301,100 @@ impl Router {
 
     /// Mode-visibility surface: paint the active-window border for `mode` so the
     /// user can always SEE the current mode (the cure for mode error — Norman
-    /// 1981). Colours are loaded data (theme-derived); a mode with no colour
-    /// simply isn't painted.
-    fn push_border(&self, mode: &str, fx: &mut Vec<Effect>) {
-        if let Some((active, inactive)) = self.mode_colors.get(mode) {
-            fx.push(Effect::Keyword {
-                key: "general:col.active_border".into(),
-                value: active.clone(),
-            });
-            fx.push(Effect::Keyword {
-                key: "general:col.inactive_border".into(),
-                value: inactive.clone(),
-            });
+    /// 1981). The mode's SLOT is loaded data; the hex comes from the CURRENT
+    /// theme's semantic palette, so a theme switch recolors the cue without a
+    /// schema rebuild. A mode with no slot, or a slot the palette can't
+    /// resolve, simply isn't painted.
+    fn push_border(&mut self, mode: &str, fx: &mut Vec<Effect>) {
+        let Some(slot) = self.mode_colors.get(mode).cloned() else {
+            return;
+        };
+        self.maybe_refresh_semantic();
+        let Some(active) = self.semantic.get(&slot) else {
+            return;
+        };
+        let inactive = self
+            .semantic
+            .get("background_selection")
+            .map(String::as_str)
+            .unwrap_or("#313244");
+        fx.push(Effect::Keyword {
+            key: "general:col.active_border".into(),
+            value: format!("rgb({})", active.trim_start_matches('#')),
+        });
+        fx.push(Effect::Keyword {
+            key: "general:col.inactive_border".into(),
+            value: format!("rgb({})", inactive.trim_start_matches('#')),
+        });
+    }
+
+    /// Seed the semantic palette and arm the mtime-guarded auto-refresh (the
+    /// run path calls this once at startup; tests use [`Self::set_semantic`]).
+    pub fn arm_semantic(&mut self) {
+        self.semantic_auto = true;
+        self.semantic_mtime = None;
+        self.maybe_refresh_semantic();
+    }
+
+    /// Inject a semantic palette directly (tests, and any caller that already
+    /// resolved one). Leaves auto-refresh off.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_semantic(&mut self, semantic: HashMap<String, String>) {
+        self.semantic = semantic;
+    }
+
+    /// Re-read the current theme's semantic colors when the theme state file
+    /// changed since the last read. One stat on the happy path; full file
+    /// reads only after an actual theme switch.
+    fn maybe_refresh_semantic(&mut self) {
+        if !self.semantic_auto {
+            return;
         }
+        let state_path = crate::config::Config::state_dir().join("state.toml");
+        let mtime = std::fs::metadata(&state_path)
+            .and_then(|m| m.modified())
+            .ok();
+        if mtime == self.semantic_mtime && !self.semantic.is_empty() {
+            return;
+        }
+        self.semantic_mtime = mtime;
+        if let Some(colors) = Self::load_semantic() {
+            self.semantic = colors;
+        }
+    }
+
+    /// The current semantic palette: the desktop contract file first (one
+    /// read, atomic through the current-theme symlink), the theme sources
+    /// second (terminal-only vogix users have no desktop contract).
+    fn load_semantic() -> Option<HashMap<String, String>> {
+        let contract =
+            crate::config::Config::state_dir().join("current-theme/vogix-desktop/theme.json");
+        if let Ok(raw) = std::fs::read_to_string(&contract)
+            && let Some(sem) = serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v.get("semantic").cloned())
+                .and_then(|s| s.as_object().cloned())
+        {
+            return Some(
+                sem.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect(),
+            );
+        }
+        let (config, state) = (
+            crate::config::Config::load().ok()?,
+            crate::state::State::load().ok()?,
+        );
+        crate::commands::shader::load_current_theme_colors(&config, &state).ok()
     }
 
     /// Border effects for the CURRENT mode — painted once at startup so the
     /// visibility cue is correct from the start (a prior session may have left a
     /// non-app border on the compositor across an engine restart).
-    pub fn paint_current_mode(&self) -> Vec<Effect> {
+    pub fn paint_current_mode(&mut self) -> Vec<Effect> {
         let mut fx = Vec::new();
-        self.push_border(&self.mode(), &mut fx);
+        let mode = self.mode().to_string();
+        self.push_border(&mode, &mut fx);
         fx
     }
 
@@ -926,6 +1013,9 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     // at a non-app colour across this engine restart. Publish the mode file for
     // the same reason: the bar's Mode widget reads it, and a stale value from a
     // crashed session would otherwise stand until the first mode change.
+    // arm_semantic seeds the theme palette the border slots resolve through
+    // (and re-reads it after a theme switch, mtime-guarded, off the key path).
+    router.arm_semantic();
     execute(&mut vdev, &mut hypr, router.paint_current_mode());
     publish_mode(&router.mode());
 
@@ -1402,7 +1492,7 @@ mod tests {
       }},
       "terminalClasses": ["kitty"],
       "modeColors": {
-        "desktop": { "active": "rgb(89b4fa)", "inactive": "rgb(313244)" }
+        "desktop": { "slot": "active", "label": "desktop" }
       },
       "modes": {
         "app": { "exit": "escape", "bindings": {
@@ -1679,9 +1769,15 @@ mod tests {
 
     #[test]
     fn mode_change_paints_the_border_surface() {
-        // Entering a mode with a configured colour paints the active-window
-        // border (the mode-visibility surface — the cure for mode error).
+        // Entering a mode with a configured SLOT paints the active-window
+        // border resolved through the CURRENT theme's palette (the
+        // mode-visibility surface — the cure for mode error). The palette is
+        // seeded directly: auto-refresh stays off in tests.
         let mut r = router();
+        r.set_semantic(HashMap::from([
+            ("active".to_string(), "#89b4fa".to_string()),
+            ("background_selection".to_string(), "#313244".to_string()),
+        ]));
         r.on_key(CAPS, 1, 0);
         let fx = r.on_key(CAPS, 0, 50); // tap → sticky desktop
         assert!(fx.contains(&Effect::ModeChanged("desktop".into())));
@@ -1691,6 +1787,28 @@ mod tests {
                 value: "rgb(89b4fa)".into()
             }),
             "entering desktop must paint the active border, got {fx:?}"
+        );
+        assert!(
+            fx.contains(&Effect::Keyword {
+                key: "general:col.inactive_border".into(),
+                value: "rgb(313244)".into()
+            }),
+            "entering desktop must paint the inactive border, got {fx:?}"
+        );
+    }
+
+    #[test]
+    fn unresolvable_border_slot_paints_nothing() {
+        // No palette seeded (and auto-refresh off): the mode change still
+        // fires, the border just isn't painted — never a bogus color.
+        let mut r = router();
+        r.on_key(CAPS, 1, 0);
+        let fx = r.on_key(CAPS, 0, 50);
+        assert!(fx.contains(&Effect::ModeChanged("desktop".into())));
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::Keyword { key, .. } if key.contains("border"))),
+            "an unresolvable slot must not paint, got {fx:?}"
         );
     }
 

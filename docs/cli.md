@@ -165,6 +165,7 @@ transport behind them is an implementation detail):
 ```bash
 vogix desktop status                     # is a shell instance running (and the bar state)
 vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
+vogix desktop check                      # validate desktop.json: slots ∈ the 16 praxis keys, resolvable in the live palette
 vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
 vogix desktop bar show|hide|toggle       # the bar surface
 vogix desktop notify dismiss [--all]     # the notification surface

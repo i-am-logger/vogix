@@ -38,6 +38,7 @@ RowLayout {
                 case "dnd": return "widgets/DndWidget.qml";
                 case "indicators": return "widgets/IndicatorsWidget.qml";
                 case "tailscale": return "widgets/TailscaleWidget.qml";
+                case "update": return "widgets/UpdateWidget.qml";
                 default: return "widgets/Unknown.qml";
                 }
             }

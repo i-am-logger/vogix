@@ -146,8 +146,24 @@ rec {
     };
   };
 
+  # The mode-visibility surface as DATA: each mode's border slot (one of
+  # the 16 semantic keys — the engine resolves the hex from the CURRENT
+  # theme at runtime) and the bar widget's label. Modes are NOT statuses:
+  # navigation modes use neutral/accent slots, never warning/danger/notice
+  # (those are reserved for real conditions). Covers every mode any
+  # shipped paradigm can enter. Deliberately NOT inside `modes` — that
+  # attrset carries binding overlays only (its shape is pinned by a test).
+  modeColors = {
+    app = { slot = "foreground_border"; label = "app"; };
+    desktop = { slot = "active"; label = "desktop"; };
+    move = { slot = "link"; label = "move"; };
+    resize = { slot = "highlight"; label = "resize"; };
+    console = { slot = "foreground_comment"; label = "console"; };
+  };
+
   # ── Modes ──
   modes = {
+
     # `app` holds ONLY the user's OVERLAY — launch / system / media bindings that
     # aren't the WM-navigation paradigm (and that use keys praxis can't express:
     # return/slash/print/XF86). The paradigm NAV (focus / move / resize /

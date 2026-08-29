@@ -302,7 +302,7 @@ in
           osd = { inherit (cfg.desktop.osd) enable timeout; };
           polkit = { inherit (cfg.desktop.polkit) enable; };
           lock = { inherit (cfg.desktop.lock) enable pamService; };
-          background = { inherit (cfg.desktop.background) enable; };
+          background = { inherit (cfg.desktop.background) enable animate; };
           launcher = { inherit (cfg.desktop.launcher) enable modes menu; };
           power = { inherit (cfg.desktop.power) enable; };
           weather = { inherit (cfg.desktop.weather) enable location; };
@@ -351,6 +351,11 @@ in
               "QS_DISABLE_FILE_WATCHER=1"
               "QS_NO_RELOAD_POPUP=1"
               "RUST_LOG=vogix=${cfg.logLevel}"
+              # Video backgrounds import QtMultimedia, which quickshell's own
+              # Qt env doesn't carry; same-nixpkgs module dir, loaded lazily
+              # (the VideoLayer Loader), so a missing backend never crashes
+              # the shell.
+              "QML_IMPORT_PATH=${pkgs.qt6.qtmultimedia}/${pkgs.qt6.qtbase.qtQmlPrefix}"
             ];
           };
 
@@ -393,22 +398,10 @@ in
         modes = {
           app = lib.mkDefault behaviorDefaults.modes.app;
 
-          # Derive the app-mode border color from the vogix semantic theme.
-          # Modes are NOT statuses — navigation modes use neutral/accent slots,
-          # never warning/danger/notice (those are reserved for real conditions).
-          # The flat default is a single `app` mode (no CapsLock sub-modes), so
-          # only `app` needs a colour.
-          modeColors =
-            let
-              colors = cfg.colors or { };
-              toRgb = hex: let h = lib.removePrefix "#" hex; in "rgb(${h})";
-            in
-            {
-              app = {
-                active = toRgb (colors.foreground-border or "585b70");
-                inactive = toRgb (colors.background-selection or "313244");
-              };
-            };
+          # Mode border colors are NOT baked here any more: modeColors is a
+          # slot table (behavior/defaults.nix) and the ENGINE resolves the
+          # hex from the CURRENT theme at runtime — a theme switch recolors
+          # the mode cue without a rebuild.
         };
 
         # Generated outputs for downstream consumption

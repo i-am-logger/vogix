@@ -65,14 +65,12 @@ fn copy_group_writable(src: &Path, dest: &Path) -> Result<()> {
 
 fn current_background(state: &Path) -> Option<String> {
     // Per-user override (the wallpaper layer's own state file).
-    if let Ok(raw) = std::fs::read_to_string(state.join("desktop/background.json")) {
-        if let Ok(doc) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(p) = doc.get("override").and_then(|v| v.as_str()) {
-                if !p.is_empty() {
-                    return Some(p.to_string());
-                }
-            }
-        }
+    if let Ok(raw) = std::fs::read_to_string(state.join("desktop/background.json"))
+        && let Ok(doc) = serde_json::from_str::<serde_json::Value>(&raw)
+        && let Some(p) = doc.get("override").and_then(|v| v.as_str())
+        && !p.is_empty()
+    {
+        return Some(p.to_string());
     }
     // The theme's own set, through the current-theme chain.
     let raw =

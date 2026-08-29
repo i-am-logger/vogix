@@ -50,6 +50,7 @@ PanelWindow {
                 case "tailscale": return "TailscalePanel.qml";
                 case "calendar": return "CalendarPanel.qml";
                 case "weather": return "WeatherPanel.qml";
+                case "agents": return "AgentsPanel.qml";
                 default: return "";
                 }
             }

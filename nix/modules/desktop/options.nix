@@ -216,6 +216,11 @@ in
             default = defaults.background.enable;
             description = "Render the per-screen wallpaper layer from the theme's background set.";
           };
+          animate = mkOption {
+            type = types.enum [ "always" "on-ac" "never" ];
+            default = defaults.background.animate;
+            description = "When live background kinds (shader/video) may animate; every setting pauses them while the idle dim stage is up.";
+          };
         };
 
         launcher = {

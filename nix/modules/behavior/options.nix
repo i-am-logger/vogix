@@ -237,13 +237,19 @@ in
               modeColors = mkOption {
                 type = types.attrsOf (types.submodule {
                   options = {
-                    active = mkOption { type = types.str; description = "Active border color"; };
-                    inactive = mkOption { type = types.str; description = "Inactive border color"; };
+                    slot = mkOption {
+                      type = types.enum (import ../lib/vogix16.nix { inherit lib; }).semanticKeys;
+                      description = "Semantic slot the mode's border resolves through — the ENGINE looks up the hex in the CURRENT theme at runtime, so the cue follows a theme switch live. No hex here, ever.";
+                    };
+                    label = mkOption {
+                      type = types.str;
+                      default = "";
+                      description = "Label the bar's mode widget shows for this mode.";
+                    };
                   };
                 });
-                internal = true;
                 default = { };
-                description = "Per-mode border colors derived from vogix theme";
+                description = "Per-mode visibility surface: border slot + widget label, merged over the shipped defaults.";
               };
             };
           };

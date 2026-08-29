@@ -23,6 +23,7 @@ _:
       left = [ "workspaces" "mode" ];
       center = [ "window" ];
       right = [
+        "update"
         "tray"
         "media"
         "weather"
@@ -74,6 +75,8 @@ _:
 
   background = {
     enable = true;
+    # Live kinds (shader/video) never cost battery by default.
+    animate = "on-ac";
   };
 
   launcher = {
@@ -95,6 +98,7 @@ _:
       { id = "theme"; icon = "󰏘"; label = "Theme…"; action = "vogix desktop launcher --mode theme"; }
       { id = "background"; icon = "󰸉"; label = "Next background"; action = "vogix desktop background next"; }
       { id = "dnd"; icon = "󰂛"; label = "Do not disturb"; action = "vogix desktop notify dnd toggle"; }
+      { id = "agents"; icon = "󱚝"; label = "Claude usage…"; action = "vogix desktop panel agents"; }
       { id = "lock"; icon = "󰌾"; label = "Lock"; action = "vogix desktop lock"; }
       { id = "power"; icon = "󰐥"; label = "Power…"; action = "vogix desktop power"; }
     ];

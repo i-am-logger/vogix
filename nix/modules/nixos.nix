@@ -114,6 +114,10 @@ in
       description = "Theme variant (dark or light) for console colors (overrides auto-detection).";
     };
 
+    plymouth = {
+      enable = mkEnableOption "the vogix plymouth boot splash (text-only script theme from the first vogix user's palette)";
+    };
+
     greeter = {
       enable = mkEnableOption "the vogix SDDM greeter (SDDM under a Hyprland Lua compositor, themed from the first vogix user's palette)";
 
@@ -219,6 +223,30 @@ in
         })
       ];
     })
+
+    # The boot splash: a text-only plymouth script theme from the same
+    # first-user palette the console and greeter use — boot, login and
+    # session are color-continuous with no recolored bitmaps anywhere.
+    # Build-time like console.colors (a theme switch reaches it at the
+    # next rebuild); mkDefault everywhere so a host keeps the last word.
+    (mkIf cfg.plymouth.enable (
+      let
+        semantic =
+          if hmVogixCfg != null then
+            lib.mapAttrs'
+              (n: lib.nameValuePair (builtins.replaceStrings [ "-" ] [ "_" ] n))
+              hmVogixCfg.colors
+          else
+            { };
+        theme = pkgs.callPackage ../packages/vogix-plymouth.nix { colors = semantic; };
+      in
+      {
+        boot.plymouth = {
+          themePackages = [ theme ];
+          theme = lib.mkDefault "vogix";
+        };
+      }
+    ))
 
     # The greeter surface: SDDM with the vogix QML theme, its [General]
     # palette rendered from the FIRST vogix user's semantic colors — the

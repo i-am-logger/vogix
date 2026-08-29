@@ -66,9 +66,10 @@ let
     };
     # kitty is a terminal: the context-aware remap retargets copy/paste there.
     terminalClasses = [ "kitty" ];
-    # Per-mode border colours for the mode-visibility surface.
+    # The mode-visibility surface: a border SLOT per mode (semantic key, not
+    # hex) — the engine resolves it against the current theme at runtime.
     modeColors = {
-      desktop = { active = "rgb(89b4fa)"; inactive = "rgb(313244)"; };
+      desktop = { slot = "active"; label = "desktop"; };
     };
     modes = {
       app = {
@@ -237,6 +238,14 @@ let
     ] }
     ui_yk = UInput(yk, name="YubiKey OTP", vendor=0x1050)
     time.sleep(1)
+
+    # Stage the theme contract the border slots resolve through: the engine
+    # reads current-theme/vogix-desktop/theme.json (semantic map) at startup
+    # and pushes rgb() derived from it — Test 20 asserts the resolved hex.
+    theme_dir = "/root/.local/state/vogix/current-theme/vogix-desktop"
+    os.makedirs(theme_dir, exist_ok=True)
+    with open(f"{theme_dir}/theme.json", "w") as f:
+        f.write('{"semantic":{"active":"#89b4fa","background_selection":"#313244"}}')
 
     # 3) Start the engine: scan-based discovery via XDG_RUNTIME_DIR, no HIS.
     env = dict(os.environ)

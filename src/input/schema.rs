@@ -43,10 +43,12 @@ pub struct Schema {
     /// remaps suppressed) so Super+C can't fire Ctrl+C=SIGINT into the shell.
     #[serde(default, rename = "terminalClasses")]
     pub terminal_classes: Vec<String>,
-    /// Per-mode border colours (theme-derived, Hyprland `rgb(...)` form). Drive
-    /// the mode-visibility surface: on a mode change the engine paints the active
-    /// window border so the user can always SEE which mode is active (the cure
-    /// for mode error — Norman 1981).
+    /// Per-mode color SLOTS (semantic keys, not hex): the engine resolves the
+    /// slot against the CURRENT theme's palette off the keypress path, so the
+    /// border follows a theme switch live. Drives the mode-visibility surface:
+    /// on a mode change the engine paints the active window border so the user
+    /// can always SEE which mode is active (the cure for mode error — Norman
+    /// 1981). `label` is the bar's mode-widget text for the same table.
     #[serde(default, rename = "modeColors")]
     pub mode_colors: HashMap<String, ModeColor>,
     /// Device-grab policy: which evdev devices the engine may OWN. Optional;
@@ -56,13 +58,18 @@ pub struct Schema {
     pub device_filter: Option<DeviceFilterSpec>,
 }
 
-/// A mode's border colours (Hyprland `rgb(RRGGBB)` strings).
+/// A mode's visibility surface: the semantic SLOT its border resolves
+/// through (one of the 16 praxis keys) and the label the bar's mode widget
+/// shows. No hex here, ever — the palette is the theme's, live.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ModeColor {
     #[serde(default)]
-    pub active: String,
+    pub slot: String,
+    /// Read by the BAR's mode widget (input.json is its source too), not by
+    /// the engine — deserialized here so the schema stays the one contract.
     #[serde(default)]
-    pub inactive: String,
+    #[allow(dead_code)]
+    pub label: String,
 }
 
 /// Optional device-grab policy from the schema (`deviceFilter`). Its excludes
