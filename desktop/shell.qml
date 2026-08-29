@@ -1,4 +1,5 @@
 //@ pragma UseQApplication
+pragma ComponentBehavior: Bound
 // vogix desktop shell (v1, quickshell) — the rendering layer over the
 // vogix contract: theme.json (colors), desktop.json (layout), current-mode
 // (the engine's input mode). Everything here is replaceable by the v2 Rust
@@ -10,12 +11,14 @@ import qs.Services
 import qs.Vogix
 import "Background"
 import "Bar"
+import "DevGallery"
 import "Idle"
 import "Launcher"
 import "Notifications"
 import "Osd"
 import "Polkit"
 import "Power"
+import qs.Panels
 
 ShellRoot {
     id: root
@@ -24,7 +27,11 @@ ShellRoot {
     // services must run from startup (the notification server registers on
     // the bus, the idle monitors arm, the lock preflights its PAM check), so
     // reference them eagerly here.
-    readonly property list<QtObject> services: [Notifs, Audio, Osd, Idle, Lock, Backgrounds, Launcher, Power]
+    readonly property list<QtObject> services: [
+        Notifs, Audio, Osd, Idle, Lock, Backgrounds, Launcher, Power,
+        Battery, Media, SysStat, Weather, Nightlight, StayAwake, Reminders,
+        Panels, Brightness,
+    ]
 
     Bar {
         id: bar
@@ -63,6 +70,30 @@ ShellRoot {
     LazyLoader {
         active: (Config.doc.power ?? {}).enable ?? true
         component: PowerMenu {}
+    }
+
+    LazyLoader {
+        active: true
+        component: PanelPopup {}
+    }
+
+    LazyLoader {
+        active: ((Config.doc.idle ?? {}).screensaver ?? null) !== null
+        component: Screensaver {}
+    }
+
+    property bool galleryOpen: false
+
+    LazyLoader {
+        active: root.galleryOpen
+        component: GalleryWindow {
+            id: galleryWindow
+            open: root.galleryOpen
+            onOpenChanged: {
+                if (!galleryWindow.open)
+                    root.galleryOpen = false;
+            }
+        }
     }
 
     // IPC targets mirror the `vogix desktop …` verbs 1:1; nothing else may
@@ -136,6 +167,57 @@ ShellRoot {
         function close(): string { return Power.close(); }
         function toggle(): string { return Power.toggle(); }
         function status(): string { return Power.status(); }
+    }
+
+    IpcHandler {
+        target: "panel"
+
+        function open(name: string): string { return Panels.show(name); }
+        function close(): string { return Panels.close(); }
+        function toggle(name: string): string { return Panels.toggle(name); }
+        function status(): string { return Panels.status(); }
+    }
+
+    IpcHandler {
+        target: "nightlight"
+
+        function on(): string { return Nightlight.set(true); }
+        function off(): string { return Nightlight.set(false); }
+        function toggle(): string { return Nightlight.toggle(); }
+        function status(): string { return Nightlight.status(); }
+    }
+
+    IpcHandler {
+        target: "stayawake"
+
+        function on(): string { return StayAwake.set(true); }
+        function off(): string { return StayAwake.set(false); }
+        function toggle(): string { return StayAwake.toggle(); }
+        function status(): string { return StayAwake.status(); }
+    }
+
+    IpcHandler {
+        target: "reminders"
+
+        function add(text: string, at: real): string { return Reminders.add(text, at); }
+        function list(): string { return Reminders.list(); }
+        function clear(): string { return Reminders.clear(); }
+    }
+
+    IpcHandler {
+        target: "gallery"
+
+        function open(): string {
+            root.galleryOpen = true;
+            return "open";
+        }
+        function close(): string {
+            root.galleryOpen = false;
+            return "closed";
+        }
+        function status(): string {
+            return root.galleryOpen ? "open" : "closed";
+        }
     }
 
     IpcHandler {

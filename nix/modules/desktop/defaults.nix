@@ -22,7 +22,22 @@ _:
     layout = {
       left = [ "workspaces" "mode" ];
       center = [ "window" ];
-      right = [ "theme" "clock" ];
+      right = [
+        "tray"
+        "media"
+        "weather"
+        "cpu"
+        "memory"
+        "network"
+        "bluetooth"
+        "audio"
+        "mic"
+        "battery"
+        "dnd"
+        "indicators"
+        "theme"
+        "clock"
+      ];
     };
   };
 
@@ -89,9 +104,20 @@ _:
     enable = true;
   };
 
+  weather = {
+    enable = true;
+    location = "";
+  };
+
+  nightlight = {
+    temperature = 4000;
+  };
+
   # Idle stages in seconds; null disables a stage. Suspend is off by
-  # default — a desktop that vanishes mid-thought is a host decision.
+  # default — a desktop that vanishes mid-thought is a host decision — and
+  # so is the screensaver (the dim stage is the default idle cue).
   idle = {
+    screensaver = null;
     dim = 300;
     lock = 600;
     screenOff = 660;

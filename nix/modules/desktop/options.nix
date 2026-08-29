@@ -246,7 +246,33 @@ in
           };
         };
 
+        weather = {
+          enable = mkOption {
+            type = types.bool;
+            default = defaults.weather.enable;
+            description = "The weather widget/panel (wttrbar, refreshed every 30 minutes).";
+          };
+          location = mkOption {
+            type = types.str;
+            default = defaults.weather.location;
+            description = "Location passed to wttrbar (empty = wttr.in geolocation).";
+          };
+        };
+
+        nightlight = {
+          temperature = mkOption {
+            type = types.ints.positive;
+            default = defaults.nightlight.temperature;
+            description = "Color temperature (K) hyprsunset applies while night light is on.";
+          };
+        };
+
         idle = {
+          screensaver = mkOption {
+            type = types.nullOr types.ints.positive;
+            default = defaults.idle.screensaver;
+            description = "Seconds of idle before the screensaver overlay (null = never).";
+          };
           dim = mkOption {
             type = types.nullOr types.ints.positive;
             default = defaults.idle.dim;

@@ -305,7 +305,9 @@ in
           background = { inherit (cfg.desktop.background) enable; };
           launcher = { inherit (cfg.desktop.launcher) enable modes menu; };
           power = { inherit (cfg.desktop.power) enable; };
-          idle = { inherit (cfg.desktop.idle) dim lock screenOff suspend; };
+          weather = { inherit (cfg.desktop.weather) enable location; };
+          nightlight = { inherit (cfg.desktop.nightlight) temperature; };
+          idle = { inherit (cfg.desktop.idle) screensaver dim lock screenOff suspend; };
           surfaces = mergedSurfaces;
         };
         desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;

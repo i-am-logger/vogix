@@ -7,3 +7,12 @@ singleton Idle 1.0 Idle.qml
 singleton Backgrounds 1.0 Backgrounds.qml
 singleton Launcher 1.0 Launcher.qml
 singleton Power 1.0 Power.qml
+singleton Battery 1.0 Battery.qml
+singleton Media 1.0 Media.qml
+singleton SysStat 1.0 SysStat.qml
+singleton Weather 1.0 Weather.qml
+singleton Nightlight 1.0 Nightlight.qml
+singleton StayAwake 1.0 StayAwake.qml
+singleton Reminders 1.0 Reminders.qml
+singleton Panels 1.0 Panels.qml
+singleton Brightness 1.0 Brightness.qml

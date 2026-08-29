@@ -9,6 +9,7 @@
 
 use crate::cli::{
     BarCommands, DesktopCommands, DndCommands, LockCommands, NotifyCommands, PowerCommands,
+    RemindCommands, SwitchCommands,
 };
 use crate::errors::{Result, VogixError};
 use log::debug;
@@ -44,7 +45,110 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::Power { action } => power(action.as_ref()),
         DesktopCommands::Select { prompt } => select(prompt.as_deref().unwrap_or(""), false),
         DesktopCommands::Input { prompt } => select(prompt.as_deref().unwrap_or(""), true),
+        DesktopCommands::Panel { name, close } => panel(name.as_deref(), *close),
+        DesktopCommands::Nightlight { state } => switch("nightlight", state),
+        DesktopCommands::StayAwake { state } => switch("stayawake", state),
+        DesktopCommands::Remind { command } => remind(command),
+        DesktopCommands::Gallery { close } => {
+            match qs_ipc(&["gallery", if *close { "close" } else { "open" }]) {
+                Some(r) => println!("{r}"),
+                None => println!("no responsive shell instance"),
+            }
+            Ok(())
+        }
     }
+}
+
+fn panel(name: Option<&str>, close: bool) -> Result<()> {
+    let reply = if close {
+        qs_ipc(&["panel", "close"])
+    } else {
+        match name {
+            Some(n) => qs_ipc(&["panel", "toggle", n]),
+            None => qs_ipc(&["panel", "status"]),
+        }
+    };
+    match reply {
+        Some(r) => println!("{r}"),
+        None => println!("no responsive shell instance"),
+    }
+    Ok(())
+}
+
+fn switch(target: &str, state: &SwitchCommands) -> Result<()> {
+    let verb = match state {
+        SwitchCommands::On => "on",
+        SwitchCommands::Off => "off",
+        SwitchCommands::Toggle => "toggle",
+        SwitchCommands::Status => "status",
+    };
+    match qs_ipc(&[target, verb]) {
+        Some(r) => println!("{r}"),
+        None => println!("no responsive shell instance"),
+    }
+    Ok(())
+}
+
+fn remind(command: &RemindCommands) -> Result<()> {
+    let reply = match command {
+        RemindCommands::Add { text, delay } => {
+            let ms = parse_duration_ms(delay)?;
+            let at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0)
+                + ms;
+            qs_ipc(&["reminders", "add", text, &at.to_string()])
+        }
+        RemindCommands::List => qs_ipc(&["reminders", "list"]),
+        RemindCommands::Clear => qs_ipc(&["reminders", "clear"]),
+    };
+    match reply {
+        Some(r) => println!("{r}"),
+        None => println!("no responsive shell instance"),
+    }
+    Ok(())
+}
+
+/// "10m", "1h30m", "45s", "2h" → milliseconds.
+fn parse_duration_ms(spec: &str) -> Result<u64> {
+    let mut total: u64 = 0;
+    let mut digits = String::new();
+    for c in spec.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+        } else {
+            let n: u64 = digits.parse().map_err(|_| {
+                VogixError::Config(format!("bad duration '{spec}' (use e.g. 10m, 1h30m, 45s)"))
+            })?;
+            digits.clear();
+            total += match c {
+                's' => n * 1000,
+                'm' => n * 60 * 1000,
+                'h' => n * 60 * 60 * 1000,
+                'd' => n * 24 * 60 * 60 * 1000,
+                _ => {
+                    return Err(VogixError::Config(format!(
+                        "bad duration unit '{c}' in '{spec}' (s, m, h, d)"
+                    )));
+                }
+            };
+        }
+    }
+    if !digits.is_empty() {
+        // A bare number means minutes.
+        total += digits
+            .parse::<u64>()
+            .map_err(|_| VogixError::Config(format!("bad duration '{spec}'")))?
+            * 60
+            * 1000;
+    }
+    if total == 0 {
+        return Err(VogixError::Config(format!(
+            "duration '{spec}' is zero (use e.g. 10m, 1h30m, 45s)"
+        )));
+    }
+    Ok(total)
 }
 
 fn launcher(mode: &str, query: &str) -> Result<()> {

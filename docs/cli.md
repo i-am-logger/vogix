@@ -177,6 +177,11 @@ vogix desktop osd volume --value 40      # flash the on-screen display
 vogix desktop launcher [--mode M]        # the launcher overlay (apps files calc emoji ssh clipboard theme background)
 vogix desktop menu [--summon ID]         # the root menu from desktop.json
 vogix desktop power [ACTION]             # the power menu; lock|logout|suspend|reboot|poweroff run directly
+vogix desktop panel [NAME|--close]      # bar panels: audio network bluetooth power monitor tailscale calendar weather
+vogix desktop nightlight on|off|toggle|status   # hyprsunset night light
+vogix desktop stay-awake on|off|toggle|status   # hold every idle stage open
+vogix desktop remind add "text" --in 10m        # timed reminder (list|clear too)
+vogix desktop gallery [--close]          # the token/surface dev gallery
 vogix desktop select [-p PROMPT]         # dmenu mode: items on stdin, choice on stdout (exit 1 on cancel)
 vogix desktop input [-p PROMPT]          # dmenu mode: free-text entry
 ```

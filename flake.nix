@@ -398,7 +398,7 @@
               export XDG_CONFIG_HOME=$HOME/.config
               export XDG_STATE_HOME=$HOME/.local/state
               export XDG_RUNTIME_DIR=$TMPDIR/rt
-              mkdir -p $XDG_CONFIG_HOME/vogix-desktop $XDG_STATE_HOME/vogix $XDG_RUNTIME_DIR
+              mkdir -p $XDG_CONFIG_HOME/vogix-desktop $XDG_STATE_HOME/vogix/desktop $XDG_RUNTIME_DIR
               chmod 700 $XDG_RUNTIME_DIR
               cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
               cp $desktopJsonPath $XDG_STATE_HOME/vogix/desktop.json
@@ -422,6 +422,16 @@
               qs -p $qml ipc call power toggle >> $TMPDIR/result
               qs -p $qml ipc call power status >> $TMPDIR/result
               qs -p $qml ipc call power close >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call panel toggle calendar >> $TMPDIR/result
+              qs -p $qml ipc call panel status >> $TMPDIR/result
+              qs -p $qml ipc call panel close >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call stayawake toggle >> $TMPDIR/result
+              qs -p $qml ipc call stayawake status >> $TMPDIR/result
+              qs -p $qml ipc call nightlight status >> $TMPDIR/result
+              qs -p $qml ipc call gallery open >> $TMPDIR/result
+              qs -p $qml ipc call gallery status >> $TMPDIR/result
+              qs -p $qml ipc call gallery close >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call reminders list >> $TMPDIR/result
               kill \$QSPID 2>/dev/null || true
               INNER
               chmod +x inner.sh
@@ -435,6 +445,10 @@
               grep -q '^hidden$' $TMPDIR/result
               grep -q '^closed$' $TMPDIR/result
               grep -q '^open$' $TMPDIR/result
+              grep -q '^calendar$' $TMPDIR/result
+              grep -q '^on$' $TMPDIR/result
+              grep -q '^off$' $TMPDIR/result
+              grep -q '^no reminders$' $TMPDIR/result
               ! grep -iq 'is not a type\|module .* is not installed\|Failed to load configuration' $TMPDIR/qs.log
               touch $out
             '';

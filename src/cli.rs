@@ -243,6 +243,36 @@ pub enum DesktopCommands {
         #[arg(short, long)]
         prompt: Option<String>,
     },
+    /// Toggle a bar panel popup (audio, network, bluetooth, power, monitor,
+    /// tailscale, calendar, weather); no name prints which one is open
+    Panel {
+        /// Panel to toggle
+        name: Option<String>,
+        /// Close whatever panel is open
+        #[arg(long)]
+        close: bool,
+    },
+    /// Night light (hyprsunset with the configured temperature)
+    Nightlight {
+        #[command(subcommand)]
+        state: SwitchCommands,
+    },
+    /// Hold every idle stage open (screensaver, dim, lock, screen-off, suspend)
+    StayAwake {
+        #[command(subcommand)]
+        state: SwitchCommands,
+    },
+    /// Timed reminders, fired through the shell's notification server
+    Remind {
+        #[command(subcommand)]
+        command: RemindCommands,
+    },
+    /// The dev gallery: every surface's tokens rendered as swatches
+    Gallery {
+        /// Close it instead of opening
+        #[arg(long)]
+        close: bool,
+    },
     /// Flash the on-screen display (volume/brightness/caps/custom)
     Osd {
         /// What to flash: volume, mic, brightness, caps, numlock, custom, …
@@ -306,6 +336,30 @@ pub enum BackgroundCommands {
     Clear,
     /// Print what the wallpaper layer is showing
     Status,
+}
+
+#[derive(Subcommand)]
+pub enum SwitchCommands {
+    On,
+    Off,
+    Toggle,
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum RemindCommands {
+    /// Set a reminder
+    Add {
+        /// What to be reminded of
+        text: String,
+        /// Delay, e.g. 10m, 1h30m, 45s
+        #[arg(long = "in", value_name = "DURATION")]
+        delay: String,
+    },
+    /// List pending reminders
+    List,
+    /// Drop every pending reminder
+    Clear,
 }
 
 #[derive(Subcommand)]

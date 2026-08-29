@@ -1,0 +1,3 @@
+module qs.Panels
+PanelPopup 1.0 PanelPopup.qml
+PanelLabel 1.0 PanelLabel.qml
