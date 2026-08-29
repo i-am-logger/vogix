@@ -15,7 +15,10 @@ Rectangle {
 
     // Palette: theme.conf values, overridden by the runtime-synced theme.json
     // when present and readable. Missing key = loud magenta, like Tokens.qml.
+    // The wallpaper is tracked separately: its XHR and the palette's resolve
+    // in either order, so neither may depend on the other having landed.
     property var runtime: null
+    property string runtimeWallpaper: ""
 
     function slot(name: string): color {
         if (runtime && runtime[name])
@@ -24,7 +27,7 @@ Rectangle {
         return (v && v !== "") ? v : "#ff00ff";
     }
 
-    property string wallpaper: (runtime && runtime.__wallpaper) ? runtime.__wallpaper : (config.wallpaper ?? "")
+    property string wallpaper: runtimeWallpaper !== "" ? runtimeWallpaper : (config.wallpaper ?? "")
     property bool authFailed: false
 
     width: 1920
@@ -56,8 +59,8 @@ Rectangle {
                     return;
                 try {
                     const doc = JSON.parse(bg.responseText);
-                    if (doc.path && root.runtime)
-                        root.runtime.__wallpaper = doc.path;
+                    if (doc.path)
+                        root.runtimeWallpaper = doc.path;
                 } catch (e) {}
             };
             bg.open("GET", "file:///var/lib/vogix/greeter/background.json");

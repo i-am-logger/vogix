@@ -61,18 +61,19 @@ ColumnLayout {
     Process {
         id: proc
         // One subprocess per open: for each account dir, count today's
-        // transcript files and sum their output tokens. Tab-separated rows.
+        // transcript files and sum their output tokens. NUL-delimited file
+        // handling throughout (whitespace/newline/leading-dash-proof), with
+        // `--` so no path is ever read as an option. Tab-separated rows.
         command: ["sh", "-c", `
             for dir in "$HOME/.claude" "$HOME"/.claude-accounts/*/; do
               [ -d "$dir/projects" ] || continue
               name=$(basename "$dir")
               [ "$name" = ".claude" ] && name=default
-              files=$(find "$dir/projects" -name '*.jsonl' -newermt "today" 2>/dev/null)
-              [ -n "$files" ] || { printf '%s\\t0\\t0\\n' "$name"; continue; }
-              sessions=$(printf '%s\\n' "$files" | wc -l)
-              tokens=$(printf '%s\\n' "$files" | xargs grep -ho '"output_tokens":[0-9]*' 2>/dev/null \\
+              sessions=$(find "$dir/projects" -name '*.jsonl' -newermt "today" -printf '.' 2>/dev/null | wc -c)
+              tokens=$(find "$dir/projects" -name '*.jsonl' -newermt "today" -print0 2>/dev/null \\
+                | xargs -0 -r grep -ho -- '"output_tokens":[0-9]*' 2>/dev/null \\
                 | cut -d: -f2 | awk '{s+=$1} END{print s+0}')
-              printf '%s\\t%s\\t%s\\n' "$name" "$sessions" "$tokens"
+              printf '%s\\t%s\\t%s\\n' "$name" "$sessions" "\${tokens:-0}"
             done
         `]
         stdout: StdioCollector {

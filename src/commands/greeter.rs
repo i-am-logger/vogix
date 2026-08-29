@@ -33,34 +33,60 @@ fn sync() -> Result<()> {
 
     let state = Config::state_dir();
     let theme_src = state.join("current-theme/vogix-desktop/theme.json");
-    copy_group_writable(&theme_src, &dest.join("theme.json"))?;
+    let theme = std::fs::read(&theme_src)
+        .map_err(|e| VogixError::Config(format!("cannot read {}: {e}", theme_src.display())))?;
+    write_group_writable(&dest.join("theme.json"), &theme)?;
 
     // Background: the per-user override wins, else the theme set's first
     // entry. A store path is fine — the greeter can read /nix/store.
     if let Some(path) = current_background(&state) {
         let payload = serde_json::json!({ "path": path }).to_string();
-        let bg_dest = dest.join("background.json");
-        std::fs::write(&bg_dest, payload)
-            .map_err(|e| VogixError::Config(format!("cannot write {}: {e}", bg_dest.display())))?;
-        let _ = std::fs::set_permissions(&bg_dest, std::fs::Permissions::from_mode(0o664));
+        write_group_writable(&dest.join("background.json"), payload.as_bytes())?;
     }
 
     println!("greeter: synced {}", dest.display());
     Ok(())
 }
 
-fn copy_group_writable(src: &Path, dest: &Path) -> Result<()> {
-    std::fs::copy(src, dest).map_err(|e| {
-        VogixError::Config(format!(
-            "cannot copy {} to {}: {e}",
-            src.display(),
-            dest.display()
-        ))
-    })?;
-    // The zone is shared by every vogix user (setgid dir); leave the file
-    // group-writable so the NEXT user's sync can overwrite it.
-    let _ = std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o664));
-    Ok(())
+/// Atomic, symlink-proof write into the shared drop zone: the zone is
+/// group-writable (any vogix user syncs), so a plain write/copy at the
+/// destination could FOLLOW a pre-planted symlink and clobber an arbitrary
+/// file. Create a fresh temp file (O_EXCL — never follows anything) and
+/// rename() it over the target: rename replaces a symlink itself rather
+/// than dereferencing it, and readers see old-or-new, never a torn file.
+fn write_group_writable(dest: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let dir = dest
+        .parent()
+        .ok_or_else(|| VogixError::Config(format!("{} has no parent directory", dest.display())))?;
+    let tmp = dir.join(format!(
+        ".{}.tmp.{}",
+        dest.file_name().and_then(|n| n.to_str()).unwrap_or("sync"),
+        std::process::id()
+    ));
+    let err =
+        |e: std::io::Error| VogixError::Config(format!("cannot write {}: {e}", dest.display()));
+
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(err)?;
+    let result = f
+        .write_all(contents)
+        .and_then(|()| {
+            // The zone is shared by every vogix user (setgid dir); leave the
+            // file group-writable so the NEXT user's sync can replace it.
+            f.set_permissions(std::fs::Permissions::from_mode(0o664))
+        })
+        .and_then(|()| f.sync_all())
+        .map_err(err)
+        .and_then(|()| std::fs::rename(&tmp, dest).map_err(err));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 fn current_background(state: &Path) -> Option<String> {
