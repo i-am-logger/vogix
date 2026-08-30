@@ -459,26 +459,41 @@
               desktopJson = builtins.toJSON {
                 schema = 2;
                 font = { family = "monospace"; size = 16; };
+                # The real default catalog: every widget the shell ships
+                # instantiates here, so a widget that fails to load fails
+                # the smoke.
                 bars = {
                   top = {
                     enable = true;
                     size = 36;
-                    layout = { start = [ "workspaces" "mode" ]; center = [ "window" ]; end = [ "theme" "clock" ]; };
+                    layout = {
+                      start = [ "workspaces" "mode" ];
+                      center = [ "window" ];
+                      end = [ "spectrum-mini" "kbd" "privacy" "dnd" "indicators" "theme" "clock" ];
+                    };
                   };
                   bottom = {
                     enable = true;
                     size = 32;
-                    layout = { start = [ "media" ]; center = [ "cpu" "memory" ]; end = [ "tray" ]; };
+                    layout = {
+                      start = [ "media" "spacer" ];
+                      center = [ "stat-cpu" "stat-temp" "stat-mem" "stat-swap" "stat-disk" "stat-net" "vu-out" "vu-mic" ];
+                      end = [ "tailscale" "weather" "update" "tray" ];
+                    };
                   };
                   left = {
                     enable = true;
                     size = 36;
-                    layout = { start = [ "workspaces" ]; center = [ ]; end = [ "clock" ]; };
+                    layout = { start = [ "workspaces" "mode" ]; center = [ ]; end = [ "menu" "power-glyph" ]; };
                   };
                   right = {
                     enable = true;
                     size = 48;
-                    layout = { start = [ ]; center = [ ]; end = [ "indicators" ]; };
+                    layout = {
+                      start = [ "vu-rail" "spectrum-rail" ];
+                      center = [ "graph-cpu" "graph-mem" "graph-net" ];
+                      end = [ "batteries" "battery" "audio" "mic" "network" "bluetooth" ];
+                    };
                   };
                 };
                 # The one-release schema-1 mirror the serializer emits.

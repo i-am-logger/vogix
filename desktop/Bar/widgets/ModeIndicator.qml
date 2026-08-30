@@ -16,9 +16,8 @@ Rectangle {
     readonly property var entry: root.table[Mode.mode] ?? null
     readonly property bool isRoot: Mode.mode === "app"
 
-    implicitWidth: label.implicitWidth + 14
-    implicitHeight: 22
-    radius: 4
+    implicitWidth: label.implicitWidth + Metrics.unit * 3
+    implicitHeight: Metrics.chip
     color: {
         if (root.isRoot)
             return "transparent";
@@ -30,9 +29,12 @@ Rectangle {
     BarText {
         id: label
         anchors.centerIn: parent
-        text: root.entry?.label !== undefined && root.entry.label !== ""
+        // Bracketed, uppercase — the [MODE] readout of the HUD.
+        text: "[" + (root.entry?.label !== undefined && root.entry.label !== ""
             ? root.entry.label
-            : Mode.mode
+            : Mode.mode) + "]"
+        font.capitalization: Font.AllUppercase
+        font.letterSpacing: 1
         color: root.isRoot
             ? Tokens.color("bar", "muted")
             : Tokens.color("bar", "background")

@@ -25,12 +25,15 @@ GridLayout {
 
             required property var modelData
 
-            implicitWidth: Math.max(22, label.implicitWidth + 10)
-            implicitHeight: 22
-            radius: 4
+            // Square HUD blocks: chip-sized, hairline-framed, filled when
+            // focused.
+            implicitWidth: Math.max(Metrics.chip, label.implicitWidth + 10)
+            implicitHeight: Metrics.chip
             color: ws.modelData.focused ? Tokens.color("bar", "accent") : "transparent"
-            border.width: ws.modelData.urgent ? 1 : 0
-            border.color: Tokens.color("bar", "urgent")
+            border.width: 1
+            border.color: ws.modelData.urgent
+                ? Tokens.color("bar", "urgent")
+                : Tokens.color("meter", "frame")
 
             BarText {
                 id: label
