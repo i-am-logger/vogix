@@ -114,6 +114,9 @@
       "size": 44
     }
   },
+  "decorations": {
+    "focusBrackets": true
+  },
   "font": {
     "family": "Fira Code Nerd Font",
     "size": 16

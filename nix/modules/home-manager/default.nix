@@ -321,6 +321,7 @@ in
           polkit = { inherit (cfg.desktop.polkit) enable; };
           lock = { inherit (cfg.desktop.lock) enable pamService; };
           background = { inherit (cfg.desktop.background) enable animate scanlines; };
+          decorations = { inherit (cfg.desktop.decorations) focusBrackets; };
           launcher = { inherit (cfg.desktop.launcher) enable modes menu; };
           power = { inherit (cfg.desktop.power) enable; };
           weather = { inherit (cfg.desktop.weather) enable location; };

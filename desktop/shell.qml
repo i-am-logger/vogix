@@ -11,6 +11,7 @@ import qs.Services
 import qs.Vogix
 import "Background"
 import "Bar"
+import "Decorations"
 import "DevGallery"
 import "Idle"
 import "Launcher"
@@ -45,6 +46,11 @@ ShellRoot {
     LazyLoader {
         active: (Config.doc.background ?? {}).enable ?? true
         component: Wallpaper {}
+    }
+
+    LazyLoader {
+        active: (Config.doc.decorations ?? {}).focusBrackets ?? true
+        component: FocusBrackets {}
     }
 
     LazyLoader {

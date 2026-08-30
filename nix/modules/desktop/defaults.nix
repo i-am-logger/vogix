@@ -115,6 +115,12 @@ _:
     scanlines = false;
   };
 
+  decorations = {
+    # The Flight Deck focus brackets — part of the chosen design, on by
+    # default.
+    focusBrackets = true;
+  };
+
   launcher = {
     enable = true;
     modes = {
