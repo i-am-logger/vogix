@@ -287,6 +287,20 @@ in
           };
         };
 
+        decorations = {
+          focusBrackets = mkOption {
+            type = types.bool;
+            default = defaults.decorations.focusBrackets;
+            description = ''
+              Corner brackets on the FOCUSED window, drawn by a click-through
+              shell overlay (Hyprland borders are full-perimeter only, so the
+              compositor cannot draw these). Brackets follow window geometry
+              over IPC, so they glide to a drag's drop point rather than
+              chasing it.
+            '';
+          };
+        };
+
         launcher = {
           enable = mkOption {
             type = types.bool;
