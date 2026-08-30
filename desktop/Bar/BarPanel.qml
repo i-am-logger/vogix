@@ -9,6 +9,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import qs.Bar.widgets
+import qs.Components
 import qs.Services
 import qs.Vogix
 
@@ -45,6 +46,8 @@ PanelWindow {
     Rectangle {
         anchors.fill: parent
         color: Tokens.color("bar", "background")
+
+        ScanlineOverlay {}
 
         BarAxis {
             id: axisCtx

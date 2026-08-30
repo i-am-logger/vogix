@@ -27,4 +27,6 @@ runCommand "vogix-desktop-qml"
   chmod -R u+w $out
   qsb --glsl "100 es,120,150" --hlsl 50 --msl 12 \
     -o $out/data/aurora.frag.qsb $out/data/aurora.frag
+  qsb --glsl "100 es,120,150" --hlsl 50 --msl 12 \
+    -o $out/data/scanline.frag.qsb $out/data/scanline.frag
 ''
