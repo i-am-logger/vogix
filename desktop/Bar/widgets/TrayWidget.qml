@@ -30,12 +30,17 @@ GridLayout {
 
             MouseArea {
                 anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                 onClicked: mouse => {
                     if (mouse.button === Qt.RightButton && trayIcon.modelData.hasMenu)
                         trayIcon.modelData.display(trayIcon.QsWindow.window, trayIcon.x, trayIcon.y);
+                    else if (mouse.button === Qt.MiddleButton)
+                        trayIcon.modelData.secondaryActivate();
                     else
                         trayIcon.modelData.activate();
+                }
+                onWheel: wheel => {
+                    trayIcon.modelData.scroll(wheel.angleDelta.y, false);
                 }
             }
         }

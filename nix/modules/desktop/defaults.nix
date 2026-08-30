@@ -128,6 +128,7 @@ _:
     # host configuration. Hosts append or replace via desktop.launcher.menu.
     menu = [
       { id = "keybindings"; icon = "󰌌"; label = "Keybindings"; action = "vogix input keys"; }
+      { id = "remind"; icon = "󰀠"; label = "Remind me in 10m…"; action = "vogix desktop remind add 'Reminder' 10m"; }
       { id = "theme"; icon = "󰏘"; label = "Theme…"; action = "vogix desktop launcher --mode theme"; }
       { id = "background"; icon = "󰸉"; label = "Next background"; action = "vogix desktop background next"; }
       { id = "dnd"; icon = "󰂛"; label = "Do not disturb"; action = "vogix desktop notify dnd toggle"; }
@@ -195,7 +196,9 @@ _:
       foreground = "foreground_text";
       muted = "foreground_comment";
       accent = "active";
-      border = "foreground_border";
+      # Flight Deck hairline — the resting frame is faint; dashed danger
+      # (drawn by the card, full strength) marks critical.
+      border = { slot = "foreground_border"; alpha = 0.35; };
       urgent = "danger";
     };
     osd = {

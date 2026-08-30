@@ -137,6 +137,14 @@
         "when": null
       },
       {
+        "action": "vogix desktop remind add 'Reminder' 10m",
+        "icon": "󰀠",
+        "id": "remind",
+        "label": "Remind me in 10m…",
+        "submenu": [],
+        "when": null
+      },
+      {
         "action": "vogix desktop launcher --mode theme",
         "icon": "󰏘",
         "id": "theme",
@@ -393,7 +401,7 @@
         "slot": "background_surface"
       },
       "border": {
-        "alpha": 1.0,
+        "alpha": 0.35,
         "slot": "foreground_border"
       },
       "foreground": {
