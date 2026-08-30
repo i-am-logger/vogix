@@ -7,10 +7,14 @@ import Quickshell
 import Quickshell.Services.SystemTray
 import Quickshell.Widgets
 
-RowLayout {
+GridLayout {
     id: root
 
-    spacing: 8
+    property BarAxis axis: null
+
+    flow: (axis?.vertical ?? false) ? GridLayout.TopToBottom : GridLayout.LeftToRight
+    rowSpacing: 8
+    columnSpacing: 8
 
     Repeater {
         model: SystemTray.items

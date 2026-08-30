@@ -8,8 +8,14 @@ import Quickshell.Hyprland
 import qs.Bar.widgets
 import qs.Vogix
 
-RowLayout {
-    spacing: 4
+GridLayout {
+    id: root
+
+    property BarAxis axis: null
+
+    flow: (axis?.vertical ?? false) ? GridLayout.TopToBottom : GridLayout.LeftToRight
+    rowSpacing: 4
+    columnSpacing: 4
 
     Repeater {
         model: Hyprland.workspaces.values

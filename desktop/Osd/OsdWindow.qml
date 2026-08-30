@@ -16,7 +16,9 @@ PanelWindow {
 
     visible: Osd.visible
     anchors.bottom: true
-    margins.bottom: 96
+    // exclusionMode Ignore: measured from the raw screen edge, so the
+    // bottom bar's live thickness is added by hand.
+    margins.bottom: BarState.thickness("bottom") + 64
     implicitWidth: 280
     implicitHeight: 64
     color: "transparent"

@@ -1,9 +1,12 @@
-// A widget name desktop.json carries but this shell does not know — loud,
-// because the config is Nix-generated and a typo here is a generator bug.
+// A widget name desktop.json carries but this section cannot render —
+// unknown, or horizontal-only on a vertical bar. Loud, because the
+// config is Nix-generated and seeing this is a generator bug.
 import QtQuick
 import qs.Bar.widgets
 
 BarText {
-    text: "?widget"
+    property string widgetName: "widget"
+
+    text: "?" + widgetName
     color: "#ff00ff"
 }

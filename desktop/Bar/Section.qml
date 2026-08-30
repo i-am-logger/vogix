@@ -1,15 +1,28 @@
 pragma ComponentBehavior: Bound
-// One bar section: the widgets desktop.json names, in order. An unknown
-// name renders LOUD (the config is Nix-generated — seeing it is a bug).
+// One bar section: the widgets desktop.json names, in order, laid along
+// the bar's axis. An unknown OR misplaced (horizontal-only on a vertical
+// bar) name renders LOUD — the config is Nix-generated, so seeing it is
+// a generator bug, not user error. The axis context is injected
+// post-load into any widget that declares `property BarAxis axis`.
 import QtQuick
 import QtQuick.Layouts
+import qs.Bar.widgets
 
-RowLayout {
+GridLayout {
     id: root
 
     property list<string> names
+    property BarAxis axis: null
 
-    spacing: 12
+    readonly property bool vertical: axis?.vertical ?? false
+    // These read horizontally (window titles, scrolling media text); the
+    // Nix side asserts them off vertical bars, and the shell backstops
+    // with the loud unknown tile.
+    readonly property list<string> horizontalOnly: ["window", "media", "weather", "theme"]
+
+    flow: vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+    rowSpacing: 12
+    columnSpacing: 12
 
     Repeater {
         model: root.names
@@ -17,8 +30,10 @@ RowLayout {
         Loader {
             required property string modelData
 
-            Layout.alignment: Qt.AlignVCenter
+            Layout.alignment: root.vertical ? Qt.AlignHCenter : Qt.AlignVCenter
             source: {
+                if (root.vertical && root.horizontalOnly.includes(modelData))
+                    return "widgets/Unknown.qml";
                 switch (modelData) {
                 case "workspaces": return "widgets/Workspaces.qml";
                 case "window": return "widgets/WindowTitle.qml";
@@ -41,6 +56,14 @@ RowLayout {
                 case "update": return "widgets/UpdateWidget.qml";
                 default: return "widgets/Unknown.qml";
                 }
+            }
+            onLoaded: {
+                // Duck-typed injection: bracket access, because the static
+                // item type here is just Item.
+                if ("widgetName" in item)
+                    item["widgetName"] = modelData;
+                if ("axis" in item)
+                    item["axis"] = root.axis;
             }
         }
     }

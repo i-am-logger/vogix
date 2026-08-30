@@ -1,66 +1,60 @@
 pragma ComponentBehavior: Bound
-// One bar per monitor. Hiding PARKS the layer past the screen edge instead
-// of unmapping it (remapping a layer costs ~150 ms, a slide costs
-// ~20 ms and keeps the widgets warm).
+// The HUD: up to four bars on EVERY monitor. Horizontal bars are created
+// first — layer-shell arranges later surfaces inside the area earlier
+// exclusive zones left over, which is what tucks the vertical rails
+// between top and bottom instead of overlapping the corners — so the
+// verticals sit behind a loader gated on the horizontals' backing
+// windows, with a timer backstop so a wedged horizontal can never keep
+// the rails from existing at all.
 import QtQuick
-import QtQuick.Layouts
 import Quickshell
 import qs.Vogix
 
 Scope {
-    id: root
-
-    property bool hidden: false
-
     Variants {
         model: Quickshell.screens
 
-        PanelWindow {
-            id: panel
+        Scope {
+            id: screenScope
 
             required property var modelData
-            readonly property bool onTop: (Config.bar.position ?? "top") === "top"
-            readonly property int barHeight: Config.bar.height ?? 32
 
-            screen: modelData
-            visible: (Config.bar.enable ?? true)
+            readonly property bool horizontalsReady:
+                (!topBar.visible || topBar.backingWindowVisible)
+                && (!bottomBar.visible || bottomBar.backingWindowVisible)
 
-            anchors {
-                left: true
-                right: true
-                top: onTop
-                bottom: !onTop
+            BarPanel {
+                id: topBar
+                screen: screenScope.modelData
+                edge: "top"
             }
 
-            implicitHeight: barHeight
-            exclusiveZone: root.hidden ? 0 : barHeight
-            margins.top: root.hidden && onTop ? -barHeight : 0
-            margins.bottom: root.hidden && !onTop ? -barHeight : 0
-            color: "transparent"
+            BarPanel {
+                id: bottomBar
+                screen: screenScope.modelData
+                edge: "bottom"
+            }
 
-            Rectangle {
-                anchors.fill: parent
-                color: Tokens.color("bar", "background")
+            Timer {
+                id: zoneFallback
+                property bool fired: false
+                interval: 1000
+                running: !screenScope.horizontalsReady && !fired
+                onTriggered: fired = true
+            }
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    spacing: 12
+            LazyLoader {
+                active: screenScope.horizontalsReady || zoneFallback.fired
 
-                    Section {
-                        names: Config.bar.layout ? (Config.bar.layout.left ?? []) : []
-                        Layout.alignment: Qt.AlignLeft
+                component: Scope {
+                    BarPanel {
+                        screen: screenScope.modelData
+                        edge: "left"
                     }
-                    Item { Layout.fillWidth: true }
-                    Section {
-                        names: Config.bar.layout ? (Config.bar.layout.center ?? []) : []
-                        Layout.alignment: Qt.AlignHCenter
-                    }
-                    Item { Layout.fillWidth: true }
-                    Section {
-                        names: Config.bar.layout ? (Config.bar.layout.right ?? []) : []
-                        Layout.alignment: Qt.AlignRight
+
+                    BarPanel {
+                        screen: screenScope.modelData
+                        edge: "right"
                     }
                 }
             }
