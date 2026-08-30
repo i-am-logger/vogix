@@ -56,6 +56,9 @@ GridLayout {
                 case "update": return "widgets/UpdateWidget.qml";
                 case "spectrum-mini": return "widgets/SpectrumWidget.qml";
                 case "spectrum-rail": return "widgets/SpectrumWidget.qml";
+                case "spectrum-left": return "widgets/SpectrumWidget.qml";
+                case "spectrum-right": return "widgets/SpectrumWidget.qml";
+                case "oscilloscope": return "widgets/Oscilloscope.qml";
                 case "kbd": return "widgets/KbdWidget.qml";
                 case "privacy": return "widgets/PrivacyWidget.qml";
                 case "stat-cpu": return "widgets/StatCpu.qml";

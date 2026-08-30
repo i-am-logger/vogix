@@ -42,15 +42,18 @@
           "graph-disk",
           "stat-net",
           "graph-net",
-          "graph-gpu"
+          "graph-gpu",
+          "oscilloscope"
         ],
         "end": [
           "tailscale",
           "weather",
           "update",
-          "tray"
+          "tray",
+          "spectrum-right"
         ],
         "start": [
+          "spectrum-left",
           "media"
         ]
       },

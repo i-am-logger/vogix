@@ -23,16 +23,24 @@ Singleton {
     }
 
     readonly property var spectrumConf: (Config.doc.meters ?? {}).spectrum ?? ({})
+    // Bars PER CHANNEL — cava runs stereo, emitting the left channel
+    // reversed then the right (its mirrored display convention).
     readonly property int bars: spectrumConf.bars ?? 16
     readonly property bool active: (spectrumConf.enable ?? true) && refs > 0
 
-    // 0..1 per bar, length == bars; zero-filled while inactive.
+    // 0..1 per bar, length == bars*2 (the raw mirrored stereo array);
+    // zero-filled while inactive.
     property list<real> values: []
+
+    // Per-channel views, low→high frequency order.
+    readonly property var leftValues: values.slice(0, values.length >> 1).reverse()
+    readonly property var rightValues: values.slice(values.length >> 1)
+
     property string _last: ""
 
     onActiveChanged: {
         if (!active) {
-            values = Array(bars).fill(0);
+            values = Array(bars * 2).fill(0);
             _last = "";
         }
     }
@@ -42,8 +50,8 @@ Singleton {
 
         running: root.active
         command: ["sh", "-c",
-            "printf '[general]\\nframerate=25\\nbars=%d\\n[output]\\nmethod=raw\\ndata_format=ascii\\nascii_max_range=100\\n[smoothing]\\nnoise_reduction=35\\nmonstercat=1.5\\n' "
-            + root.bars + " | cava -p /dev/stdin"]
+            "printf '[general]\\nframerate=25\\nbars=%d\\n[output]\\nmethod=raw\\ndata_format=ascii\\nascii_max_range=100\\nchannels=stereo\\n[smoothing]\\nnoise_reduction=35\\nmonstercat=1.5\\n' "
+            + (root.bars * 2) + " | cava -p /dev/stdin"]
 
         stdout: SplitParser {
             onRead: line => {
