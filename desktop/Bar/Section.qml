@@ -54,6 +54,26 @@ GridLayout {
                 case "indicators": return "widgets/IndicatorsWidget.qml";
                 case "tailscale": return "widgets/TailscaleWidget.qml";
                 case "update": return "widgets/UpdateWidget.qml";
+                case "spectrum-mini": return "widgets/SpectrumWidget.qml";
+                case "spectrum-rail": return "widgets/SpectrumWidget.qml";
+                case "kbd": return "widgets/KbdWidget.qml";
+                case "privacy": return "widgets/PrivacyWidget.qml";
+                case "stat-cpu": return "widgets/StatCpu.qml";
+                case "stat-temp": return "widgets/StatTemp.qml";
+                case "stat-mem": return "widgets/StatMem.qml";
+                case "stat-swap": return "widgets/StatSwap.qml";
+                case "stat-disk": return "widgets/StatDisk.qml";
+                case "stat-net": return "widgets/StatNet.qml";
+                case "vu-out": return "widgets/VuOut.qml";
+                case "vu-mic": return "widgets/VuMic.qml";
+                case "vu-rail": return "widgets/VuRail.qml";
+                case "graph-cpu": return "widgets/GraphCpu.qml";
+                case "graph-mem": return "widgets/GraphMem.qml";
+                case "graph-net": return "widgets/GraphNet.qml";
+                case "batteries": return "widgets/BatteriesWidget.qml";
+                case "menu": return "widgets/MenuButton.qml";
+                case "power-glyph": return "widgets/PowerGlyph.qml";
+                case "spacer": return "widgets/Spacer.qml";
                 default: return "widgets/Unknown.qml";
                 }
             }

@@ -9,9 +9,10 @@ BarText {
         precision: SystemClock.Minutes
     }
 
+    // ISO date, 24h — the HUD reads like a log line.
     text: axis?.vertical
         ? Qt.formatDateTime(clock.date, "HH\nmm")
-        : Qt.formatDateTime(clock.date, "ddd d MMM  HH:mm")
+        : Qt.formatDateTime(clock.date, "yyyy-MM-dd  HH:mm")
     horizontalAlignment: Text.AlignHCenter
 
     MouseArea {

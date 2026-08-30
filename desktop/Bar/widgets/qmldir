@@ -1,3 +1,7 @@
 module qs.Bar.widgets
 BarText 1.0 BarText.qml
 BarAxis 1.0 BarAxis.qml
+StatCell 1.0 StatCell.qml
+GraphCell 1.0 GraphCell.qml
+VuOut 1.0 VuOut.qml
+VuMic 1.0 VuMic.qml
