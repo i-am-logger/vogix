@@ -12,7 +12,7 @@ singleton Battery 1.0 Battery.qml
 singleton Media 1.0 Media.qml
 singleton Peaks 1.0 Peaks.qml
 singleton Cava 1.0 Cava.qml
-singleton Scope 1.0 Scope.qml
+singleton Waveform 1.0 Waveform.qml
 singleton KbLayout 1.0 KbLayout.qml
 singleton Tailscale 1.0 Tailscale.qml
 singleton Privacy 1.0 Privacy.qml

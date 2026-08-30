@@ -1,4 +1,4 @@
-// A real oscilloscope: the sink monitor's waveform (qs.Services.Scope),
+// A real oscilloscope: the sink monitor's waveform (qs.Services.Waveform),
 // centered zero line, accent trace. Ref-counts the sample tap so
 // capture runs only while this is on screen.
 import QtQuick
@@ -18,7 +18,7 @@ FrameCell {
         height: Metrics.body * 1.1
 
         Connections {
-            target: Scope
+            target: Waveform
 
             function onWaveformChanged(): void {
                 trace.requestPaint();
@@ -31,7 +31,7 @@ FrameCell {
         onPaint: {
             const ctx = getContext("2d");
             ctx.clearRect(0, 0, width, height);
-            const wave = Scope.waveform;
+            const wave = Waveform.waveform;
             const mid = height / 2;
             ctx.strokeStyle = Qt.alpha(Tokens.color("meter", "frame"), 0.6);
             ctx.lineWidth = 1;
@@ -51,6 +51,6 @@ FrameCell {
         }
     }
 
-    Component.onCompleted: Scope.acquire()
-    Component.onDestruction: Scope.release()
+    Component.onCompleted: Waveform.acquire()
+    Component.onDestruction: Waveform.release()
 }
