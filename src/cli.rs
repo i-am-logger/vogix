@@ -395,13 +395,30 @@ pub enum PowerCommands {
 
 #[derive(Subcommand)]
 pub enum BarCommands {
-    /// Slide the bar back in
-    Show,
-    /// Park the bar off-screen (it stays warm; ~20ms to return)
-    Hide,
-    /// Toggle between shown and hidden
-    Toggle,
+    /// Slide bars back in
+    Show {
+        /// Which edge (top|bottom|left|right|all)
+        #[arg(default_value = "all", value_parser = BAR_EDGES)]
+        edge: String,
+    },
+    /// Park bars off-screen (they stay warm; ~20ms to return)
+    Hide {
+        /// Which edge (top|bottom|left|right|all)
+        #[arg(default_value = "all", value_parser = BAR_EDGES)]
+        edge: String,
+    },
+    /// Toggle between shown and hidden ("all" follows the top bar's state)
+    Toggle {
+        /// Which edge (top|bottom|left|right|all)
+        #[arg(default_value = "all", value_parser = BAR_EDGES)]
+        edge: String,
+    },
+    /// Per-edge state, e.g. "top:shown bottom:shown left:hidden right:off"
+    Status,
 }
+
+/// The bar edges the shell knows, plus "all".
+pub const BAR_EDGES: [&str; 5] = ["top", "bottom", "left", "right", "all"];
 
 #[derive(Subcommand)]
 pub enum ModesCommands {

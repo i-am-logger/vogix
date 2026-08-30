@@ -9,7 +9,10 @@ BarText {
         precision: SystemClock.Minutes
     }
 
-    text: Qt.formatDateTime(clock.date, "ddd d MMM  HH:mm")
+    text: axis?.vertical
+        ? Qt.formatDateTime(clock.date, "HH\nmm")
+        : Qt.formatDateTime(clock.date, "ddd d MMM  HH:mm")
+    horizontalAlignment: Text.AlignHCenter
 
     MouseArea {
         anchors.fill: parent

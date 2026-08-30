@@ -221,9 +221,82 @@ fn check(config: Option<&str>) -> Result<()> {
         }
     }
 
+    // The four-bar table: every named widget must be one the shell's
+    // registry knows, and horizontal-only widgets (they read sideways)
+    // may not appear on a vertical bar. The list is the contract name
+    // set — Section.qml's registry plus the widgets the default layout
+    // ships ahead of their implementations.
+    const KNOWN_WIDGETS: &[&str] = &[
+        "workspaces",
+        "window",
+        "clock",
+        "mode",
+        "theme",
+        "audio",
+        "mic",
+        "battery",
+        "network",
+        "bluetooth",
+        "media",
+        "tray",
+        "weather",
+        "cpu",
+        "memory",
+        "dnd",
+        "indicators",
+        "tailscale",
+        "update",
+        "spectrum-mini",
+        "kbd",
+        "privacy",
+        "stat-cpu",
+        "stat-temp",
+        "stat-mem",
+        "stat-swap",
+        "stat-disk",
+        "stat-net",
+        "vu-out",
+        "vu-mic",
+        "vu-rail",
+        "spectrum-rail",
+        "graph-cpu",
+        "graph-mem",
+        "graph-net",
+        "batteries",
+        "menu",
+        "power-glyph",
+        "spacer",
+    ];
+    const HORIZONTAL_ONLY: &[&str] = &["window", "media", "weather", "theme"];
+    let mut widgets = 0usize;
+    if let Some(bars) = doc.get("bars").and_then(|b| b.as_object()) {
+        for (edge, bar) in bars {
+            let vertical = edge == "left" || edge == "right";
+            let layout = bar.get("layout").and_then(|l| l.as_object());
+            for section in ["start", "center", "end"] {
+                let names = layout
+                    .and_then(|l| l.get(section))
+                    .and_then(|w| w.as_array());
+                for w in names.into_iter().flatten() {
+                    widgets += 1;
+                    let name = w.as_str().unwrap_or("");
+                    if !KNOWN_WIDGETS.contains(&name) {
+                        errors.push(format!(
+                            "bars.{edge}.layout.{section}: unknown widget '{name}'"
+                        ));
+                    } else if vertical && HORIZONTAL_ONLY.contains(&name) {
+                        errors.push(format!(
+                            "bars.{edge}.layout.{section}: '{name}' is horizontal-only and cannot render on a vertical bar"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     if errors.is_empty() {
         println!(
-            "desktop.json OK — {} surfaces, {tokens} tokens, every slot {}",
+            "desktop.json OK — {} surfaces, {tokens} tokens, {widgets} bar widgets, every slot {}",
             surfaces.len(),
             if semantic.is_some() {
                 "resolves in the current theme"
@@ -535,7 +608,9 @@ fn background(command: &crate::cli::BackgroundCommands) -> Result<()> {
 fn osd(kind: &str, value: Option<u8>, muted: bool, message: Option<&str>) -> Result<()> {
     let value = value.map(|v| v.min(100) as i32).unwrap_or(-1).to_string();
     let muted = if muted { "true" } else { "false" };
-    if qs_ipc(&["osd", "show", kind, &value, muted, message.unwrap_or("")]).is_none() {
+    // Transport function is `flash`: "show" is quickshell's own `ipc call
+    // <target> show` introspection verb and never reaches a handler.
+    if qs_ipc(&["osd", "flash", kind, &value, muted, message.unwrap_or("")]).is_none() {
         debug!("desktop osd {kind}: no responsive shell instance");
     }
     Ok(())
@@ -589,13 +664,25 @@ fn status() -> Result<()> {
 }
 
 fn bar(command: &BarCommands) -> Result<()> {
-    let verb = match command {
-        BarCommands::Show => "show",
-        BarCommands::Hide => "hide",
-        BarCommands::Toggle => "toggle",
+    // Transport name is `unhide`: "show" is quickshell's own `ipc call
+    // <target> show` introspection verb and never reaches a handler.
+    let (verb, edge) = match command {
+        BarCommands::Show { edge } => ("unhide", Some(edge.as_str())),
+        BarCommands::Hide { edge } => ("hide", Some(edge.as_str())),
+        BarCommands::Toggle { edge } => ("toggle", Some(edge.as_str())),
+        BarCommands::Status => ("status", None),
     };
-    if qs_ipc(&["bar", verb]).is_none() {
-        debug!("desktop bar {verb}: no responsive shell instance");
+    let args: Vec<&str> = match edge {
+        Some(e) => vec!["bar", verb, e],
+        None => vec!["bar", verb],
+    };
+    match qs_ipc(&args) {
+        Some(out) => {
+            if !out.is_empty() {
+                println!("{out}");
+            }
+        }
+        None => debug!("desktop bar {verb}: no responsive shell instance"),
     }
     Ok(())
 }

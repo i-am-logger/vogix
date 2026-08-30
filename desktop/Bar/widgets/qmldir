@@ -1,2 +1,3 @@
 module qs.Bar.widgets
 BarText 1.0 BarText.qml
+BarAxis 1.0 BarAxis.qml

@@ -465,9 +465,21 @@
                     size = 36;
                     layout = { start = [ "workspaces" "mode" ]; center = [ "window" ]; end = [ "theme" "clock" ]; };
                   };
-                  bottom = { enable = false; size = 32; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
-                  left = { enable = false; size = 36; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
-                  right = { enable = false; size = 48; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
+                  bottom = {
+                    enable = true;
+                    size = 32;
+                    layout = { start = [ "media" ]; center = [ "cpu" "memory" ]; end = [ "tray" ]; };
+                  };
+                  left = {
+                    enable = true;
+                    size = 36;
+                    layout = { start = [ "workspaces" ]; center = [ ]; end = [ "clock" ]; };
+                  };
+                  right = {
+                    enable = true;
+                    size = 48;
+                    layout = { start = [ ]; center = [ ]; end = [ "indicators" ]; };
+                  };
                 };
                 # The one-release schema-1 mirror the serializer emits.
                 bar = {
@@ -485,13 +497,34 @@
                   urgent = { slot = "danger"; alpha = 1.0; };
                 };
               };
+              # A schema-1 desktop.json as the previous release wrote it: no
+              # `bars`, only the single-bar shape. The shell must synthesize
+              # the four-edge table from it (Config.legacyBars).
+              legacyJson = builtins.toJSON {
+                schema = 1;
+                font = { family = "monospace"; size = 13; };
+                bar = {
+                  enable = true;
+                  position = "top";
+                  height = 32;
+                  layout = { left = [ "clock" ]; center = [ ]; right = [ ]; };
+                };
+                surfaces.bar = {
+                  background = { slot = "background"; alpha = 0.92; };
+                  foreground = { slot = "foreground_text"; alpha = 1.0; };
+                  muted = { slot = "foreground_comment"; alpha = 1.0; };
+                  accent = { slot = "active"; alpha = 1.0; };
+                  border = { slot = "foreground_border"; alpha = 1.0; };
+                  urgent = { slot = "danger"; alpha = 1.0; };
+                };
+              };
             in
             pkgs.runCommand "vogix-desktop-smoke"
               {
                 nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell ];
                 qml = qsPkgs.vogix-desktop-qml;
-                inherit themeJson desktopJson;
-                passAsFile = [ "themeJson" "desktopJson" ];
+                inherit themeJson desktopJson legacyJson;
+                passAsFile = [ "themeJson" "desktopJson" "legacyJson" ];
               } ''
               export HOME=$TMPDIR/home
               export XDG_CONFIG_HOME=$HOME/.config
@@ -513,9 +546,11 @@
               QSPID=\$!
               sleep 5
               kill -0 \$QSPID 2>/dev/null && echo ALIVE >> $TMPDIR/result
-              qs -p $qml ipc call bar status >> $TMPDIR/result
-              qs -p $qml ipc call bar toggle >> $TMPDIR/result 2>&1
-              qs -p $qml ipc call bar status >> $TMPDIR/result
+              qs -p $qml ipc call bar status >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call bar hide left >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call bar unhide all >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call bar toggle all >> $TMPDIR/result 2>&1
+              qs -p $qml ipc call bar toggle all >> $TMPDIR/result 2>&1
               qs -p $qml ipc call theme reload >> $TMPDIR/result 2>&1
               qs -p $qml ipc call launcher status >> $TMPDIR/result
               qs -p $qml ipc call power toggle >> $TMPDIR/result
@@ -532,6 +567,18 @@
               qs -p $qml ipc call gallery close >> $TMPDIR/result 2>&1
               qs -p $qml ipc call reminders list >> $TMPDIR/result
               kill \$QSPID 2>/dev/null || true
+              sleep 1
+
+              # Fallback run: a schema-1 desktop.json from the previous
+              # release still renders its one bar through the synthesized
+              # four-edge table.
+              cp $legacyJsonPath $XDG_STATE_HOME/vogix/desktop.json
+              qs -p $qml > $TMPDIR/qs-legacy.log 2>&1 &
+              QSPID=\$!
+              sleep 3
+              kill -0 \$QSPID 2>/dev/null && echo LEGACY-ALIVE >> $TMPDIR/result
+              qs -p $qml ipc call bar status | sed 's/^/legacy /' >> $TMPDIR/result
+              kill \$QSPID 2>/dev/null || true
               INNER
               chmod +x inner.sh
               WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
@@ -540,8 +587,11 @@
               echo "── result:"; cat $TMPDIR/result || true
               echo "── log tail:"; tail -5 $TMPDIR/qs.log || true
               grep -q '^ALIVE$' $TMPDIR/result
-              grep -q '^shown$' $TMPDIR/result
-              grep -q '^hidden$' $TMPDIR/result
+              test "$(grep -c '^top:shown bottom:shown left:shown right:shown$' $TMPDIR/result)" -ge 3
+              grep -q 'left:hidden' $TMPDIR/result
+              grep -q 'top:hidden bottom:hidden left:hidden right:hidden' $TMPDIR/result
+              grep -q '^LEGACY-ALIVE$' $TMPDIR/result
+              grep -q '^legacy top:shown bottom:off left:off right:off$' $TMPDIR/result
               grep -q '^closed$' $TMPDIR/result
               grep -q '^open$' $TMPDIR/result
               grep -q '^calendar$' $TMPDIR/result

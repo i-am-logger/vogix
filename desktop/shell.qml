@@ -108,13 +108,17 @@ ShellRoot {
         }
     }
 
+    // NOTE: "show" is unusable as an IPC function name — `qs ipc call
+    // <target> show` is quickshell's own introspection verb and never
+    // reaches the handler. The vogix CLI verbs stay show/hide; only the
+    // transport-level names differ.
     IpcHandler {
         target: "bar"
 
-        function show(): void { bar.hidden = false; }
-        function hide(): void { bar.hidden = true; }
-        function toggle(): void { bar.hidden = !bar.hidden; }
-        function status(): string { return bar.hidden ? "hidden" : "shown"; }
+        function unhide(edge: string): string { return BarState.setHidden(edge, false); }
+        function hide(edge: string): string { return BarState.setHidden(edge, true); }
+        function toggle(edge: string): string { return BarState.toggleEdge(edge); }
+        function status(): string { return BarState.statusLine(); }
     }
 
     IpcHandler {
@@ -223,8 +227,9 @@ ShellRoot {
     IpcHandler {
         target: "osd"
 
-        // value: 0..100 (percent), -1 = no gauge.
-        function show(kind: string, value: int, muted: bool, message: string): void {
+        // value: 0..100 (percent), -1 = no gauge. Named flash, not show —
+        // see the bar handler's note.
+        function flash(kind: string, value: int, muted: bool, message: string): void {
             Osd.show(kind, value >= 0 ? value / 100.0 : -1, muted, message);
         }
     }

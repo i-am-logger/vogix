@@ -11,13 +11,14 @@ PanelWindow {
 
     visible: Panels.open !== ""
     anchors {
-        top: (Config.bar.position ?? "top") === "top"
-        bottom: (Config.bar.position ?? "top") !== "top"
+        top: true
         right: true
     }
-    margins.top: 8
-    margins.bottom: 8
-    margins.right: 8
+    // exclusionMode Ignore places this from the raw screen edge, so the
+    // live bar thicknesses are added by hand — a parked bar reclaims the
+    // space immediately.
+    margins.top: BarState.thickness("top") + 8
+    margins.right: BarState.thickness("right") + 8
     implicitWidth: 380
     implicitHeight: Math.min(560, content.implicitHeight + 26)
     color: "transparent"
