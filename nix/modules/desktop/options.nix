@@ -35,7 +35,7 @@ let
   widgetNames = types.listOf types.str;
 
   # A launcher menu entry. `action` is a shell command; `submenu` nests one
-  # level (the omarchy-menu shape); `when` guards visibility (entry shown
+  # level; `when` guards visibility (entry shown
   # only while the command exits 0, re-evaluated on menu open).
   menuLeafOptions = {
     id = mkOption {

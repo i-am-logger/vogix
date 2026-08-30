@@ -1,6 +1,6 @@
 pragma ComponentBehavior: Bound
 // One bar per monitor. Hiding PARKS the layer past the screen edge instead
-// of unmapping it (an omarchy lesson: remap costs ~150 ms, a slide costs
+// of unmapping it (remapping a layer costs ~150 ms, a slide costs
 // ~20 ms and keeps the widgets warm).
 import QtQuick
 import QtQuick.Layouts
