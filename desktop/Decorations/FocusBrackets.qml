@@ -2,13 +2,14 @@ pragma ComponentBehavior: Bound
 // The Flight Deck focus brackets: four accent L-brackets at the corners
 // of the FOCUSED window, drawn by a click-through overlay per screen —
 // Hyprland borders are full-perimeter only, so this is the shell's job.
-// Geometry follows the compositor over IPC (event-driven refresh with a
-// short debounce), which means brackets glide to the drop point after a
-// drag rather than chasing it. Hidden on real fullscreen.
+// Geometry comes from qs.Services.ActiveWindow (event-driven hyprctl);
+// brackets glide to a drag's drop point rather than chasing it. Hidden
+// on real fullscreen. The WINDOW stays mapped (remapping a layer costs
+// ~150 ms and focus changes constantly); only the bracket item toggles.
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Hyprland
+import qs.Services
 import qs.Vogix
 
 Scope {
@@ -18,38 +19,6 @@ Scope {
     readonly property int thickness: 2
     readonly property int pad: 3
 
-    // Seed the geometry: lastIpcObject stays empty until the first
-    // refresh, and no event fires just because the shell started.
-    Component.onCompleted: Hyprland.refreshToplevels()
-
-    Connections {
-        target: Hyprland
-
-        function onRawEvent(event: HyprlandEvent): void {
-            switch (event.name) {
-            case "activewindow":
-            case "activewindowv2":
-            case "openwindow":
-            case "closewindow":
-            case "movewindow":
-            case "movewindowv2":
-            case "workspace":
-            case "workspacev2":
-            case "fullscreen":
-            case "changefloatingmode":
-            case "configreloaded":
-                refreshDebounce.restart();
-                break;
-            }
-        }
-    }
-
-    Timer {
-        id: refreshDebounce
-        interval: 30
-        onTriggered: Hyprland.refreshToplevels()
-    }
-
     Variants {
         model: Quickshell.screens
 
@@ -58,25 +27,14 @@ Scope {
 
             required property var modelData
 
-            readonly property var active: Hyprland.activeToplevel
-            readonly property var ipc: overlay.active?.lastIpcObject ?? ({})
-            readonly property var hyprMonitor: Hyprland.monitorFor(overlay.screen)
-            readonly property bool onThisScreen:
-                overlay.active !== null
-                && overlay.active.monitor !== null
-                && overlay.hyprMonitor !== null
-                && overlay.active.monitor === overlay.hyprMonitor
-
-            // Window rect in this screen's logical coordinates, padded out
-            // so the brackets sit just outside the window edge.
-            readonly property var at: overlay.ipc.at ?? [0, 0]
-            readonly property var size: overlay.ipc.size ?? [0, 0]
-
-            // The WINDOW stays mapped (remapping a layer costs ~150 ms and
-            // focus changes constantly); only the bracket item toggles.
-            readonly property bool showBrackets: overlay.onThisScreen
-                && overlay.ipc.at !== undefined
-                && (overlay.ipc.fullscreen ?? 0) < 2
+            readonly property var win: ActiveWindow.geometry
+            // The window is "on this screen" when its top-left corner is.
+            readonly property bool showBrackets: overlay.win !== null
+                && overlay.win.fullscreen < 2
+                && overlay.win.x >= overlay.screen.x
+                && overlay.win.x < overlay.screen.x + overlay.screen.width
+                && overlay.win.y >= overlay.screen.y
+                && overlay.win.y < overlay.screen.y + overlay.screen.height
 
             screen: overlay.modelData
             visible: true
@@ -121,10 +79,10 @@ Scope {
                 id: target
 
                 visible: overlay.showBrackets
-                x: overlay.at[0] - (overlay.screen?.x ?? 0) - root.pad
-                y: overlay.at[1] - (overlay.screen?.y ?? 0) - root.pad
-                width: overlay.size[0] + root.pad * 2
-                height: overlay.size[1] + root.pad * 2
+                x: (overlay.win?.x ?? 0) - overlay.screen.x - root.pad
+                y: (overlay.win?.y ?? 0) - overlay.screen.y - root.pad
+                width: (overlay.win?.w ?? 0) + root.pad * 2
+                height: (overlay.win?.h ?? 0) + root.pad * 2
 
                 Behavior on x { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
                 Behavior on y { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }

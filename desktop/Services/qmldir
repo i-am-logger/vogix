@@ -1,4 +1,5 @@
 module qs.Services
+singleton ActiveWindow 1.0 ActiveWindow.qml
 singleton BarState 1.0 BarState.qml
 singleton Notifs 1.0 Notifs.qml
 singleton Audio 1.0 Audio.qml
