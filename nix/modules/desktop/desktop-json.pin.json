@@ -8,9 +8,7 @@
     "enable": true,
     "height": 44,
     "layout": {
-      "center": [
-        "window"
-      ],
+      "center": [],
       "left": [
         "workspaces",
         "mode"
@@ -53,8 +51,7 @@
           "spectrum-right"
         ],
         "start": [
-          "spectrum-left",
-          "media"
+          "spectrum-left"
         ]
       },
       "size": 40
@@ -68,6 +65,7 @@
           "power-glyph"
         ],
         "start": [
+          "workspaces",
           "mode"
         ]
       },
@@ -94,9 +92,7 @@
     "top": {
       "enable": true,
       "layout": {
-        "center": [
-          "window"
-        ],
+        "center": [],
         "end": [
           "spectrum-mini",
           "kbd",

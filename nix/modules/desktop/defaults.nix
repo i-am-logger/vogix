@@ -24,7 +24,7 @@ _:
       size = 44;
       layout = {
         start = [ "workspaces" "mode" ];
-        center = [ "window" ];
+        center = [ ];
         end = [ "spectrum-mini" "kbd" "privacy" "dnd" "indicators" "theme" "clock" ];
       };
     };
@@ -34,7 +34,7 @@ _:
       layout = {
         # Stereo spectrum split to the far corners: left channel at the
         # left edge, right at the right, bass at the outer edges.
-        start = [ "spectrum-left" "media" ];
+        start = [ "spectrum-left" ];
         # Each stat cell with its history graph beside it (untitled — the
         # adjacency binds them); I/O and GPU graphs stand alone, and the
         # oscilloscope trails the instruments. Audio LEVELS live on the
@@ -60,7 +60,7 @@ _:
       enable = true;
       size = 44;
       layout = {
-        start = [ "mode" ];
+        start = [ "workspaces" "mode" ];
         center = [ ];
         end = [ "menu" "power-glyph" ];
       };
