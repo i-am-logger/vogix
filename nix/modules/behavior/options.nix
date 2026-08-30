@@ -297,6 +297,15 @@ in
                 default = defaults.input.numlockByDefault;
                 description = "Enable numlock on startup";
               };
+              kbLayout = mkOption {
+                type = types.str;
+                default = defaults.input.kbLayout;
+                description = ''
+                  XKB layout list rendered as Hyprland's input:kb_layout
+                  (comma-separated, e.g. "us,il"). The layout indicator and
+                  `hyprctl switchxkblayout` cycle through it.
+                '';
+              };
             };
           };
         };
