@@ -21,7 +21,8 @@ Singleton {
             const name = n.name ?? "";
             return n.type === PwNodeType.AudioInStream
                 && !name.includes("quickshell")
-                && name !== "cava";
+                && name !== "cava"
+                && name !== "vogix-scope";
         })
     readonly property bool screencast: false
 }

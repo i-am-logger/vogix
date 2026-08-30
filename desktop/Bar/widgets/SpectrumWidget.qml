@@ -1,6 +1,8 @@
-// The cava spectrum: thin frequency bars, horizontal on the top bar,
-// band-per-row on a vertical rail. Ref-counts the cava subprocess so it
-// runs only while a spectrum is on screen.
+// The cava spectrum: thin frequency bars. `channel` picks the view —
+// "all" is the raw mirrored stereo array (the top-bar mini), "left" and
+// "right" are single channels for the bottom bar's far corners, drawn
+// with the bass at the OUTER edge so the two mirror each other.
+// Vertical rails get band-per-row. Ref-counts the cava subprocess.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
@@ -10,13 +12,26 @@ Canvas {
     id: root
 
     property BarAxis axis: null
+    // Injected by Section; the registry name picks the channel view.
+    property string widgetName: ""
+    readonly property string channel: widgetName === "spectrum-left" ? "left"
+        : widgetName === "spectrum-right" ? "right"
+        : "all"
     readonly property bool vertical: axis?.vertical ?? false
+
+    readonly property var vals: {
+        if (channel === "left")
+            return Cava.leftValues;
+        if (channel === "right")
+            return [...Cava.rightValues].reverse();
+        return Cava.values;
+    }
 
     readonly property int barPitch: 4
     readonly property int barSize: 3
 
-    implicitWidth: vertical ? Metrics.body * 2 : Cava.bars * barPitch
-    implicitHeight: vertical ? Cava.bars * barPitch : Metrics.body * 1.25
+    implicitWidth: vertical ? Metrics.body * 2 : Math.max(1, vals.length) * barPitch
+    implicitHeight: vertical ? Math.max(1, vals.length) * barPitch : Metrics.body * 1.25
 
     Component.onCompleted: Cava.acquire()
     Component.onDestruction: Cava.release()
@@ -36,7 +51,7 @@ Canvas {
         const ctx = getContext("2d");
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = Tokens.color("bar", "accent");
-        const vals = Cava.values;
+        const vals = root.vals;
         for (let i = 0; i < vals.length; i++) {
             const v = Math.max(0.05, vals[i]);
             if (vertical)

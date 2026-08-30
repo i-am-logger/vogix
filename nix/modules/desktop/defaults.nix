@@ -32,10 +32,13 @@ _:
       enable = true;
       size = 40;
       layout = {
-        start = [ "media" ];
+        # Stereo spectrum split to the far corners: left channel at the
+        # left edge, right at the right, bass at the outer edges.
+        start = [ "spectrum-left" "media" ];
         # Each stat cell with its history graph beside it (untitled — the
-        # adjacency binds them); I/O and GPU graphs stand alone.
-        # Audio meters live on the right rail (VU + MIC panels), not here.
+        # adjacency binds them); I/O and GPU graphs stand alone, and the
+        # oscilloscope trails the instruments. Audio LEVELS live on the
+        # right rail (VU + MIC panels), not here.
         center = [
           "stat-cpu"
           "graph-cpu"
@@ -48,8 +51,9 @@ _:
           "stat-net"
           "graph-net"
           "graph-gpu"
+          "oscilloscope"
         ];
-        end = [ "tailscale" "weather" "update" "tray" ];
+        end = [ "tailscale" "weather" "update" "tray" "spectrum-right" ];
       };
     };
     left = {
