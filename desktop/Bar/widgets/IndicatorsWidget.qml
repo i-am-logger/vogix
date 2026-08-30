@@ -36,4 +36,10 @@ GridLayout {
             onClicked: StayAwake.set(false)
         }
     }
+
+    BarText {
+        visible: Reminders.entries.length > 0
+        text: "󰀠 " + Reminders.entries.length
+        color: Tokens.color("bar", "accent")
+    }
 }

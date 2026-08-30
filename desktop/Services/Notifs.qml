@@ -59,6 +59,7 @@ Singleton {
                 timeout: critical ? 0
                     : (rule.timeout ?? (n.expireTimeout > 0 ? n.expireTimeout
                         : (n.expireTimeout === 0 ? 0 : (root.conf.defaultTimeout ?? 5000)))),
+                at: Date.now(),
                 live: true
             };
             root.liveRefs[entry.key] = n;
