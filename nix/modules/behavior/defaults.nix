@@ -48,6 +48,7 @@ rec {
     leftHanded = false;
     floatSwitchOverrideFocus = 2;
     numlockByDefault = false;
+    kbLayout = "us";
   };
 
   # ── Touchpad ──

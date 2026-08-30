@@ -348,6 +348,9 @@ in
 
         home.file.".local/state/vogix/desktop.json".source = desktopJsonFile;
 
+        # Subprocess dependencies the shell's services spawn by name.
+        home.packages = [ pkgs.cava ];
+
         # Registers the QML tree as the `vogix` quickshell config
         # (~/.config/quickshell/vogix → the package), so `qs -c vogix`
         # resolves it. HM's own unit machinery stays off — the unit below is
