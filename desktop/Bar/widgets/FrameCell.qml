@@ -16,12 +16,16 @@ Item {
 
     default property alias content: slot.data
 
-    implicitWidth: slot.childrenRect.width + padH * 2
-    implicitHeight: slot.childrenRect.height + padV * 2 + titleText.height / 2
-
     readonly property real frameTop: titleText.height / 2
+    // The title's bottom half hangs BELOW the border line — content must
+    // clear it, not just the border.
+    readonly property real contentTop: frameTop
+        + (root.title === "" ? padV : Math.max(padV, titleText.height / 2 + 2))
     readonly property real gapStart: 8
     readonly property real gapEnd: gapStart + (root.title === "" ? 0 : titleText.width + 6)
+
+    implicitWidth: Math.max(slot.childrenRect.width + padH * 2, gapEnd + 8)
+    implicitHeight: slot.childrenRect.height + contentTop + padV
 
     // Top border, split around the title.
     Rectangle {
@@ -80,8 +84,8 @@ Item {
     Item {
         id: slot
         x: root.padH
-        y: root.frameTop + root.padV
+        y: root.contentTop
         width: parent.width - root.padH * 2
-        height: parent.height - root.frameTop - root.padV * 2
+        height: parent.height - root.contentTop - root.padV
     }
 }

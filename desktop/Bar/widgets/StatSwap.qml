@@ -10,9 +10,12 @@ StatCell {
     readonly property var th: ((Config.doc.meters ?? {}).thresholds ?? {}).swap ?? ({})
 
     visible: SysStat.hasSwap
-    title: "SWP"
+    title: "SWAP"
     value: String(pct).padStart(3, "0") + "%"
     widestValue: "000%"
+    meterValue: SysStat.swap
+    meterWarnAt: (th.warn ?? 20) / 100
+    meterDangerAt: (th.danger ?? 80) / 100
     valueColor: pct >= (th.danger ?? 80) ? Tokens.color("meter", "high")
         : pct >= (th.warn ?? 20) ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")

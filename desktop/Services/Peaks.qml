@@ -35,7 +35,13 @@ Singleton {
 
     readonly property real floorDb: ((Config.doc.meters ?? {}).vu ?? {}).floorDb ?? -40
 
-    // Public state, 0..1 in the dB window, quantized 1/40.
+    // Public state, 0..1 in the dB window, quantized 1/40. The output is
+    // STEREO (L/R per channel); outLevel/outCap are the max of the two
+    // for mono consumers. Mic is mono.
+    property real outL: 0
+    property real outR: 0
+    property real outCapL: 0
+    property real outCapR: 0
     property real outLevel: 0
     property real outCap: 0
     property real micLevel: 0
@@ -46,10 +52,13 @@ Singleton {
         return root.floorDb * (1 - level);
     }
 
-    // Raw (unquantized) ballistics state.
-    property real _outLevel: 0
-    property real _outCap: 0
-    property real _outHold: 0
+    // Raw (unquantized) ballistics state, per channel.
+    property real _outL: 0
+    property real _outR: 0
+    property real _outCapL: 0
+    property real _outCapR: 0
+    property real _outHoldL: 0
+    property real _outHoldR: 0
     property real _micLevel: 0
     property real _micCap: 0
     property real _micHold: 0
@@ -65,8 +74,14 @@ Singleton {
         id: outMon
         node: Pipewire.defaultAudioSink
         enabled: root.outRefs > 0
-        // Instant attack; the frame loop only handles decay.
-        onPeakChanged: root._outLevel = Math.max(root._outLevel, root._norm(peak))
+        // Instant attack per channel; the tick only handles decay. A mono
+        // stream feeds both columns.
+        onPeaksChanged: {
+            const l = peaks[0] ?? 0;
+            const r = peaks[1] ?? l;
+            root._outL = Math.max(root._outL, root._norm(l));
+            root._outR = Math.max(root._outR, root._norm(r));
+        }
     }
 
     PwNodePeakMonitor {
@@ -84,18 +99,30 @@ Singleton {
         interval: 33
         repeat: true
         running: (root.outRefs > 0 || root.micRefs > 0)
-            && (root._outLevel > 0 || root._outCap > 0 || root._micLevel > 0 || root._micCap > 0
+            && (root._outL > 0 || root._outR > 0 || root._outCapL > 0 || root._outCapR > 0
+                || root._micLevel > 0 || root._micCap > 0
                 || outMon.peak > 0 || micMon.peak > 0)
 
         onTriggered: {
             const dt = 0.033;
 
-            root._outLevel = Math.max(root._norm(outMon.peak), root._outLevel - 3.0 * dt);
-            if (root._outLevel >= root._outCap) {
-                root._outCap = root._outLevel;
-                root._outHold = 0.53;
-            } else if ((root._outHold -= dt) <= 0) {
-                root._outCap = Math.max(root._outLevel, root._outCap - 0.75 * dt);
+            const tl = root._norm(outMon.peaks[0] ?? 0);
+            const tr = root._norm(outMon.peaks[1] ?? (outMon.peaks[0] ?? 0));
+
+            root._outL = Math.max(tl, root._outL - 3.0 * dt);
+            if (root._outL >= root._outCapL) {
+                root._outCapL = root._outL;
+                root._outHoldL = 0.53;
+            } else if ((root._outHoldL -= dt) <= 0) {
+                root._outCapL = Math.max(root._outL, root._outCapL - 0.75 * dt);
+            }
+
+            root._outR = Math.max(tr, root._outR - 3.0 * dt);
+            if (root._outR >= root._outCapR) {
+                root._outCapR = root._outR;
+                root._outHoldR = 0.53;
+            } else if ((root._outHoldR -= dt) <= 0) {
+                root._outCapR = Math.max(root._outR, root._outCapR - 0.75 * dt);
             }
 
             root._micLevel = Math.max(root._norm(micMon.peak), root._micLevel - 3.0 * dt);
@@ -107,25 +134,26 @@ Singleton {
             }
 
             const q = v => Math.round(v * 40) / 40;
-            const ol = q(root._outLevel);
-            if (ol !== root.outLevel)
-                root.outLevel = ol;
-            const oc = q(root._outCap);
-            if (oc !== root.outCap)
-                root.outCap = oc;
-            const ml = q(root._micLevel);
-            if (ml !== root.micLevel)
-                root.micLevel = ml;
-            const mc = q(root._micCap);
-            if (mc !== root.micCap)
-                root.micCap = mc;
+            const write = (name, v) => {
+                if (v !== root[name])
+                    root[name] = v;
+            };
+            write("outL", q(root._outL));
+            write("outR", q(root._outR));
+            write("outCapL", q(root._outCapL));
+            write("outCapR", q(root._outCapR));
+            write("outLevel", Math.max(root.outL, root.outR));
+            write("outCap", Math.max(root.outCapL, root.outCapR));
+            write("micLevel", q(root._micLevel));
+            write("micCap", q(root._micCap));
         }
 
         onRunningChanged: {
             if (!running) {
                 // Settle to zero so nothing freezes mid-decay.
-                root._outLevel = 0; root._outCap = 0;
+                root._outL = 0; root._outR = 0; root._outCapL = 0; root._outCapR = 0;
                 root._micLevel = 0; root._micCap = 0;
+                root.outL = 0; root.outR = 0; root.outCapL = 0; root.outCapR = 0;
                 root.outLevel = 0; root.outCap = 0;
                 root.micLevel = 0; root.micCap = 0;
             }

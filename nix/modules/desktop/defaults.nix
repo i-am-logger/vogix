@@ -33,7 +33,22 @@ _:
       size = 40;
       layout = {
         start = [ "media" ];
-        center = [ "stat-cpu" "stat-temp" "stat-mem" "stat-swap" "stat-disk" "stat-net" "vu-out" "vu-mic" ];
+        # Each stat cell with its history graph beside it (untitled — the
+        # adjacency binds them); I/O and GPU graphs stand alone.
+        # Audio meters live on the right rail (VU + MIC panels), not here.
+        center = [
+          "stat-cpu"
+          "graph-cpu"
+          "stat-temp"
+          "stat-mem"
+          "graph-mem"
+          "stat-swap"
+          "stat-disk"
+          "graph-disk"
+          "stat-net"
+          "graph-net"
+          "graph-gpu"
+        ];
         end = [ "tailscale" "weather" "update" "tray" ];
       };
     };
@@ -41,7 +56,7 @@ _:
       enable = true;
       size = 44;
       layout = {
-        start = [ "workspaces" "mode" ];
+        start = [ "mode" ];
         center = [ ];
         end = [ "menu" "power-glyph" ];
       };
@@ -50,8 +65,8 @@ _:
       enable = true;
       size = 64;
       layout = {
-        start = [ "vu-rail" "spectrum-rail" ];
-        center = [ "graph-cpu" "graph-mem" "graph-net" ];
+        start = [ "vu-rail" ];
+        center = [ ];
         end = [ "batteries" "battery" "audio" "mic" "network" "bluetooth" ];
       };
     };

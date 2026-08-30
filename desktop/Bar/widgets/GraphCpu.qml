@@ -1,10 +1,8 @@
-// CPU load history panel for the rail.
+// CPU load history — untitled: it sits beside the CPU stat cell.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
 
 GraphCell {
-    title: "CPU"
     values: SysStat.cpuHistory
-    valueText: Math.round(SysStat.cpu * 100) + "%"
 }

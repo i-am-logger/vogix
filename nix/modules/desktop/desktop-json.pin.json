@@ -33,13 +33,16 @@
       "layout": {
         "center": [
           "stat-cpu",
+          "graph-cpu",
           "stat-temp",
           "stat-mem",
+          "graph-mem",
           "stat-swap",
           "stat-disk",
+          "graph-disk",
           "stat-net",
-          "vu-out",
-          "vu-mic"
+          "graph-net",
+          "graph-gpu"
         ],
         "end": [
           "tailscale",
@@ -62,7 +65,6 @@
           "power-glyph"
         ],
         "start": [
-          "workspaces",
           "mode"
         ]
       },
@@ -71,11 +73,7 @@
     "right": {
       "enable": true,
       "layout": {
-        "center": [
-          "graph-cpu",
-          "graph-mem",
-          "graph-net"
-        ],
+        "center": [],
         "end": [
           "batteries",
           "battery",
@@ -85,8 +83,7 @@
           "bluetooth"
         ],
         "start": [
-          "vu-rail",
-          "spectrum-rail"
+          "vu-rail"
         ]
       },
       "size": 64

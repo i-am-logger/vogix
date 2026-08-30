@@ -262,6 +262,8 @@ fn check(config: Option<&str>) -> Result<()> {
         "graph-cpu",
         "graph-mem",
         "graph-net",
+        "graph-disk",
+        "graph-gpu",
         "batteries",
         "menu",
         "power-glyph",

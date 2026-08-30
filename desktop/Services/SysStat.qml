@@ -27,17 +27,26 @@ Singleton {
     property real netRxRate: 0  // bytes/s
     property real netTxRate: 0  // bytes/s
 
+    property bool hasGpu: false
+    property real gpuBusy: 0    // 0..1
+    property real diskIoRate: 0 // bytes/s, reads+writes
+
     property list<real> cpuHistory: []
     property list<real> memoryHistory: []
     property list<real> netRxHistory: []  // raw bytes/s — graphs normalize
     property list<real> netTxHistory: []
+    property list<real> diskIoHistory: [] // raw bytes/s
+    property list<real> gpuHistory: []
 
     property real lastTotal: 0
     property real lastIdle: 0
     property real lastRx: 0
     property real lastTx: 0
     property real lastNetAt: 0
+    property real lastDiskSectors: 0
+    property real lastDiskAt: 0
     property string tempPath: ""
+    property string gpuPath: ""
 
     function _push(arr, v) {
         const out = arr.length >= root.histLen ? arr.slice(arr.length - root.histLen + 1) : arr.slice();
@@ -56,6 +65,26 @@ Singleton {
             statFile.reload();
             memFile.reload();
             netFile.reload();
+        }
+    }
+
+    // The history tick — 1 Hz, so the graphs show a real time window
+    // (history samples = seconds) instead of a 6-second blur; the fast
+    // tick above keeps the READOUTS live. Disk I/O and GPU sample here
+    // too — 1 Hz is their natural rate.
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            root.cpuHistory = root._push(root.cpuHistory, root.cpu);
+            root.memoryHistory = root._push(root.memoryHistory, root.memory);
+            root.netRxHistory = root._push(root.netRxHistory, root.netRxRate);
+            root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
+            diskstatsFile.reload();
+            if (root.gpuPath !== "")
+                gpuFile.reload();
         }
     }
 
@@ -88,10 +117,8 @@ Singleton {
             const total = parts.reduce((a, b) => a + b, 0);
             const dTotal = total - root.lastTotal;
             const dIdle = idle - root.lastIdle;
-            if (root.lastTotal > 0 && dTotal > 0) {
+            if (root.lastTotal > 0 && dTotal > 0)
                 root.cpu = Math.max(0, Math.min(1, 1 - dIdle / dTotal));
-                root.cpuHistory = root._push(root.cpuHistory, root.cpu);
-            }
             root.lastTotal = total;
             root.lastIdle = idle;
         }
@@ -106,10 +133,8 @@ Singleton {
             const t = text();
             const total = Number((t.match(/MemTotal:\s+(\d+)/) ?? [0, 0])[1]);
             const avail = Number((t.match(/MemAvailable:\s+(\d+)/) ?? [0, 0])[1]);
-            if (total > 0) {
+            if (total > 0)
                 root.memory = Math.max(0, Math.min(1, 1 - avail / total));
-                root.memoryHistory = root._push(root.memoryHistory, root.memory);
-            }
             const swapTotal = Number((t.match(/SwapTotal:\s+(\d+)/) ?? [0, 0])[1]);
             const swapFree = Number((t.match(/SwapFree:\s+(\d+)/) ?? [0, 0])[1]);
             root.hasSwap = swapTotal > 0;
@@ -140,8 +165,6 @@ Singleton {
             if (root.lastNetAt > 0 && dt > 0 && rx >= root.lastRx) {
                 root.netRxRate = (rx - root.lastRx) / dt;
                 root.netTxRate = (tx - root.lastTx) / dt;
-                root.netRxHistory = root._push(root.netRxHistory, root.netRxRate);
-                root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
             }
             root.lastRx = rx;
             root.lastTx = tx;
@@ -160,6 +183,62 @@ Singleton {
                     root.disk = Math.max(0, Math.min(1, Number(m[1]) / 100));
             }
         }
+    }
+
+    // Disk THROUGHPUT (the usage fraction is `disk`): whole physical
+    // devices only — the partition rows would double-count every byte.
+    FileView {
+        id: diskstatsFile
+        path: "/proc/diskstats"
+        watchChanges: false
+        preload: true
+        onLoaded: {
+            let sectors = 0;
+            for (const line of text().split("\n")) {
+                const f = line.trim().split(/\s+/);
+                if (f.length < 11 || !/^(nvme\d+n\d+|sd[a-z]+|vd[a-z]+)$/.test(f[2]))
+                    continue;
+                sectors += Number(f[5]) + Number(f[9]);
+            }
+            const now = Date.now();
+            const dt = (now - root.lastDiskAt) / 1000;
+            if (root.lastDiskAt > 0 && dt > 0 && sectors >= root.lastDiskSectors) {
+                root.diskIoRate = (sectors - root.lastDiskSectors) * 512 / dt;
+                root.diskIoHistory = root._push(root.diskIoHistory, root.diskIoRate);
+            }
+            root.lastDiskSectors = sectors;
+            root.lastDiskAt = now;
+        }
+    }
+
+    // One-shot GPU enumeration: the first card exposing amdgpu/intel's
+    // busy percent; hasGpu degrades the widget away otherwise.
+    Process {
+        id: gpuProbeProc
+        running: true
+        command: ["sh", "-c", "for f in /sys/class/drm/card*/device/gpu_busy_percent; do [ -f \"$f\" ] && { echo \"$f\"; break; }; done"]
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const p = text.trim();
+                if (p !== "") {
+                    root.gpuPath = p;
+                    root.hasGpu = true;
+                }
+            }
+        }
+    }
+
+    FileView {
+        id: gpuFile
+        path: root.gpuPath
+        watchChanges: false
+        preload: true
+        onLoaded: {
+            root.gpuBusy = Math.max(0, Math.min(1, Number(text().trim()) / 100));
+            root.gpuHistory = root._push(root.gpuHistory, root.gpuBusy);
+        }
+        onLoadFailed: root.hasGpu = false
     }
 
     // One-shot hwmon enumeration, by driver priority: the CPU die sensor
