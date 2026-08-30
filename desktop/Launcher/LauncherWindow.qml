@@ -52,7 +52,7 @@ PanelWindow {
                     text: Launcher.prompt !== "" ? Launcher.prompt : Launcher.mode
                     color: Tokens.color("launcher", "accent")
                     font.family: Config.fontFamily
-                    font.pixelSize: Config.fontSize
+                    font.pixelSize: Metrics.body
                     font.bold: true
                 }
 
@@ -63,7 +63,7 @@ PanelWindow {
                     color: Tokens.color("launcher", "foreground")
                     placeholderTextColor: Tokens.color("launcher", "muted")
                     font.family: Config.fontFamily
-                    font.pixelSize: Config.fontSize
+                    font.pixelSize: Metrics.body
                     background: Rectangle {
                         radius: 6
                         color: Tokens.color("launcher", "selection")
@@ -111,7 +111,7 @@ PanelWindow {
                             text: row.modelData.icon
                             color: Tokens.color("launcher", "accent")
                             font.family: Config.fontFamily
-                            font.pixelSize: Config.fontSize + 2
+                            font.pixelSize: Metrics.title
                         }
 
                         Text {
@@ -120,7 +120,7 @@ PanelWindow {
                             elide: Text.ElideRight
                             color: Tokens.color("launcher", "foreground")
                             font.family: Config.fontFamily
-                            font.pixelSize: Config.fontSize
+                            font.pixelSize: Metrics.body
                         }
 
                         Text {
@@ -128,7 +128,7 @@ PanelWindow {
                             text: row.modelData.sublabel
                             color: Tokens.color("launcher", "muted")
                             font.family: Config.fontFamily
-                            font.pixelSize: Config.fontSize - 1
+                            font.pixelSize: Metrics.bodySmall
                         }
                     }
 

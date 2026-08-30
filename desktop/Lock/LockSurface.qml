@@ -36,7 +36,7 @@ WlSessionLockSurface {
             text: Qt.formatDateTime(clock.date, "dddd d MMMM")
             color: Tokens.color("lock", "muted")
             font.family: Config.fontFamily
-            font.pixelSize: Config.fontSize + 2
+            font.pixelSize: Metrics.title
         }
 
         Rectangle {
@@ -69,7 +69,7 @@ WlSessionLockSurface {
                 focus: true
                 color: Tokens.color("lock", "foreground")
                 font.family: Config.fontFamily
-                font.pixelSize: Config.fontSize + 1
+                font.pixelSize: Metrics.subtitle
                 background: null
                 horizontalAlignment: TextInput.AlignHCenter
                 onAccepted: {
@@ -100,7 +100,7 @@ WlSessionLockSurface {
                 ? Tokens.color("lock", "danger")
                 : Tokens.color("lock", "muted")
             font.family: Config.fontFamily
-            font.pixelSize: Config.fontSize
+            font.pixelSize: Metrics.body
         }
     }
 

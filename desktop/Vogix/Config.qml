@@ -13,7 +13,7 @@ Singleton {
     property var doc: ({})
     readonly property var bar: doc.bar ?? ({})
     readonly property string fontFamily: (doc.font ?? {}).family ?? "monospace"
-    readonly property int fontSize: (doc.font ?? {}).size ?? 13
+    readonly property int fontSize: (doc.font ?? {}).size ?? 16
 
     function reload(): void {
         view.reload();

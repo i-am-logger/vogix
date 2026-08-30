@@ -1,0 +1,8 @@
+module qs.Components
+HudLabel 1.0 HudLabel.qml
+NumericText 1.0 NumericText.qml
+DashedBorder 1.0 DashedBorder.qml
+HudPanel 1.0 HudPanel.qml
+SegmentedMeter 1.0 SegmentedMeter.qml
+VuMeter 1.0 VuMeter.qml
+Sparkline 1.0 Sparkline.qml

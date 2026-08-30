@@ -89,7 +89,7 @@ PanelWindow {
                         text: card.modelData.summary
                         color: Tokens.color("notification", "foreground")
                         font.family: Config.fontFamily
-                        font.pixelSize: Config.fontSize
+                        font.pixelSize: Metrics.body
                         font.bold: true
                         elide: Text.ElideRight
                     }
@@ -100,7 +100,7 @@ PanelWindow {
                         text: card.modelData.body
                         color: Tokens.color("notification", "foreground")
                         font.family: Config.fontFamily
-                        font.pixelSize: Config.fontSize - 1
+                        font.pixelSize: Metrics.bodySmall
                         wrapMode: Text.Wrap
                         maximumLineCount: 4
                         elide: Text.ElideRight
@@ -110,7 +110,7 @@ PanelWindow {
                         text: card.modelData.appName
                         color: Tokens.color("notification", "muted")
                         font.family: Config.fontFamily
-                        font.pixelSize: Config.fontSize - 2
+                        font.pixelSize: Metrics.caption
                     }
                 }
 

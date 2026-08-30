@@ -123,7 +123,7 @@ ColumnLayout {
                 placeholderText: "Passphrase for " + row.modelData.name
                 color: Tokens.color("popup", "foreground")
                 font.family: Config.fontFamily
-                font.pixelSize: Config.fontSize
+                font.pixelSize: Metrics.body
                 background: Rectangle {
                     radius: 4
                     color: Tokens.color("popup", "muted")

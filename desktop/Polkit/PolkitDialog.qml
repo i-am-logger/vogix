@@ -56,7 +56,7 @@ Scope {
                     text: "Authentication required"
                     color: Tokens.color("polkit", "accent")
                     font.family: Config.fontFamily
-                    font.pixelSize: Config.fontSize + 2
+                    font.pixelSize: Metrics.title
                     font.bold: true
                 }
 
@@ -65,7 +65,7 @@ Scope {
                     text: agent.flow?.message ?? ""
                     color: Tokens.color("polkit", "foreground")
                     font.family: Config.fontFamily
-                    font.pixelSize: Config.fontSize
+                    font.pixelSize: Metrics.body
                     wrapMode: Text.Wrap
                 }
 
@@ -77,7 +77,7 @@ Scope {
                         ? Tokens.color("polkit", "danger")
                         : Tokens.color("polkit", "muted")
                     font.family: Config.fontFamily
-                    font.pixelSize: Config.fontSize - 1
+                    font.pixelSize: Metrics.bodySmall
                     wrapMode: Text.Wrap
                 }
 
@@ -91,7 +91,7 @@ Scope {
                     placeholderText: agent.flow?.inputPrompt ?? "Password"
                     color: Tokens.color("polkit", "foreground")
                     font.family: Config.fontFamily
-                    font.pixelSize: Config.fontSize
+                    font.pixelSize: Metrics.body
                     onAccepted: agent.flow?.submit(text)
                 }
 
@@ -103,7 +103,7 @@ Scope {
                         text: "Cancel (Esc)"
                         color: Tokens.color("polkit", "muted")
                         font.family: Config.fontFamily
-                        font.pixelSize: Config.fontSize - 1
+                        font.pixelSize: Metrics.bodySmall
 
                         MouseArea {
                             anchors.fill: parent
@@ -115,7 +115,7 @@ Scope {
                         text: "Authenticate (Enter)"
                         color: Tokens.color("polkit", "accent")
                         font.family: Config.fontFamily
-                        font.pixelSize: Config.fontSize - 1
+                        font.pixelSize: Metrics.bodySmall
 
                         MouseArea {
                             anchors.fill: parent
