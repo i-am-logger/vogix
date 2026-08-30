@@ -12,7 +12,7 @@ _:
 {
   font = {
     family = "Fira Code Nerd Font";
-    size = 13;
+    size = 16;
   };
 
   bar = {

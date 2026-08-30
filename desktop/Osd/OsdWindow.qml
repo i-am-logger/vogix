@@ -42,7 +42,7 @@ PanelWindow {
                     ? Tokens.color("osd", "muted")
                     : Tokens.color("osd", "foreground")
                 font.family: Config.fontFamily
-                font.pixelSize: Config.fontSize
+                font.pixelSize: Metrics.body
             }
 
             Rectangle {

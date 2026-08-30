@@ -5,6 +5,6 @@ import qs.Vogix
 Text {
     color: Tokens.color("bar", "foreground")
     font.family: Config.fontFamily
-    font.pixelSize: Config.fontSize
+    font.pixelSize: Metrics.body
     verticalAlignment: Text.AlignVCenter
 }

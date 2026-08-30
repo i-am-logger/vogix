@@ -86,7 +86,7 @@ PanelWindow {
                                 ? Tokens.color("power", "danger")
                                 : Tokens.color("power", "accent")
                             font.family: Config.fontFamily
-                            font.pixelSize: Config.fontSize + 3
+                            font.pixelSize: Metrics.heading
                         }
 
                         Text {
@@ -94,7 +94,7 @@ PanelWindow {
                             text: row.modelData.label
                             color: Tokens.color("power", "foreground")
                             font.family: Config.fontFamily
-                            font.pixelSize: Config.fontSize
+                            font.pixelSize: Metrics.body
                         }
                     }
 

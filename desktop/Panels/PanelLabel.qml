@@ -5,6 +5,6 @@ import qs.Vogix
 Text {
     color: Tokens.color("popup", "foreground")
     font.family: Config.fontFamily
-    font.pixelSize: Config.fontSize
+    font.pixelSize: Metrics.body
     elide: Text.ElideRight
 }
