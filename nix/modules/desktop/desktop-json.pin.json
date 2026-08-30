@@ -6,7 +6,7 @@
   },
   "bar": {
     "enable": true,
-    "height": 36,
+    "height": 44,
     "layout": {
       "center": [
         "window"
@@ -51,7 +51,7 @@
           "media"
         ]
       },
-      "size": 32
+      "size": 40
     },
     "left": {
       "enable": true,
@@ -66,7 +66,7 @@
           "mode"
         ]
       },
-      "size": 36
+      "size": 44
     },
     "right": {
       "enable": true,
@@ -89,7 +89,7 @@
           "spectrum-rail"
         ]
       },
-      "size": 48
+      "size": 64
     },
     "top": {
       "enable": true,
@@ -111,7 +111,7 @@
           "mode"
         ]
       },
-      "size": 36
+      "size": 44
     }
   },
   "font": {
@@ -226,6 +226,7 @@
   },
   "meters": {
     "history": 64,
+    "sampleMs": 100,
     "spectrum": {
       "bars": 16,
       "enable": true

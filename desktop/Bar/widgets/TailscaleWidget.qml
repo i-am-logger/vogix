@@ -1,37 +1,29 @@
-// Tailscale link: glyph lights accent while connected, with the
-// connected-duration readout beside it. Click opens the peers panel.
-// (The MouseArea must wrap the Row from outside — anchors on a direct
-// Row child break the Row's own layout.)
+// The TS cell: peers online/total and how long the link has been up
+// ("4/7 12d"). Title lights success while connected. Click opens the
+// peers panel.
 import QtQuick
 import Quickshell
 import qs.Bar.widgets
 import qs.Services
 import qs.Vogix
 
-Item {
-    implicitWidth: row.implicitWidth
-    implicitHeight: row.implicitHeight
+FrameCell {
+    title: "TS"
+    titleColor: Tailscale.online ? Tokens.color("meter", "low") : Tokens.color("meter", "label")
+    padH: 8
+    padV: 3
 
     SystemClock {
         id: clock
         precision: SystemClock.Minutes
     }
 
-    Row {
-        id: row
-        spacing: Metrics.unit
-
-        BarText {
-            text: "󰖂"
-            color: Tailscale.online ? Tokens.color("bar", "accent") : Tokens.color("bar", "muted")
-        }
-
-        BarText {
-            visible: Tailscale.online
-            text: Tailscale.sinceText(clock.date.getTime())
-            font.pixelSize: Metrics.caption
-            color: Tokens.color("bar", "muted")
-        }
+    BarText {
+        text: Tailscale.online
+            ? Tailscale.peersOnline + "/" + Tailscale.peersTotal + " " + Tailscale.sinceText(clock.date.getTime()).toUpperCase()
+            : "OFF"
+        font.pixelSize: Metrics.bodySmall
+        color: Tailscale.online ? Tokens.color("bar", "foreground") : Tokens.color("bar", "muted")
     }
 
     MouseArea {

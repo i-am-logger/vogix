@@ -177,6 +177,11 @@ in
             default = defaults.meters.history;
             description = "Samples kept per stat graph (ring buffer length).";
           };
+          sampleMs = mkOption {
+            type = types.ints.between 50 5000;
+            default = defaults.meters.sampleMs;
+            description = "cpu/mem/net sample period in ms (the graphs' liveliness; temperature and disk stay on slow ticks).";
+          };
           thresholds = {
             cpu = thresholdPair "cpu" "percent";
             cpuTemp = thresholdPair "cpuTemp" "°C";

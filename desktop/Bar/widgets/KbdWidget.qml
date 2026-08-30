@@ -1,26 +1,36 @@
-// Keyboard layout chip (EN/HE/…): the vogix-input device's active xkb
-// layout. Click cycles to the next layout.
+// The LANG cell: every configured layout, the active one lit bright and
+// bold, the rest dim. Click cycles.
 import QtQuick
 import qs.Bar.widgets
-import qs.Vogix
 import qs.Services
+import qs.Vogix
 
-Rectangle {
+FrameCell {
     id: root
 
-    implicitWidth: label.implicitWidth + Metrics.unit * 3
-    implicitHeight: Metrics.chip
-    color: "transparent"
-    border.width: 1
-    border.color: Tokens.color("meter", "frame")
+    title: "LANG"
+    padH: 10
+    padV: 3
 
-    BarText {
-        id: label
-        anchors.centerIn: parent
-        text: KbLayout.label
-        font.pixelSize: Metrics.caption
-        font.letterSpacing: 1
-        color: Tokens.color("bar", "foreground")
+    Row {
+        spacing: Metrics.unit * 2
+
+        Repeater {
+            model: KbLayout.layouts.length > 0 ? KbLayout.layouts : [""]
+
+            BarText {
+                required property string modelData
+                readonly property bool active: KbLayout.codeLabel(modelData) === KbLayout.label
+
+                text: modelData === "" ? KbLayout.label : KbLayout.codeLabel(modelData)
+                font.pixelSize: active ? Metrics.bodySmall : Metrics.caption
+                font.bold: active
+                color: active
+                    ? Tokens.color("bar", "foreground")
+                    : Tokens.color("bar", "muted")
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
     }
 
     MouseArea {

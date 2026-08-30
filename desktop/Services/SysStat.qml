@@ -15,6 +15,7 @@ Singleton {
     id: root
 
     readonly property int histLen: (Config.doc.meters ?? {}).history ?? 64
+    readonly property int sampleMs: (Config.doc.meters ?? {}).sampleMs ?? 100
 
     property real cpu: 0        // 0..1
     property real memory: 0     // 0..1
@@ -44,8 +45,10 @@ Singleton {
         return out;
     }
 
+    // The fast tick — cpu/mem/net at meters.sampleMs (default 10 Hz), so
+    // the graphs move like instruments, not like a status page.
     Timer {
-        interval: 3000
+        interval: root.sampleMs
         running: true
         repeat: true
         triggeredOnStart: true
@@ -53,6 +56,14 @@ Singleton {
             statFile.reload();
             memFile.reload();
             netFile.reload();
+        }
+    }
+
+    Timer {
+        interval: 3000
+        running: true
+        repeat: true
+        onTriggered: {
             if (root.tempPath !== "")
                 tempFile.reload();
         }

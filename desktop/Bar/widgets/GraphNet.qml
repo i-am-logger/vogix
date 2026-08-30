@@ -1,4 +1,4 @@
-// Network history graph: download solid, upload dashed, both normalized
+// Network history panel: download solid, upload dashed, both normalized
 // to the window's own peak (rates have no natural 100%).
 import QtQuick
 import qs.Bar.widgets
@@ -13,7 +13,16 @@ GraphCell {
         return arr.map(v => v / max);
     }
 
-    label: "NET"
+    function fmt(rate: real): string {
+        if (rate >= 1024 * 1024)
+            return (rate / (1024 * 1024)).toFixed(1) + "M";
+        if (rate >= 1024)
+            return Math.round(rate / 1024) + "K";
+        return Math.round(rate) + "B";
+    }
+
+    title: "NET"
     values: norm(SysStat.netRxHistory)
     secondary: norm(SysStat.netTxHistory)
+    valueText: "▼" + fmt(SysStat.netRxRate)
 }

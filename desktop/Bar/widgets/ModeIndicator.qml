@@ -1,43 +1,44 @@
 // The input engine's current mode (the mode-visibility surface the border
 // color already carries; the bar is its second reader). Label AND color
 // come from the same modeColors table the engine uses (input.json:
-// { slot, label } per mode) — one table, two surfaces. The root mode
-// stays muted; any other mode gets its slot's color as the chip.
+// { slot, label } per mode) — one table, two surfaces. Horizontal: the
+// framed MODE cell, letter-spaced bold in the mode's color. Vertical
+// rail: a single-letter box whose frame takes the mode color.
 import QtQuick
 import Quickshell.Io
 import qs.Bar.widgets
 import qs.Vogix
 
-Rectangle {
+FrameCell {
     id: root
+
+    property BarAxis axis: null
+    readonly property bool vertical: axis?.vertical ?? false
 
     property var table: ({})
 
     readonly property var entry: root.table[Mode.mode] ?? null
-    readonly property bool isRoot: Mode.mode === "app"
-
-    implicitWidth: label.implicitWidth + Metrics.unit * 3
-    implicitHeight: Metrics.chip
-    color: {
-        if (root.isRoot)
-            return "transparent";
+    readonly property string modeLabel: entry?.label !== undefined && entry.label !== ""
+        ? entry.label
+        : Mode.mode
+    readonly property color modeColor: {
         const slot = root.entry?.slot ?? "";
         const hex = Theme.semantic[slot];
         return hex ?? Tokens.color("bar", "accent");
     }
 
+    title: vertical ? "" : "MODE"
+    frameColor: vertical ? root.modeColor : Tokens.color("meter", "frame")
+    padH: vertical ? 5 : 10
+    padV: 3
+
     BarText {
-        id: label
-        anchors.centerIn: parent
-        // Bracketed, uppercase — the [MODE] readout of the HUD.
-        text: "[" + (root.entry?.label !== undefined && root.entry.label !== ""
-            ? root.entry.label
-            : Mode.mode) + "]"
+        text: root.vertical ? root.modeLabel.slice(0, 1) : root.modeLabel
+        font.pixelSize: Metrics.bodySmall
+        font.bold: true
+        font.letterSpacing: root.vertical ? 0 : 3
         font.capitalization: Font.AllUppercase
-        font.letterSpacing: 1
-        color: root.isRoot
-            ? Tokens.color("bar", "muted")
-            : Tokens.color("bar", "background")
+        color: root.modeColor
     }
 
     FileView {
@@ -50,6 +51,5 @@ Rectangle {
                 root.table = {};
             }
         }
-        onLoadFailed: root.table = {}
     }
 }

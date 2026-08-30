@@ -10,9 +10,9 @@ StatCell {
     readonly property var th: ((Config.doc.meters ?? {}).thresholds ?? {}).cpuTemp ?? ({})
 
     visible: SysStat.hasTemp
-    label: "TEMP"
-    value: degrees + "°"
-    widestValue: "100°"
+    title: "TMP"
+    value: String(degrees).padStart(3, "0") + "C"
+    widestValue: "000C"
     valueColor: degrees >= (th.danger ?? 85) ? Tokens.color("meter", "high")
         : degrees >= (th.warn ?? 60) ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")

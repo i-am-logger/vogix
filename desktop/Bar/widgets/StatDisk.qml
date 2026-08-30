@@ -8,9 +8,9 @@ import qs.Vogix
 StatCell {
     readonly property int pct: Math.round(SysStat.disk * 100)
 
-    label: "DISK"
-    value: pct + "%"
-    widestValue: "100%"
+    title: "DSK"
+    value: String(pct).padStart(3, "0") + "%"
+    widestValue: "000%"
     valueColor: pct >= 95 ? Tokens.color("meter", "high")
         : pct >= 80 ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")

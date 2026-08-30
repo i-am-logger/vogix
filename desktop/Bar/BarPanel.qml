@@ -47,6 +47,19 @@ PanelWindow {
         anchors.fill: parent
         color: Tokens.color("bar", "background")
 
+        // The chrome line: a full-strength hairline on the bar's inner
+        // (content-facing) edge — what makes the bar read as INSTRUMENT
+        // PANEL rather than tinted wallpaper.
+        Rectangle {
+            color: Tokens.color("bar", "border")
+            anchors.left: panel.edge === "right" ? parent.left : undefined
+            anchors.right: panel.edge === "left" ? parent.right : undefined
+            anchors.top: panel.edge === "bottom" ? parent.top : undefined
+            anchors.bottom: panel.edge === "top" ? parent.bottom : undefined
+            width: panel.vertical ? 1 : parent.width
+            height: panel.vertical ? parent.height : 1
+        }
+
         ScanlineOverlay {}
 
         BarAxis {
