@@ -6,3 +6,4 @@ HudPanel 1.0 HudPanel.qml
 SegmentedMeter 1.0 SegmentedMeter.qml
 VuMeter 1.0 VuMeter.qml
 Sparkline 1.0 Sparkline.qml
+ScanlineOverlay 1.0 ScanlineOverlay.qml

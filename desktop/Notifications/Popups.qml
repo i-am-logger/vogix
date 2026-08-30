@@ -66,6 +66,8 @@ PanelWindow {
                 border.width: card.critical ? 0 : 1
                 border.color: Tokens.color("notification", "border")
 
+                ScanlineOverlay {}
+
                 DashedBorder {
                     visible: card.critical
                     color: Tokens.color("notification", "urgent")
