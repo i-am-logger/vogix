@@ -18,6 +18,10 @@ Scope {
     readonly property int thickness: 2
     readonly property int pad: 3
 
+    // Seed the geometry: lastIpcObject stays empty until the first
+    // refresh, and no event fires just because the shell started.
+    Component.onCompleted: Hyprland.refreshToplevels()
+
     Connections {
         target: Hyprland
 
@@ -68,10 +72,14 @@ Scope {
             readonly property var at: overlay.ipc.at ?? [0, 0]
             readonly property var size: overlay.ipc.size ?? [0, 0]
 
-            screen: overlay.modelData
-            visible: overlay.onThisScreen
+            // The WINDOW stays mapped (remapping a layer costs ~150 ms and
+            // focus changes constantly); only the bracket item toggles.
+            readonly property bool showBrackets: overlay.onThisScreen
                 && overlay.ipc.at !== undefined
                 && (overlay.ipc.fullscreen ?? 0) < 2
+
+            screen: overlay.modelData
+            visible: true
 
             anchors {
                 top: true
@@ -112,6 +120,7 @@ Scope {
             Item {
                 id: target
 
+                visible: overlay.showBrackets
                 x: overlay.at[0] - (overlay.screen?.x ?? 0) - root.pad
                 y: overlay.at[1] - (overlay.screen?.y ?? 0) - root.pad
                 width: overlay.size[0] + root.pad * 2

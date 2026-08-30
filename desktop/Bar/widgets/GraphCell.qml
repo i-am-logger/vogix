@@ -1,5 +1,7 @@
-// A rail graph panel: framed break-title, sparkline, current value —
-// the Flight Deck CPU/MEM/NET stack.
+// A history graph cell for the bottom bar: framed, sparkline first,
+// optional value beside it. A graph sitting next to its stat cell keeps
+// title and value EMPTY — the adjacency binds them and the stat cell
+// already carries the number; standalone graphs (I/O, GPU) carry both.
 import QtQuick
 import qs.Bar.widgets
 import qs.Components
@@ -14,26 +16,28 @@ FrameCell {
     property alias secondaryColor: line.secondaryColor
     property string valueText: ""
 
-    padH: 6
-    padV: 5
+    padH: 8
+    padV: 3
 
-    Column {
-        spacing: 3
+    Row {
+        spacing: Metrics.unit * 2
 
         Sparkline {
             id: line
-            width: Metrics.body * 2.6
-            height: Metrics.body * 1.75
+            width: Metrics.body * 3.5
+            height: Metrics.body
             lineColor: Tokens.color("bar", "accent")
             secondaryColor: Tokens.color("meter", "mid")
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
         }
 
-        BarText {
+        NumericText {
+            visible: root.valueText !== ""
             text: root.valueText
+            widestText: "999.9M"
             font.pixelSize: Metrics.caption
             color: Tokens.color("meter", "value")
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 }

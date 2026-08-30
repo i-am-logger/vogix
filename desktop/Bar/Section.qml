@@ -70,6 +70,8 @@ GridLayout {
                 case "graph-cpu": return "widgets/GraphCpu.qml";
                 case "graph-mem": return "widgets/GraphMem.qml";
                 case "graph-net": return "widgets/GraphNet.qml";
+                case "graph-disk": return "widgets/GraphDisk.qml";
+                case "graph-gpu": return "widgets/GraphGpu.qml";
                 case "batteries": return "widgets/BatteriesWidget.qml";
                 case "menu": return "widgets/MenuButton.qml";
                 case "power-glyph": return "widgets/PowerGlyph.qml";
