@@ -26,8 +26,6 @@ FrameCell {
         color: Tailscale.online ? Tokens.color("bar", "foreground") : Tokens.color("bar", "muted")
     }
 
-    MouseArea {
-        anchors.fill: parent
-        onClicked: Panels.toggle("tailscale")
-    }
+    interactive: true
+    onClicked: Panels.toggle("tailscale")
 }

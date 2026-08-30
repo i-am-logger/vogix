@@ -14,6 +14,14 @@ Item {
     property real padH: 8
     property real padV: 4
 
+    // Whole-cell click target. Widgets must use THIS, never their own
+    // anchors.fill MouseArea inside the slot — a filling child feeds the
+    // slot's childrenRect back into the cell's implicit size (binding
+    // loop, caught live).
+    property bool interactive: false
+
+    signal clicked()
+
     default property alias content: slot.data
 
     readonly property real frameTop: titleText.height / 2
@@ -87,5 +95,13 @@ Item {
         y: root.contentTop
         width: parent.width - root.padH * 2
         height: parent.height - root.contentTop - root.padV
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.interactive
+        // Below the slot, so a widget's own inner mouse areas win.
+        z: -1
+        onClicked: root.clicked()
     }
 }
