@@ -31,8 +31,6 @@ FrameCell {
         color: Theme.semantic.foreground_bright ?? Tokens.color("bar", "foreground")
     }
 
-    MouseArea {
-        anchors.fill: parent
-        onClicked: Panels.toggle("calendar")
-    }
+    interactive: true
+    onClicked: Panels.toggle("calendar")
 }

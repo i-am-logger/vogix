@@ -33,8 +33,6 @@ FrameCell {
         }
     }
 
-    MouseArea {
-        anchors.fill: parent
-        onClicked: KbLayout.next()
-    }
+    interactive: true
+    onClicked: KbLayout.next()
 }

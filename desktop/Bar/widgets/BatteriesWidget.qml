@@ -40,8 +40,6 @@ FrameCell {
         }
     }
 
-    MouseArea {
-        anchors.fill: parent
-        onClicked: Panels.toggle("power")
-    }
+    interactive: true
+    onClicked: Panels.toggle("power")
 }
