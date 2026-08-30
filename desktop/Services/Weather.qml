@@ -1,5 +1,5 @@
 pragma Singleton
-// Weather via wttrbar (the omarchy tool): refreshed every 30 minutes,
+// Weather via wttrbar: refreshed every 30 minutes,
 // cached in state so a shell restart shows the last reading immediately.
 // The location comes from desktop.json (empty = wttr.in geolocation).
 import QtQuick
