@@ -15,30 +15,62 @@ _:
     size = 16;
   };
 
-  bar = {
-    enable = true;
-    position = "top";
-    height = 32;
-    layout = {
-      left = [ "workspaces" "mode" ];
-      center = [ "window" ];
-      right = [
-        "update"
-        "tray"
-        "media"
-        "weather"
-        "cpu"
-        "memory"
-        "network"
-        "bluetooth"
-        "audio"
-        "mic"
-        "battery"
-        "dnd"
-        "indicators"
-        "theme"
-        "clock"
-      ];
+  # The HUD: four bars on every monitor. Sections run start→end along the
+  # bar's axis. Horizontal-only widgets (window, media, weather, theme)
+  # never appear on left/right — the home-manager module asserts it.
+  bars = {
+    top = {
+      enable = true;
+      size = 36;
+      layout = {
+        start = [ "workspaces" "mode" ];
+        center = [ "window" ];
+        end = [ "spectrum-mini" "kbd" "privacy" "dnd" "indicators" "theme" "clock" ];
+      };
+    };
+    bottom = {
+      enable = true;
+      size = 32;
+      layout = {
+        start = [ "media" ];
+        center = [ "stat-cpu" "stat-temp" "stat-mem" "stat-swap" "stat-disk" "stat-net" "vu-out" "vu-mic" ];
+        end = [ "tailscale" "weather" "update" "tray" ];
+      };
+    };
+    left = {
+      enable = true;
+      size = 36;
+      layout = {
+        start = [ "workspaces" "mode" ];
+        center = [ ];
+        end = [ "menu" "power-glyph" ];
+      };
+    };
+    right = {
+      enable = true;
+      size = 48;
+      layout = {
+        start = [ "vu-rail" "spectrum-rail" ];
+        center = [ "graph-cpu" "graph-mem" "graph-net" ];
+        end = [ "batteries" "battery" "audio" "mic" "network" "bluetooth" ];
+      };
+    };
+  };
+
+  # Meter tuning: the 40dB VU window and the stat thresholds that flip a
+  # meter's segments to warning/danger colors (percent, °C for cpuTemp).
+  meters = {
+    spectrum = {
+      enable = true;
+      bars = 16;
+    };
+    vu.floorDb = -40;
+    history = 64;
+    thresholds = {
+      cpu = { warn = 50; danger = 90; };
+      cpuTemp = { warn = 60; danger = 85; };
+      memory = { warn = 60; danger = 90; };
+      swap = { warn = 20; danger = 80; };
     };
   };
 
@@ -77,6 +109,7 @@ _:
     enable = true;
     # Live kinds (shader/video) never cost battery by default.
     animate = "on-ac";
+    scanlines = false;
   };
 
   launcher = {
@@ -129,6 +162,19 @@ _:
   };
 
   surfaces = {
+    # Every SegmentedMeter/VuMeter/Sparkline resolves through this one
+    # surface: positional segment colors, the unlit trough, the peak cap,
+    # the hairline frame, the label/value text.
+    meter = {
+      low = "success";
+      mid = "warning";
+      high = "danger";
+      unlit = { slot = "foreground_border"; alpha = 0.22; };
+      cap = "foreground_comment";
+      frame = { slot = "foreground_border"; alpha = 0.35; };
+      label = "foreground_comment";
+      value = "foreground_text";
+    };
     bar = {
       background = { slot = "background"; alpha = 0.92; };
       foreground = "foreground_text";

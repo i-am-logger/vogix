@@ -74,6 +74,23 @@ let
 
   launcherModeNames = [ "apps" "files" "calc" "emoji" "ssh" "clipboard" "theme" "background" ];
 
+  barEdges = [ "top" "bottom" "left" "right" ];
+
+  # warn/danger pair for one meter; units differ per metric (percent for
+  # cpu/memory/swap, °C for cpuTemp) — the description carries them.
+  thresholdPair = metric: unit: {
+    warn = mkOption {
+      type = types.ints.positive;
+      default = defaults.meters.thresholds.${metric}.warn;
+      description = "${metric} level (${unit}) at which the meter turns warning-colored.";
+    };
+    danger = mkOption {
+      type = types.ints.positive;
+      default = defaults.meters.thresholds.${metric}.danger;
+      description = "${metric} level (${unit}) at which the meter turns danger-colored.";
+    };
+  };
+
 in
 {
   desktop = mkOption {
@@ -96,38 +113,75 @@ in
           };
         };
 
-        bar = {
+        # One bar per screen edge, each on every monitor. `size` is the
+        # thickness: height for top/bottom, width for left/right. Sections
+        # are start/center/end along the bar's axis (start = left on a
+        # horizontal bar, top on a vertical one). Some widgets are
+        # horizontal-only (window, media, weather, theme) — an assertion in
+        # the home-manager module rejects them on left/right.
+        bars = lib.genAttrs barEdges (edge: {
           enable = mkOption {
             type = types.bool;
-            default = defaults.bar.enable;
-            description = "Render the bar (one per monitor).";
+            default = defaults.bars.${edge}.enable;
+            description = "Render the ${edge} bar (one per monitor).";
           };
-          position = mkOption {
-            type = types.enum [ "top" "bottom" ];
-            default = defaults.bar.position;
-            description = "Screen edge the bar anchors to.";
-          };
-          height = mkOption {
+          size = mkOption {
             type = types.ints.positive;
-            default = defaults.bar.height;
-            description = "Bar height (logical px).";
+            default = defaults.bars.${edge}.size;
+            description = "Bar thickness in logical px (height for a horizontal bar, width for a vertical one).";
           };
           layout = {
-            left = mkOption {
+            start = mkOption {
               type = widgetNames;
-              default = defaults.bar.layout.left;
-              description = "Widgets in the left section, in order.";
+              default = defaults.bars.${edge}.layout.start;
+              description = "Widgets in the ${edge} bar's start section, in order.";
             };
             center = mkOption {
               type = widgetNames;
-              default = defaults.bar.layout.center;
-              description = "Widgets in the center section, in order.";
+              default = defaults.bars.${edge}.layout.center;
+              description = "Widgets in the ${edge} bar's center section, in order.";
             };
-            right = mkOption {
+            end = mkOption {
               type = widgetNames;
-              default = defaults.bar.layout.right;
-              description = "Widgets in the right section, in order.";
+              default = defaults.bars.${edge}.layout.end;
+              description = "Widgets in the ${edge} bar's end section, in order.";
             };
+          };
+        });
+
+        # The HUD's data-density knobs: the audio meters, the history ring
+        # buffers behind the graphs, and the stat thresholds that drive
+        # positional meter coloring (via surfaces.meter).
+        meters = {
+          spectrum = {
+            enable = mkOption {
+              type = types.bool;
+              default = defaults.meters.spectrum.enable;
+              description = "Run the cava audio spectrum (subprocess starts only while a spectrum widget is visible).";
+            };
+            bars = mkOption {
+              type = types.ints.positive;
+              default = defaults.meters.spectrum.bars;
+              description = "Number of spectrum bars.";
+            };
+          };
+          vu = {
+            floorDb = mkOption {
+              type = types.ints.between (-90) (-10);
+              default = defaults.meters.vu.floorDb;
+              description = "Bottom of the VU meters' dB window (0 dBFS is the top).";
+            };
+          };
+          history = mkOption {
+            type = types.ints.positive;
+            default = defaults.meters.history;
+            description = "Samples kept per stat graph (ring buffer length).";
+          };
+          thresholds = {
+            cpu = thresholdPair "cpu" "percent";
+            cpuTemp = thresholdPair "cpuTemp" "°C";
+            memory = thresholdPair "memory" "percent";
+            swap = thresholdPair "swap" "percent";
           };
         };
 
@@ -220,6 +274,11 @@ in
             type = types.enum [ "always" "on-ac" "never" ];
             default = defaults.background.animate;
             description = "When live background kinds (shader/video) may animate; every setting pauses them while the idle dim stage is up.";
+          };
+          scanlines = mkOption {
+            type = types.bool;
+            default = defaults.background.scanlines;
+            description = "Overlay a subtle CRT scanline shader on the shell's chrome surfaces (bars, notifications).";
           };
         };
 

@@ -295,6 +295,93 @@
               touch $out
             '';
 
+          # desktop.json is the v1→v2 contract, so its DEFAULT rendering is
+          # pinned byte-for-byte (key-sorted): schema drift must arrive as a
+          # deliberate, reviewed edit of the pin file, never as a side effect
+          # of an option refactor.
+          desktop-options =
+            let
+              hmConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                      };
+                      desktop.enable = true;
+                      enableDaemon = false;
+                    };
+                    wayland.windowManager.hyprland = {
+                      enable = true;
+                      package = null;
+                      portalPackage = null;
+                    };
+                  }
+                ];
+              };
+              rendered = hmConf.config.home.file.".local/state/vogix/desktop.json".source;
+              # Negative case: a horizontal-only widget on a vertical bar
+              # must trip the assertion (checked here at eval, since plain
+              # home-manager only surfaces assertions at activation build).
+              badConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                      };
+                      desktop = {
+                        enable = true;
+                        bars.left.layout.start = [ "window" ];
+                      };
+                      enableDaemon = false;
+                    };
+                    wayland.windowManager.hyprland = {
+                      enable = true;
+                      package = null;
+                      portalPackage = null;
+                    };
+                  }
+                ];
+              };
+              # home-manager gates all of `config` behind its assertion check
+              # (any access throws the "Failed assertions" error), so the
+              # negative case is observed as eval failure — the good config
+              # above evaluating cleanly is what rules out unrelated breakage.
+              verticalRejected = !(builtins.tryEval badConf.config.home.username).success;
+            in
+            assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
+            pkgs.runCommand "vogix-desktop-options" { nativeBuildInputs = [ pkgs.jq ]; } ''
+              jq -S . ${rendered} > got.json
+              jq -S . ${./nix/modules/desktop/desktop-json.pin.json} > want.json
+              if ! diff -u want.json got.json; then
+                echo "the default desktop.json drifted from nix/modules/desktop/desktop-json.pin.json;"
+                echo "if the schema change is intended, update the pin in the same commit."
+                exit 1
+              fi
+              touch $out
+            '';
+
           # Lint the desktop shell's QML against the pinned quickshell's
           # modules. Two categories are disabled because quickshell's
           # published qmltypes cannot express them (PanelWindow is creatable
@@ -370,12 +457,23 @@
                 };
               };
               desktopJson = builtins.toJSON {
-                schema = 1;
-                font = { family = "monospace"; size = 13; };
+                schema = 2;
+                font = { family = "monospace"; size = 16; };
+                bars = {
+                  top = {
+                    enable = true;
+                    size = 36;
+                    layout = { start = [ "workspaces" "mode" ]; center = [ "window" ]; end = [ "theme" "clock" ]; };
+                  };
+                  bottom = { enable = false; size = 32; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
+                  left = { enable = false; size = 36; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
+                  right = { enable = false; size = 48; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
+                };
+                # The one-release schema-1 mirror the serializer emits.
                 bar = {
                   enable = true;
                   position = "top";
-                  height = 32;
+                  height = 36;
                   layout = { left = [ "workspaces" "mode" ]; center = [ "window" ]; right = [ "theme" "clock" ]; };
                 };
                 surfaces.bar = {

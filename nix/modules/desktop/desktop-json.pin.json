@@ -1,0 +1,513 @@
+{
+  "background": {
+    "animate": "on-ac",
+    "enable": true,
+    "scanlines": false
+  },
+  "bar": {
+    "enable": true,
+    "height": 36,
+    "layout": {
+      "center": [
+        "window"
+      ],
+      "left": [
+        "workspaces",
+        "mode"
+      ],
+      "right": [
+        "spectrum-mini",
+        "kbd",
+        "privacy",
+        "dnd",
+        "indicators",
+        "theme",
+        "clock"
+      ]
+    },
+    "position": "top"
+  },
+  "bars": {
+    "bottom": {
+      "enable": true,
+      "layout": {
+        "center": [
+          "stat-cpu",
+          "stat-temp",
+          "stat-mem",
+          "stat-swap",
+          "stat-disk",
+          "stat-net",
+          "vu-out",
+          "vu-mic"
+        ],
+        "end": [
+          "tailscale",
+          "weather",
+          "update",
+          "tray"
+        ],
+        "start": [
+          "media"
+        ]
+      },
+      "size": 32
+    },
+    "left": {
+      "enable": true,
+      "layout": {
+        "center": [],
+        "end": [
+          "menu",
+          "power-glyph"
+        ],
+        "start": [
+          "workspaces",
+          "mode"
+        ]
+      },
+      "size": 36
+    },
+    "right": {
+      "enable": true,
+      "layout": {
+        "center": [
+          "graph-cpu",
+          "graph-mem",
+          "graph-net"
+        ],
+        "end": [
+          "batteries",
+          "battery",
+          "audio",
+          "mic",
+          "network",
+          "bluetooth"
+        ],
+        "start": [
+          "vu-rail",
+          "spectrum-rail"
+        ]
+      },
+      "size": 48
+    },
+    "top": {
+      "enable": true,
+      "layout": {
+        "center": [
+          "window"
+        ],
+        "end": [
+          "spectrum-mini",
+          "kbd",
+          "privacy",
+          "dnd",
+          "indicators",
+          "theme",
+          "clock"
+        ],
+        "start": [
+          "workspaces",
+          "mode"
+        ]
+      },
+      "size": 36
+    }
+  },
+  "font": {
+    "family": "Fira Code Nerd Font",
+    "size": 16
+  },
+  "idle": {
+    "dim": 300,
+    "lock": 600,
+    "screenOff": 660,
+    "screensaver": null,
+    "suspend": null
+  },
+  "launcher": {
+    "enable": true,
+    "menu": [
+      {
+        "action": "vogix input keys",
+        "icon": "󰌌",
+        "id": "keybindings",
+        "label": "Keybindings",
+        "submenu": [],
+        "when": null
+      },
+      {
+        "action": "vogix desktop launcher --mode theme",
+        "icon": "󰏘",
+        "id": "theme",
+        "label": "Theme…",
+        "submenu": [],
+        "when": null
+      },
+      {
+        "action": "vogix desktop background next",
+        "icon": "󰸉",
+        "id": "background",
+        "label": "Next background",
+        "submenu": [],
+        "when": null
+      },
+      {
+        "action": "vogix desktop notify dnd toggle",
+        "icon": "󰂛",
+        "id": "dnd",
+        "label": "Do not disturb",
+        "submenu": [],
+        "when": null
+      },
+      {
+        "action": "vogix desktop panel agents",
+        "icon": "󱚝",
+        "id": "agents",
+        "label": "Claude usage…",
+        "submenu": [],
+        "when": null
+      },
+      {
+        "action": "vogix desktop lock",
+        "icon": "󰌾",
+        "id": "lock",
+        "label": "Lock",
+        "submenu": [],
+        "when": null
+      },
+      {
+        "action": "vogix desktop power",
+        "icon": "󰐥",
+        "id": "power",
+        "label": "Power…",
+        "submenu": [],
+        "when": null
+      }
+    ],
+    "modes": {
+      "apps": {
+        "enable": true
+      },
+      "background": {
+        "enable": true
+      },
+      "calc": {
+        "enable": true
+      },
+      "clipboard": {
+        "enable": true
+      },
+      "emoji": {
+        "enable": true
+      },
+      "files": {
+        "enable": true
+      },
+      "ssh": {
+        "enable": true
+      },
+      "theme": {
+        "enable": true
+      }
+    }
+  },
+  "lock": {
+    "enable": true,
+    "pamService": "vogix-lock"
+  },
+  "meters": {
+    "history": 64,
+    "spectrum": {
+      "bars": 16,
+      "enable": true
+    },
+    "thresholds": {
+      "cpu": {
+        "danger": 90,
+        "warn": 50
+      },
+      "cpuTemp": {
+        "danger": 85,
+        "warn": 60
+      },
+      "memory": {
+        "danger": 90,
+        "warn": 60
+      },
+      "swap": {
+        "danger": 80,
+        "warn": 20
+      }
+    },
+    "vu": {
+      "floorDb": -40
+    }
+  },
+  "nightlight": {
+    "temperature": 4000
+  },
+  "notifications": {
+    "appRules": {
+      "yubikey-touch-detector": {
+        "accent": "danger",
+        "bypassDnd": true,
+        "timeout": 15000
+      }
+    },
+    "defaultTimeout": 5000,
+    "enable": true,
+    "maxVisible": 5
+  },
+  "osd": {
+    "enable": true,
+    "timeout": 1500
+  },
+  "polkit": {
+    "enable": true
+  },
+  "power": {
+    "enable": true
+  },
+  "schema": 2,
+  "surfaces": {
+    "bar": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 0.92,
+        "slot": "background"
+      },
+      "border": {
+        "alpha": 1.0,
+        "slot": "foreground_border"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "urgent": {
+        "alpha": 1.0,
+        "slot": "danger"
+      }
+    },
+    "launcher": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 0.98,
+        "slot": "background_surface"
+      },
+      "border": {
+        "alpha": 1.0,
+        "slot": "foreground_border"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "selection": {
+        "alpha": 1.0,
+        "slot": "background_selection"
+      }
+    },
+    "lock": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 1.0,
+        "slot": "background"
+      },
+      "danger": {
+        "alpha": 1.0,
+        "slot": "danger"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "surface": {
+        "alpha": 0.98,
+        "slot": "background_surface"
+      }
+    },
+    "meter": {
+      "cap": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "frame": {
+        "alpha": 0.35,
+        "slot": "foreground_border"
+      },
+      "high": {
+        "alpha": 1.0,
+        "slot": "danger"
+      },
+      "label": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "low": {
+        "alpha": 1.0,
+        "slot": "success"
+      },
+      "mid": {
+        "alpha": 1.0,
+        "slot": "warning"
+      },
+      "unlit": {
+        "alpha": 0.22,
+        "slot": "foreground_border"
+      },
+      "value": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      }
+    },
+    "notification": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 0.98,
+        "slot": "background_surface"
+      },
+      "border": {
+        "alpha": 1.0,
+        "slot": "foreground_border"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "urgent": {
+        "alpha": 1.0,
+        "slot": "danger"
+      }
+    },
+    "osd": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 0.95,
+        "slot": "background_surface"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      }
+    },
+    "polkit": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 1.0,
+        "slot": "background_surface"
+      },
+      "border": {
+        "alpha": 1.0,
+        "slot": "foreground_border"
+      },
+      "danger": {
+        "alpha": 1.0,
+        "slot": "danger"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      }
+    },
+    "popup": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 0.98,
+        "slot": "background_surface"
+      },
+      "border": {
+        "alpha": 1.0,
+        "slot": "foreground_border"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      }
+    },
+    "power": {
+      "accent": {
+        "alpha": 1.0,
+        "slot": "active"
+      },
+      "background": {
+        "alpha": 0.98,
+        "slot": "background_surface"
+      },
+      "border": {
+        "alpha": 1.0,
+        "slot": "foreground_border"
+      },
+      "danger": {
+        "alpha": 1.0,
+        "slot": "danger"
+      },
+      "foreground": {
+        "alpha": 1.0,
+        "slot": "foreground_text"
+      },
+      "muted": {
+        "alpha": 1.0,
+        "slot": "foreground_comment"
+      },
+      "selection": {
+        "alpha": 1.0,
+        "slot": "background_selection"
+      }
+    }
+  },
+  "weather": {
+    "enable": true,
+    "location": ""
+  }
+}

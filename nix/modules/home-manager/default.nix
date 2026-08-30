@@ -290,11 +290,29 @@ in
             (lib.recursiveUpdate desktopDefaults.surfaces cfg.desktop.surfaces);
 
         desktopJson = builtins.toJSON {
-          schema = 1;
+          schema = 2;
           font = { inherit (cfg.desktop.font) family size; };
+          bars = lib.genAttrs [ "top" "bottom" "left" "right" ] (edge: {
+            inherit (cfg.desktop.bars.${edge}) enable size;
+            layout = { inherit (cfg.desktop.bars.${edge}.layout) start center end; };
+          });
+          # One-release legacy mirror of the top bar in the schema-1 shape,
+          # so a schema-1 reader keeps a bar through the transition. Dropped
+          # next release.
           bar = {
-            inherit (cfg.desktop.bar) enable position height;
-            layout = { inherit (cfg.desktop.bar.layout) left center right; };
+            inherit (cfg.desktop.bars.top) enable;
+            position = "top";
+            height = cfg.desktop.bars.top.size;
+            layout = {
+              left = cfg.desktop.bars.top.layout.start;
+              inherit (cfg.desktop.bars.top.layout) center;
+              right = cfg.desktop.bars.top.layout.end;
+            };
+          };
+          meters = {
+            spectrum = { inherit (cfg.desktop.meters.spectrum) enable bars; };
+            vu = { inherit (cfg.desktop.meters.vu) floorDb; };
+            inherit (cfg.desktop.meters) history thresholds;
           };
           notifications = {
             inherit (cfg.desktop.notifications) enable defaultTimeout maxVisible appRules;
@@ -302,7 +320,7 @@ in
           osd = { inherit (cfg.desktop.osd) enable timeout; };
           polkit = { inherit (cfg.desktop.polkit) enable; };
           lock = { inherit (cfg.desktop.lock) enable pamService; };
-          background = { inherit (cfg.desktop.background) enable animate; };
+          background = { inherit (cfg.desktop.background) enable animate scanlines; };
           launcher = { inherit (cfg.desktop.launcher) enable modes menu; };
           power = { inherit (cfg.desktop.power) enable; };
           weather = { inherit (cfg.desktop.weather) enable location; };
@@ -313,6 +331,21 @@ in
         desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;
       in
       {
+        # Some widgets read horizontally (a window title, scrolling media
+        # text): fail the build rather than render them sideways.
+        assertions = map
+          (edge:
+            let
+              horizontalOnly = [ "window" "media" "weather" "theme" ];
+              l = cfg.desktop.bars.${edge}.layout;
+              bad = lib.intersectLists horizontalOnly (l.start ++ l.center ++ l.end);
+            in
+            {
+              assertion = bad == [ ];
+              message = "programs.vogix.desktop.bars.${edge}: ${lib.concatStringsSep ", " bad} cannot render on a vertical bar (horizontal-only widgets).";
+            })
+          [ "left" "right" ];
+
         home.file.".local/state/vogix/desktop.json".source = desktopJsonFile;
 
         # Registers the QML tree as the `vogix` quickshell config
@@ -339,6 +372,10 @@ in
             # store-symlink swap is invisible to file watchers, which is
             # also why the watcher is disabled outright below.
             X-Reload-Triggers = [ "${desktopJsonFile}" ];
+            # A QML change is a new process, not a reload — the engine never
+            # re-reads loaded components. Without this, a rebuild that only
+            # touches the QML package leaves the OLD shell running.
+            X-Restart-Triggers = [ "${vogixDesktopQml}" ];
           };
 
           Service = {
