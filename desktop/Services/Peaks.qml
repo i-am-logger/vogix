@@ -76,14 +76,19 @@ Singleton {
         onPeakChanged: root._micLevel = Math.max(root._micLevel, root._norm(peak))
     }
 
-    FrameAnimation {
-        // Runs only while something is audible or still decaying.
+    Timer {
+        // The 30 fps ballistics tick (NOT a FrameAnimation: that fires at
+        // the display's full refresh rate — 160 Hz here — and the decay
+        // math neither needs nor deserves that). Runs only while
+        // something is audible or still decaying.
+        interval: 33
+        repeat: true
         running: (root.outRefs > 0 || root.micRefs > 0)
             && (root._outLevel > 0 || root._outCap > 0 || root._micLevel > 0 || root._micCap > 0
                 || outMon.peak > 0 || micMon.peak > 0)
 
         onTriggered: {
-            const dt = Math.min(frameTime, 0.1);
+            const dt = 0.033;
 
             root._outLevel = Math.max(root._norm(outMon.peak), root._outLevel - 3.0 * dt);
             if (root._outLevel >= root._outCap) {
