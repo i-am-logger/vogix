@@ -21,7 +21,7 @@ _:
   bars = {
     top = {
       enable = true;
-      size = 36;
+      size = 44;
       layout = {
         start = [ "workspaces" "mode" ];
         center = [ "window" ];
@@ -30,7 +30,7 @@ _:
     };
     bottom = {
       enable = true;
-      size = 32;
+      size = 40;
       layout = {
         start = [ "media" ];
         center = [ "stat-cpu" "stat-temp" "stat-mem" "stat-swap" "stat-disk" "stat-net" "vu-out" "vu-mic" ];
@@ -39,7 +39,7 @@ _:
     };
     left = {
       enable = true;
-      size = 36;
+      size = 44;
       layout = {
         start = [ "workspaces" "mode" ];
         center = [ ];
@@ -48,7 +48,7 @@ _:
     };
     right = {
       enable = true;
-      size = 48;
+      size = 64;
       layout = {
         start = [ "vu-rail" "spectrum-rail" ];
         center = [ "graph-cpu" "graph-mem" "graph-net" ];
@@ -66,6 +66,9 @@ _:
     };
     vu.floorDb = -40;
     history = 64;
+    # cpu/mem/net sample period — 10 Hz, so the graphs and readouts feel
+    # ALIVE. Temperature stays on a slow tick, disk on 30 s.
+    sampleMs = 100;
     thresholds = {
       cpu = { warn = 50; danger = 90; };
       cpuTemp = { warn = 60; danger = 85; };

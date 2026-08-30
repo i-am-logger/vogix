@@ -8,9 +8,9 @@ StatCell {
     readonly property int pct: Math.round(SysStat.memory * 100)
     readonly property var th: ((Config.doc.meters ?? {}).thresholds ?? {}).memory ?? ({})
 
-    label: "MEM"
-    value: pct + "%"
-    widestValue: "100%"
+    title: "MEM"
+    value: String(pct).padStart(3, "0") + "%"
+    widestValue: "000%"
     valueColor: pct >= (th.danger ?? 90) ? Tokens.color("meter", "high")
         : pct >= (th.warn ?? 60) ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")

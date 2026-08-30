@@ -1,15 +1,16 @@
 pragma ComponentBehavior: Bound
-// Notification popups, Flight Deck form: a top-right column of ALERT
-// cards on the focused monitor. Square corners, hairline border; a
-// CRITICAL card swaps the hairline for a dashed danger frame and never
-// auto-expires. The header is the log line — APP NAME in micro caps and
-// an HH:mm:ss stamp; the 1px drain bar along the bottom shows the real
+// Notification popups, Flight Deck form: a top-right column of framed
+// cards on the focused monitor whose title BREAKS the top border —
+// "APPNAME" on a faint hairline frame, "ALERT :: APPNAME" on a solid
+// danger frame when critical (critical never auto-expires). The 3px
+// drain bar along the bottom runs on a track and shows the card's real
 // remaining lifetime (it resets exactly when the expiry timer does).
 // Overflow past maxVisible queues, announced by the +N QUEUED line.
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
+import qs.Bar.widgets
 import qs.Components
 import qs.Services
 import qs.Vogix
@@ -48,7 +49,7 @@ PanelWindow {
         Repeater {
             model: root.visiblePopups
 
-            Rectangle {
+            Item {
                 id: card
 
                 required property var modelData
@@ -61,102 +62,94 @@ PanelWindow {
                             : Tokens.color("notification", "accent"))
 
                 Layout.fillWidth: true
-                implicitHeight: content.implicitHeight + 22
-                color: Tokens.color("notification", "background")
-                border.width: card.critical ? 0 : 1
-                border.color: Tokens.color("notification", "border")
-
-                ScanlineOverlay {}
-
-                DashedBorder {
-                    visible: card.critical
-                    color: Tokens.color("notification", "urgent")
-                }
+                implicitHeight: frame.implicitHeight + 3
 
                 Rectangle {
-                    width: 3
-                    anchors {
-                        left: parent.left
-                        top: parent.top
-                        bottom: parent.bottom
-                    }
-                    color: card.accentColor
+                    anchors.fill: frame
+                    anchors.topMargin: frame.frameTop
+                    color: Tokens.color("notification", "background")
                 }
 
-                ColumnLayout {
-                    id: content
-                    anchors {
-                        fill: parent
-                        leftMargin: 15
-                        rightMargin: 12
-                        topMargin: 10
-                        bottomMargin: 12
-                    }
-                    spacing: 4
+                FrameCell {
+                    id: frame
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    title: (card.critical ? "ALERT :: " : "") + card.modelData.appName
+                    titleColor: card.critical
+                        ? Tokens.color("notification", "urgent")
+                        : Tokens.color("notification", "muted")
+                    frameColor: card.critical
+                        ? Tokens.color("notification", "urgent")
+                        : Tokens.color("notification", "border")
+                    padH: 16
+                    padV: 12
 
-                        HudLabel {
-                            text: (card.critical ? "▲ " : "") + card.modelData.appName
-                            font.pixelSize: Metrics.micro
-                            color: card.critical
-                                ? Tokens.color("notification", "urgent")
-                                : Tokens.color("notification", "muted")
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 5
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: card.modelData.summary
+                                color: Theme.semantic.foreground_bright ?? Tokens.color("notification", "foreground")
+                                font.family: Config.fontFamily
+                                font.pixelSize: Metrics.subtitle
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                text: Qt.formatTime(new Date(card.modelData.at ?? Date.now()), "HH:mm:ss")
+                                color: Tokens.color("notification", "muted")
+                                font.family: Config.fontFamily
+                                font.pixelSize: Metrics.micro
+                            }
                         }
-
-                        Item { Layout.fillWidth: true }
 
                         Text {
-                            text: Qt.formatTime(new Date(card.modelData.at ?? Date.now()), "HH:mm:ss")
-                            color: Tokens.color("notification", "muted")
+                            Layout.fillWidth: true
+                            visible: card.modelData.body !== ""
+                            text: card.modelData.body
+                            color: Tokens.color("notification", "foreground")
                             font.family: Config.fontFamily
-                            font.pixelSize: Metrics.micro
+                            font.pixelSize: Metrics.bodySmall
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 6
+                            elide: Text.ElideRight
                         }
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: card.modelData.summary
-                        color: Tokens.color("notification", "foreground")
-                        font.family: Config.fontFamily
-                        font.pixelSize: Metrics.subtitle
-                        font.bold: true
-                        elide: Text.ElideRight
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: card.modelData.body !== ""
-                        text: card.modelData.body
-                        color: Tokens.color("notification", "foreground")
-                        font.family: Config.fontFamily
-                        font.pixelSize: Metrics.bodySmall
-                        wrapMode: Text.Wrap
-                        maximumLineCount: 6
-                        elide: Text.ElideRight
                     }
                 }
 
-                // The lifetime made visible: 1px, full width at arrival,
-                // empty at expiry. Restarts with the Timer below when the
-                // card is recreated, so it never lies about remaining time.
+                // The lifetime made visible: a 3px fill draining along a
+                // faint track. Restarts with the Timer below when the card
+                // is recreated, so it never lies about remaining time.
                 Rectangle {
-                    property real drainFrac: 1
-
                     visible: card.modelData.timeout > 0
                     anchors.left: parent.left
+                    anchors.right: parent.right
                     anchors.bottom: parent.bottom
-                    height: 1
-                    width: parent.width * drainFrac
-                    color: card.accentColor
+                    height: 3
+                    color: Qt.alpha(Tokens.color("notification", "muted"), 0.35)
 
-                    NumberAnimation on drainFrac {
-                        from: 1
-                        to: 0
-                        duration: Math.max(1, card.modelData.timeout)
-                        running: card.modelData.timeout > 0
+                    Rectangle {
+                        property real drainFrac: 1
+
+                        anchors.left: parent.left
+                        height: parent.height
+                        width: parent.width * drainFrac
+                        color: card.accentColor
+
+                        NumberAnimation on drainFrac {
+                            from: 1
+                            to: 0
+                            duration: Math.max(1, card.modelData.timeout)
+                            running: card.modelData.timeout > 0
+                        }
                     }
                 }
 

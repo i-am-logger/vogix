@@ -1,38 +1,47 @@
-// Every battery UPower knows (internal + peripherals), one chip each —
-// nothing rendered on a batteryless desktop. Click opens the power panel.
+pragma ComponentBehavior: Bound
+// The BAT panel: every battery UPower knows (internal + peripherals),
+// one terse MODEL + percent row each — absent entirely on a batteryless
+// desktop. Click opens the power panel.
 import QtQuick
-import QtQuick.Layouts
 import Quickshell.Services.UPower
 import qs.Bar.widgets
 import qs.Services
 import qs.Vogix
 
-GridLayout {
+FrameCell {
     id: root
 
-    property BarAxis axis: null
+    readonly property var cells:
+        [...UPower.devices.values].filter(d => d.isLaptopBattery || d.type === UPowerDeviceType.Battery)
 
-    flow: (axis?.vertical ?? false) ? GridLayout.TopToBottom : GridLayout.LeftToRight
-    rowSpacing: 4
-    columnSpacing: 6
+    visible: cells.length > 0
+    title: "BAT"
+    padH: 6
+    padV: 4
 
-    Repeater {
-        model: [...UPower.devices.values].filter(d => d.isLaptopBattery || d.type === UPowerDeviceType.Battery)
+    Column {
+        spacing: 2
 
-        BarText {
-            id: cell
+        Repeater {
+            model: root.cells
 
-            required property var modelData
-            readonly property int pct: Math.round(cell.modelData.percentage * 100)
+            BarText {
+                id: row
 
-            text: cell.pct + "%"
-            font.pixelSize: Metrics.caption
-            color: cell.pct <= 15 ? Tokens.color("bar", "urgent") : Tokens.color("bar", "muted")
+                required property var modelData
+                readonly property int pct: Math.round(row.modelData.percentage * 100)
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: Panels.toggle("power")
+                text: (row.modelData.model || "BAT").slice(0, 3).toUpperCase() + " " + row.pct
+                font.pixelSize: Metrics.micro
+                font.letterSpacing: 0.5
+                color: row.pct <= 15 ? Tokens.color("bar", "urgent")
+                    : (row.pct >= 60 ? Tokens.color("meter", "low") : Tokens.color("bar", "foreground"))
             }
         }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: Panels.toggle("power")
     }
 }

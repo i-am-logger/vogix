@@ -1,40 +1,24 @@
-// One Flight Deck stat cell: hairline square frame, terse uppercase
-// label, width-reserved value (no jitter as digits change). The value
-// color carries the threshold state.
+// One Flight Deck stat cell: the framed break-title box with a
+// width-reserved, zero-padded value (042% — digits never reflow the
+// bar). The value color carries the threshold state.
 import QtQuick
+import qs.Bar.widgets
 import qs.Components
 import qs.Vogix
 
-Rectangle {
+FrameCell {
     id: root
 
-    property string label: ""
     property alias value: valueText.text
     property alias widestValue: valueText.widestText
     property color valueColor: Tokens.color("bar", "foreground")
 
-    implicitWidth: row.implicitWidth + Metrics.unit * 3
-    implicitHeight: Metrics.chip
-    color: "transparent"
-    border.width: 1
-    border.color: Tokens.color("meter", "frame")
+    padH: 8
+    padV: 3
 
-    Row {
-        id: row
-        anchors.centerIn: parent
-        spacing: Metrics.unit
-
-        HudLabel {
-            text: root.label
-            color: Tokens.color("meter", "label")
-            anchors.verticalCenter: parent.verticalCenter
-        }
-
-        NumericText {
-            id: valueText
-            color: root.valueColor
-            font.pixelSize: Metrics.bodySmall
-            anchors.verticalCenter: parent.verticalCenter
-        }
+    NumericText {
+        id: valueText
+        color: root.valueColor
+        font.pixelSize: Metrics.bodySmall
     }
 }

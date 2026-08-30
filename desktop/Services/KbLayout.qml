@@ -15,6 +15,14 @@ Singleton {
 
     property string device: ""
     property string layoutFull: ""
+    // The configured layout codes, in order ("us", "il", …) — the LANG
+    // cell shows all of them with the active one lit.
+    property list<string> layouts: []
+
+    function codeLabel(code: string): string {
+        const map = { us: "EN", gb: "EN", il: "HE" };
+        return map[code] ?? code.toUpperCase();
+    }
 
     readonly property string label: {
         const l = layoutFull;
@@ -33,6 +41,23 @@ Singleton {
     Process {
         id: switchProc
         command: ["hyprctl", "switchxkblayout", root.device, "next"]
+    }
+
+    Process {
+        id: layoutsProc
+        running: true
+        command: ["hyprctl", "-j", "getoption", "input:kb_layout"]
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const str = JSON.parse(text).str ?? "";
+                    root.layouts = str.split(",").map(s => s.trim()).filter(s => s !== "");
+                } catch (e) {
+                    root.layouts = [];
+                }
+            }
+        }
     }
 
     Process {

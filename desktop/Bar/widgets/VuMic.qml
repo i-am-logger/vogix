@@ -1,26 +1,41 @@
-// Mic VU: live source peaks with dB readout; the label lights urgent
-// while something is actually capturing (the in-use highlight).
+// Mic VU cell: framed MIC title (urgent while something is actually
+// capturing), segmented meter with peak cap, dB readout.
 import QtQuick
 import qs.Bar.widgets
 import qs.Components
 import qs.Services
 import qs.Vogix
 
-VuMeter {
-    property BarAxis axis: null
+FrameCell {
+    title: "MIC"
+    titleColor: Privacy.micInUse ? Tokens.color("bar", "urgent") : Tokens.color("meter", "label")
+    padH: 10
+    padV: 4
 
-    label: "MIC"
-    vertical: axis?.vertical ?? false
-    value: Peaks.micLevel
-    peak: Peaks.micCap
-    db: Peaks.dbOf(Peaks.micLevel)
-    low: Tokens.color("meter", "low")
-    mid: Tokens.color("meter", "mid")
-    high: Tokens.color("meter", "high")
-    unlit: Tokens.color("meter", "unlit")
-    capColor: Tokens.color("meter", "cap")
-    labelColor: Privacy.micInUse ? Tokens.color("bar", "urgent") : Tokens.color("meter", "label")
-    valueColor: Tokens.color("meter", "value")
+    Row {
+        spacing: Metrics.unit * 2
+
+        SegmentedMeter {
+            width: Metrics.body * 6
+            height: Math.round(Metrics.body * 0.75)
+            value: Peaks.micLevel
+            peak: Peaks.micCap
+            low: Tokens.color("meter", "low")
+            mid: Tokens.color("meter", "mid")
+            high: Tokens.color("meter", "high")
+            unlit: Tokens.color("meter", "unlit")
+            capColor: Tokens.color("meter", "cap")
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        NumericText {
+            text: Peaks.dbOf(Peaks.micLevel).toFixed(1)
+            widestText: "-40.0"
+            font.pixelSize: Metrics.caption
+            color: Tokens.color("meter", "value")
+            anchors.verticalCenter: parent.verticalCenter
+        }
+    }
 
     Component.onCompleted: Peaks.acquire("mic")
     Component.onDestruction: Peaks.release("mic")

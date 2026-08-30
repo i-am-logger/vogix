@@ -1,52 +1,81 @@
 pragma ComponentBehavior: Bound
-// Hyprland workspaces: focused gets the accent, urgent the urgent token.
-// Clicks dispatch through Quickshell.Hyprland, which speaks whichever
-// config engine the compositor runs (Lua-aware since 0.3.0).
+// Hyprland workspaces as square HUD blocks: focused fills with the
+// accent, urgent frames in the urgent token. Horizontal bars get the
+// framed WS cell; the vertical rail gets the bare stacked column, like
+// the Flight Deck board. Clicks dispatch through Quickshell.Hyprland.
 import QtQuick
-import QtQuick.Layouts
 import Quickshell.Hyprland
 import qs.Bar.widgets
 import qs.Vogix
 
-GridLayout {
+Loader {
     id: root
 
     property BarAxis axis: null
+    readonly property bool vertical: axis?.vertical ?? false
 
-    flow: (axis?.vertical ?? false) ? GridLayout.TopToBottom : GridLayout.LeftToRight
-    rowSpacing: 4
-    columnSpacing: 4
+    component WsBox: Rectangle {
+        id: ws
 
-    Repeater {
-        model: Hyprland.workspaces.values
+        required property var modelData
 
-        Rectangle {
-            id: ws
+        implicitWidth: Math.max(Metrics.body + 6, label.implicitWidth + 10)
+        implicitHeight: Metrics.body + 6
+        color: ws.modelData.focused ? Tokens.color("bar", "accent") : "transparent"
+        border.width: 1
+        border.color: ws.modelData.urgent
+            ? Tokens.color("bar", "urgent")
+            : (ws.modelData.focused ? Tokens.color("bar", "accent") : Tokens.color("meter", "frame"))
 
-            required property var modelData
+        BarText {
+            id: label
+            anchors.centerIn: parent
+            text: ws.modelData.name
+            font.pixelSize: Metrics.caption
+            font.bold: ws.modelData.focused
+            color: ws.modelData.focused
+                ? Tokens.color("bar", "background")
+                : Tokens.color("bar", "foreground")
+        }
 
-            // Square HUD blocks: chip-sized, hairline-framed, filled when
-            // focused.
-            implicitWidth: Math.max(Metrics.chip, label.implicitWidth + 10)
-            implicitHeight: Metrics.chip
-            color: ws.modelData.focused ? Tokens.color("bar", "accent") : "transparent"
-            border.width: 1
-            border.color: ws.modelData.urgent
-                ? Tokens.color("bar", "urgent")
-                : Tokens.color("meter", "frame")
+        MouseArea {
+            anchors.fill: parent
+            onClicked: Hyprland.dispatch("workspace " + ws.modelData.id)
+        }
+    }
 
-            BarText {
-                id: label
-                anchors.centerIn: parent
-                text: ws.modelData.name
-                color: ws.modelData.focused
-                    ? Tokens.color("bar", "background")
-                    : Tokens.color("bar", "foreground")
+    sourceComponent: vertical ? railForm : cellForm
+
+    Component {
+        id: cellForm
+
+        FrameCell {
+            title: "WS"
+            padH: 6
+            padV: 3
+
+            Row {
+                spacing: 3
+
+                Repeater {
+                    model: Hyprland.workspaces.values
+
+                    WsBox {}
+                }
             }
+        }
+    }
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: Hyprland.dispatch("workspace " + ws.modelData.id)
+    Component {
+        id: railForm
+
+        Column {
+            spacing: 6
+
+            Repeater {
+                model: Hyprland.workspaces.values
+
+                WsBox {}
             }
         }
     }

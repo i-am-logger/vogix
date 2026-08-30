@@ -1,19 +1,35 @@
+// The CLOCK cell: big bold HH:mm:ss, ticking seconds — the HUD's
+// heartbeat. Stacked HH/mm on a vertical rail. Click opens the calendar.
 import QtQuick
 import Quickshell
 import qs.Bar.widgets
 import qs.Services
+import qs.Vogix
 
-BarText {
+FrameCell {
+    id: root
+
+    property BarAxis axis: null
+    readonly property bool vertical: axis?.vertical ?? false
+
+    title: "CLOCK"
+    padH: 12
+    padV: 2
+
     SystemClock {
         id: clock
-        precision: SystemClock.Minutes
+        precision: root.vertical ? SystemClock.Minutes : SystemClock.Seconds
     }
 
-    // ISO date, 24h — the HUD reads like a log line.
-    text: axis?.vertical
-        ? Qt.formatDateTime(clock.date, "HH\nmm")
-        : Qt.formatDateTime(clock.date, "yyyy-MM-dd  HH:mm")
-    horizontalAlignment: Text.AlignHCenter
+    BarText {
+        text: root.vertical
+            ? Qt.formatDateTime(clock.date, "HH\nmm")
+            : Qt.formatDateTime(clock.date, "HH:mm:ss")
+        font.pixelSize: Metrics.title
+        font.bold: true
+        horizontalAlignment: Text.AlignHCenter
+        color: Theme.semantic.foreground_bright ?? Tokens.color("bar", "foreground")
+    }
 
     MouseArea {
         anchors.fill: parent
