@@ -7,6 +7,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import qs.Bar.widgets
+import qs.Vogix
 
 GridLayout {
     id: root
@@ -21,8 +22,8 @@ GridLayout {
     readonly property list<string> horizontalOnly: ["window", "media", "weather", "theme"]
 
     flow: vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
-    rowSpacing: 12
-    columnSpacing: 12
+    rowSpacing: Metrics.unit * 3
+    columnSpacing: Metrics.unit * 3
 
     Repeater {
         model: root.names
@@ -41,6 +42,8 @@ GridLayout {
                 case "mode": return "widgets/ModeIndicator.qml";
                 case "theme": return "widgets/ThemeIndicator.qml";
                 case "audio": return "widgets/VolumeWidget.qml";
+                case "audio-out-picker": return "widgets/AudioOutPicker.qml";
+                case "audio-in-picker": return "widgets/AudioInPicker.qml";
                 case "mic": return "widgets/MicWidget.qml";
                 case "battery": return "widgets/BatteryWidget.qml";
                 case "network": return "widgets/NetworkWidget.qml";
@@ -53,6 +56,7 @@ GridLayout {
                 case "dnd": return "widgets/DndWidget.qml";
                 case "indicators": return "widgets/IndicatorsWidget.qml";
                 case "tailscale": return "widgets/TailscaleWidget.qml";
+                case "uptime": return "widgets/UptimeWidget.qml";
                 case "update": return "widgets/UpdateWidget.qml";
                 case "spectrum-mini": return "widgets/SpectrumWidget.qml";
                 case "spectrum-rail": return "widgets/SpectrumWidget.qml";
@@ -62,14 +66,17 @@ GridLayout {
                 case "kbd": return "widgets/KbdWidget.qml";
                 case "privacy": return "widgets/PrivacyWidget.qml";
                 case "stat-cpu": return "widgets/StatCpu.qml";
+                case "stat-gpu": return "widgets/StatGpu.qml";
                 case "stat-temp": return "widgets/StatTemp.qml";
                 case "stat-mem": return "widgets/StatMem.qml";
                 case "stat-swap": return "widgets/StatSwap.qml";
                 case "stat-disk": return "widgets/StatDisk.qml";
+                case "stat-mounts": return "widgets/StatMounts.qml";
                 case "stat-net": return "widgets/StatNet.qml";
                 case "vu-out": return "widgets/VuOut.qml";
                 case "vu-mic": return "widgets/VuMic.qml";
                 case "vu-rail": return "widgets/VuRail.qml";
+                case "mic-rail": return "widgets/MicRail.qml";
                 case "graph-cpu": return "widgets/GraphCpu.qml";
                 case "graph-mem": return "widgets/GraphMem.qml";
                 case "graph-net": return "widgets/GraphNet.qml";

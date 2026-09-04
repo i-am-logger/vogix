@@ -182,6 +182,16 @@ in
             default = defaults.meters.sampleMs;
             description = "cpu/mem/net sample period in ms (the graphs' liveliness; temperature and disk stay on slow ticks).";
           };
+          mounts = mkOption {
+            type = types.listOf types.str;
+            default = defaults.meters.mounts;
+            description = ''
+              Capacity gauges for the stat-mounts cell, in order: absolute
+              mount points (measured by a 30 s df) plus the literal `swap`,
+              which reads the meminfo figures. A path this host does not
+              mount is omitted from the bar, never rendered as 0%.
+            '';
+          };
           thresholds = {
             cpu = thresholdPair "cpu" "percent";
             cpuTemp = thresholdPair "cpuTemp" "°C";

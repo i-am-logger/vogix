@@ -44,6 +44,8 @@ PanelWindow {
             source: {
                 switch (Panels.open) {
                 case "audio": return "AudioPanel.qml";
+                case "audio-out": return "AudioOutPanel.qml";
+                case "audio-in": return "AudioInPanel.qml";
                 case "network": return "NetworkPanel.qml";
                 case "bluetooth": return "BluetoothPanel.qml";
                 case "power": return "PowerPanel.qml";

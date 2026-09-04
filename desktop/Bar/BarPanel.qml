@@ -22,6 +22,8 @@ PanelWindow {
     readonly property var confLayout: conf.layout ?? ({})
     readonly property int thickness: conf.size ?? 32
     readonly property bool parked: BarState.isHidden(edge)
+    // Breathing room between the bar's outer edge and its first widget.
+    readonly property int inset: vertical ? Metrics.unit * 2 : Metrics.unit * 4
 
     visible: conf.enable ?? false
 
@@ -73,10 +75,10 @@ PanelWindow {
             names: panel.confLayout.start ?? []
             axis: axisCtx
             anchors.left: panel.vertical ? undefined : parent.left
-            anchors.leftMargin: panel.vertical ? 0 : 8
+            anchors.leftMargin: panel.vertical ? 0 : panel.inset
             anchors.verticalCenter: panel.vertical ? undefined : parent.verticalCenter
             anchors.top: panel.vertical ? parent.top : undefined
-            anchors.topMargin: panel.vertical ? 8 : 0
+            anchors.topMargin: panel.vertical ? panel.inset : 0
             anchors.horizontalCenter: panel.vertical ? parent.horizontalCenter : undefined
         }
 
@@ -90,10 +92,10 @@ PanelWindow {
             names: panel.confLayout.end ?? []
             axis: axisCtx
             anchors.right: panel.vertical ? undefined : parent.right
-            anchors.rightMargin: panel.vertical ? 0 : 8
+            anchors.rightMargin: panel.vertical ? 0 : panel.inset
             anchors.verticalCenter: panel.vertical ? undefined : parent.verticalCenter
             anchors.bottom: panel.vertical ? parent.bottom : undefined
-            anchors.bottomMargin: panel.vertical ? 8 : 0
+            anchors.bottomMargin: panel.vertical ? panel.inset : 0
             anchors.horizontalCenter: panel.vertical ? parent.horizontalCenter : undefined
         }
     }

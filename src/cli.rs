@@ -252,8 +252,9 @@ pub enum DesktopCommands {
         #[arg(short, long)]
         prompt: Option<String>,
     },
-    /// Toggle a bar panel popup (audio, network, bluetooth, power, monitor,
-    /// tailscale, calendar, weather); no name prints which one is open
+    /// Toggle a bar panel popup (audio, audio-out, audio-in, network,
+    /// bluetooth, power, monitor, tailscale, calendar, weather); no name
+    /// prints which one is open
     Panel {
         /// Panel to toggle
         name: Option<String>,

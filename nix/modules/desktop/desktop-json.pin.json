@@ -6,7 +6,7 @@
   },
   "bar": {
     "enable": true,
-    "height": 44,
+    "height": 96,
     "layout": {
       "center": [],
       "left": [
@@ -14,7 +14,6 @@
         "mode"
       ],
       "right": [
-        "spectrum-mini",
         "kbd",
         "privacy",
         "dnd",
@@ -30,21 +29,10 @@
       "enable": true,
       "layout": {
         "center": [
-          "stat-cpu",
-          "graph-cpu",
-          "stat-temp",
-          "stat-mem",
-          "graph-mem",
-          "stat-swap",
-          "stat-disk",
-          "graph-disk",
-          "stat-net",
-          "graph-net",
-          "graph-gpu",
           "oscilloscope"
         ],
         "end": [
-          "tailscale",
+          "uptime",
           "weather",
           "update",
           "tray",
@@ -54,22 +42,29 @@
           "spectrum-left"
         ]
       },
-      "size": 40
+      "size": 96
     },
     "left": {
       "enable": true,
       "layout": {
-        "center": [],
+        "center": [
+          "vu-rail",
+          "audio-out-picker",
+          "spacer",
+          "spacer",
+          "spacer",
+          "mic-rail",
+          "audio-in-picker"
+        ],
         "end": [
           "menu",
           "power-glyph"
         ],
         "start": [
-          "workspaces",
           "mode"
         ]
       },
-      "size": 44
+      "size": 128
     },
     "right": {
       "enable": true,
@@ -79,22 +74,26 @@
           "batteries",
           "battery",
           "audio",
-          "mic",
           "network",
           "bluetooth"
         ],
         "start": [
-          "vu-rail"
+          "stat-cpu",
+          "stat-gpu",
+          "stat-temp",
+          "stat-mem",
+          "stat-mounts",
+          "graph-disk",
+          "graph-net"
         ]
       },
-      "size": 64
+      "size": 114
     },
     "top": {
       "enable": true,
       "layout": {
         "center": [],
         "end": [
-          "spectrum-mini",
           "kbd",
           "privacy",
           "dnd",
@@ -107,7 +106,7 @@
           "mode"
         ]
       },
-      "size": 44
+      "size": 96
     }
   },
   "decorations": {
@@ -115,7 +114,7 @@
   },
   "font": {
     "family": "Fira Code Nerd Font",
-    "size": 16
+    "size": 21
   },
   "idle": {
     "dim": 300,
@@ -225,9 +224,16 @@
   },
   "meters": {
     "history": 64,
+    "mounts": [
+      "/nix",
+      "/persist",
+      "/boot",
+      "swap",
+      "/tmp"
+    ],
     "sampleMs": 100,
     "spectrum": {
-      "bars": 16,
+      "bars": 48,
       "enable": true
     },
     "thresholds": {
