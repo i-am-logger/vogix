@@ -306,6 +306,29 @@ in
                   `hyprctl switchxkblayout` cycle through it.
                 '';
               };
+              kbOptions = mkOption {
+                type = types.str;
+                default = defaults.input.kbOptions;
+                description = ''
+                  XKB options rendered as Hyprland's input:kb_options
+                  (comma-separated, e.g. "caps:none,grp:win_space_toggle").
+
+                  Empty by default: xkb's own defaults are the right baseline,
+                  and anything here is a deliberate choice by the consumer.
+
+                  The case worth knowing about is CapsLock. A compositor bind on
+                  a CapsLock chord does not stop xkb ALSO toggling capitals, so
+                  `super + capslock` to cycle layout leaves caps latched and the
+                  next keystrokes arrive shifted. `caps:none` cures that by
+                  removing CapsLock's xkb function entirely -- which is a real
+                  cost if the key is otherwise wanted. `grp:caps_toggle` is the
+                  other shape: CapsLock alone cycles the layout, at the xkb
+                  layer, needing no bind at all.
+
+                  The engine reads keys through evdev, below xkb, so neither
+                  option hides the key from vogix itself.
+                '';
+              };
             };
           };
         };
