@@ -1,5 +1,9 @@
 // The LANG cell: every configured layout, the active one lit bright and
 // bold, the rest dim. Click cycles.
+//
+// CAPS sits alongside because Alt+CapsLock is what cycles the layout: pressing
+// it with caps already latched looks identical to pressing it without, and the
+// difference only shows up in what you type next.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
@@ -30,6 +34,19 @@ FrameCell {
                     : Tokens.color("bar", "muted")
                 anchors.verticalCenter: parent.verticalCenter
             }
+        }
+
+        // Lit/dim rather than shown/hidden: a cell that changes width every
+        // time caps is pressed shoves the rest of the bar sideways, and the
+        // eye reads the movement before the letters.
+        BarText {
+            text: "CAPS"
+            font.pixelSize: Metrics.caption
+            font.bold: KbLayout.capsOn
+            color: KbLayout.capsOn
+                ? Tokens.color("bar", "foreground")
+                : Tokens.color("bar", "muted")
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 

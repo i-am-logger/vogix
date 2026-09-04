@@ -18,6 +18,9 @@ Singleton {
     // The configured layout codes, in order ("us", "il", …) — the LANG
     // cell shows all of them with the active one lit.
     property list<string> layouts: []
+    // CapsLock, which matters here because Alt+CapsLock is the layout switch:
+    // a latched caps and a switched layout look the same from the keyboard.
+    property bool capsOn: false
 
     function codeLabel(code: string): string {
         const map = { us: "EN", gb: "EN", il: "HE" };
@@ -101,6 +104,34 @@ Singleton {
             const dev = data.slice(0, cut);
             if (dev === root.device)
                 root.layoutFull = data.slice(cut + 1);
+        }
+    }
+
+    // POLLED, unlike the layout above, because nothing pushes it: Hyprland
+    // emits `activelayout` but has no caps event, and `hyprctl devices` does
+    // not carry the state. The LED is the only thing that reflects it, and its
+    // path is enumeration-dependent (input5, input35, … change across reboots
+    // and replugs), so this globs rather than naming a device. Several
+    // keyboards each carry their own LED, hence the OR: caps is on if any of
+    // them says so.
+    //
+    // The right long-term source is the input engine, which reads evdev and
+    // already knows the exact state -- this would become an event instead of a
+    // poll the moment it publishes one.
+    Timer {
+        running: true
+        repeat: true
+        interval: 250
+        triggeredOnStart: true
+        onTriggered: capsProc.running = true
+    }
+
+    Process {
+        id: capsProc
+        command: ["sh", "-c", "grep -qs 1 /sys/class/leds/*::capslock/brightness && echo 1 || echo 0"]
+
+        stdout: StdioCollector {
+            onStreamFinished: root.capsOn = text.trim() === "1"
         }
     }
 }
