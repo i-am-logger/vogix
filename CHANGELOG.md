@@ -5,6 +5,45 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.10.0...vogix-v0.11.0) (2026-09-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **desktop:** four bars per monitor — desktop.json schema 2
+
+### Features
+
+* **desktop:** Flight Deck notification cards + tray and reminder parity ([e126dce](https://github.com/i-am-logger/vogix/commit/e126dce4b3cc0cfc29d513e6dc14ad45a6abf654))
+* **desktop:** focus brackets — the Flight Deck corner marks on the focused window ([a1982ba](https://github.com/i-am-logger/vogix/commit/a1982ba09b7516e885a85e2a7bcadc17ec4db841))
+* **desktop:** four bars per monitor — desktop.json schema 2 ([e0d0ad3](https://github.com/i-am-logger/vogix/commit/e0d0ad36852f753ba65281ade33ffc112673a67d))
+* **desktop:** four bars per monitor, per-edge IPC, axis-aware widgets ([89e9bdc](https://github.com/i-am-logger/vogix/commit/89e9bdca3014d7e22eff8a2af9c85ca0a4be2f30))
+* **desktop:** HUD feedback round — gauge cells, stereo VU, graphs beside their stats ([2ff83e7](https://github.com/i-am-logger/vogix/commit/2ff83e7b5243003823c93192761cc59c2fac0516))
+* **desktop:** HUD type scale and component primitives ([697d4c2](https://github.com/i-am-logger/vogix/commit/697d4c2dd15d752ca57f5d80b6fc4835a478799b))
+* **desktop:** no title readouts on the bars ([d210ef3](https://github.com/i-am-logger/vogix/commit/d210ef34811f7ed3400c692b8a2cebd3fafb3af0))
+* **desktop:** opt-in CRT scanlines on the HUD chrome ([3b7d88b](https://github.com/i-am-logger/vogix/commit/3b7d88b21d3b206a0d6d3e1f36247539f7c69040))
+* **desktop:** show CapsLock state in the LANG cell ([0eb5e3e](https://github.com/i-am-logger/vogix/commit/0eb5e3e7ebe58d65bb67d72688f0388ef8c97084))
+* **desktop:** stereo corner spectrums and a real oscilloscope ([6951e65](https://github.com/i-am-logger/vogix/commit/6951e657d9b6f3051e46c0a181f7f821ca4f0405))
+* **desktop:** the Flight Deck chrome pass — break-title cells everywhere, 10 Hz meters ([8d80723](https://github.com/i-am-logger/vogix/commit/8d807230f8776211410f78a574b6cd431d02ed0e))
+* **desktop:** the HUD widget set — stat cells, VU meters, spectrum, graphs, rails ([684d4f1](https://github.com/i-am-logger/vogix/commit/684d4f19d10a46c128709bba189f5665999d39e8))
+* **desktop:** the HUD's data services — VU peaks, spectrum, stats, layout, tailscale, privacy ([c78514f](https://github.com/i-am-logger/vogix/commit/c78514f0582b21662eb6e84e0fca9eeac5a24f88))
+* **desktop:** the instrument rails — audio pickers, GPU/mounts/uptime cells ([8963f17](https://github.com/i-am-logger/vogix/commit/8963f170a1ae4ecdc5e131dd7bc5be52909b10fd))
+* **input:** Alt+CapsLock cycles the layout, CapsLock still capitalises ([96984ab](https://github.com/i-am-logger/vogix/commit/96984ab5490a45ab0f6645b75e449cd1216eddfb))
+
+
+### Bug Fixes
+
+* **desktop:** a failed input.json load must clear the mode table ([cb0cf9e](https://github.com/i-am-logger/vogix/commit/cb0cf9e637d3a4ffb723c4d7371c7eb19bd5b556))
+* **desktop:** active-window tracking without the missing toplevel protocol ([0edab88](https://github.com/i-am-logger/vogix/commit/0edab88eab862bb9c120796a730773c09ca4a843))
+* **desktop:** the shell's own audio taps no longer light the mic privacy dot ([4e2df94](https://github.com/i-am-logger/vogix/commit/4e2df94ac2dc9d9099585f471d054e4c48e34467))
+* **desktop:** the waveform service cannot be named Scope ([984646a](https://github.com/i-am-logger/vogix/commit/984646a48f37187d32828630c5abfaa6b82fb02c))
+* **desktop:** whole-cell clicks live in FrameCell, not filling mouse areas ([d5cc7bf](https://github.com/i-am-logger/vogix/commit/d5cc7bf14b1fe97429dd52cd9a342468cdf35711))
+
+
+### Performance Improvements
+
+* **desktop:** VU ballistics tick at 30 fps, not the display's refresh rate ([00e3b4b](https://github.com/i-am-logger/vogix/commit/00e3b4b8527c049674211a150aaee038476db0db))
+
 ## [0.10.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.9.0...vogix-v0.10.0) (2026-08-29)
 
 
