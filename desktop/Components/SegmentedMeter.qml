@@ -1,5 +1,5 @@
 // The HUD's core meter: discrete lit segments with a peak-hold cap.
-// Geometry from the fleet's bespec spec (6px segments, 3px gaps, scaled by
+// Geometry from the fleet's segment spec (6px segments, 3px gaps, scaled by
 // the type root); coloring is POSITIONAL — segments below warnAt light in
 // `low`, then `mid`, then `high` — with unlit troughs and a cap segment.
 // Repaints ONLY when the lit count or cap index changes.
