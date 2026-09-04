@@ -150,6 +150,7 @@ let
         # Input settings
         input = {
           kb_layout = inputCfg.kbLayout or "us";
+          kb_options = inputCfg.kbOptions or "";
           repeat_delay = inputCfg.repeatDelay or 200;
           sensitivity = inputCfg.sensitivity or 0.0;
           left_handed = inputCfg.leftHanded or false;
@@ -266,6 +267,7 @@ let
 
           input = {
             kb_layout = inputCfg.kbLayout or "us";
+            kb_options = inputCfg.kbOptions or "";
             repeat_delay = inputCfg.repeatDelay or 200;
             sensitivity = inputCfg.sensitivity or 0.0;
             left_handed = inputCfg.leftHanded or false;

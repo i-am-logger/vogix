@@ -48,7 +48,19 @@ rec {
     leftHanded = false;
     floatSwitchOverrideFocus = 2;
     numlockByDefault = false;
-    kbLayout = "us";
+    # Two layouts, so `hyprctl switchxkblayout current next` has somewhere to
+    # go: with a single entry the cycle is a no-op and the binding below looks
+    # broken rather than unconfigured.
+    kbLayout = "us,il";
+    # Layout switching belongs to xkb, not to a compositor bind. A bind on a
+    # CapsLock chord does not stop xkb ALSO toggling capitals, so
+    # `super + capslock` cycled the layout AND latched caps -- the next
+    # keystrokes arrived shifted. `caps:none` cures that only by removing
+    # CapsLock altogether, which defeats the point: if the bare key did nothing
+    # there would be no reason to prefix it. grp:alt_caps_toggle keeps both --
+    # CapsLock alone still toggles capitals, Alt+CapsLock cycles the layout --
+    # and needs no binding, so there is nothing left to double.
+    kbOptions = "grp:alt_caps_toggle";
   };
 
   # ── Touchpad ──
@@ -183,6 +195,10 @@ rec {
         # keeps vogix usable standalone.
         launcher = { key = "super + space"; action = "exec, \${LAUNCHER:-vogix-launcher}"; description = "Launcher"; };
         colorPicker = { key = "super + shift + p"; action = "exec, hyprpicker -a"; description = "Colour picker"; };
+        # No switchLayout binding: layout cycling is xkb's job, via
+        # `input.kbOptions = "grp:alt_caps_toggle"`. A compositor bind on a
+        # CapsLock chord cannot stop xkb toggling capitals as well, so it would
+        # always latch caps alongside the switch.
         lockScreen = { key = "super + shift + x"; action = "exec, \${LOCKER:-vogix-lock}"; description = "Lock screen"; };
         powerMenu = { key = "super + escape"; action = "exec, vogix desktop power"; description = "Power menu"; };
 
