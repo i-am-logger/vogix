@@ -111,7 +111,6 @@ testLib.mkTest "session" ''
       {"class": "org.wezfurlong.wezterm", "title": "btop", "workspace": "1", "floating": False, "size": [800, 600], "at": [960, 0], "fullscreen": 0},
       {"class": "org.wezfurlong.wezterm", "title": "bash", "workspace": "2", "floating": False, "size": [1920, 1080], "at": [0, 0], "fullscreen": 0},
       {"class": "org.wezfurlong.wezterm", "title": "hx", "workspace": "1", "floating": False, "size": [800, 600], "at": [960, 540], "fullscreen": 0},
-      {"class": "bespec", "title": "BeSpec - Audio Spectrum Analyzer", "workspace": "1", "floating": False, "size": [400, 300], "at": [0, 780], "fullscreen": 0},
     ],
     "terminals": [
       {"pane_id": 1, "title": "btop", "cwd": "file://yoga/home/logger/"},
@@ -137,7 +136,6 @@ testLib.mkTest "session" ''
   raw = machine.succeed(f"cat {session_dir}/real-desktop.json")
   assert "brave-browser" in raw, "Missing brave-browser"
   assert "org.wezfurlong.wezterm" in raw, "Missing wezterm"
-  assert "bespec" in raw, "Missing bespec"
   print("✓ All app classes preserved")
 
   assert '"workspace": "1"' in raw or '"workspace":"1"' in raw, "Missing workspace 1"

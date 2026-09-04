@@ -313,7 +313,6 @@ fn restore_from_path(path: &Path, label: &str, dry_run: bool) -> Result<()> {
 
     // Launch other apps
     let mut launched_brave = false;
-    let mut launched_bespec = false;
 
     for window in &session.windows {
         match window.class.as_str() {
@@ -322,12 +321,6 @@ fn restore_from_path(path: &Path, label: &str, dry_run: bool) -> Result<()> {
                 Command::new("brave").spawn().ok();
                 launched_brave = true;
                 std::thread::sleep(std::time::Duration::from_secs(2));
-            }
-            "bespec" if !launched_bespec => {
-                info!("  Launching BeSpec");
-                Command::new("bespec").spawn().ok();
-                launched_bespec = true;
-                std::thread::sleep(std::time::Duration::from_millis(500));
             }
             _ => {}
         }
