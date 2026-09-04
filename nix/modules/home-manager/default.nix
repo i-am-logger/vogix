@@ -312,7 +312,7 @@ in
           meters = {
             spectrum = { inherit (cfg.desktop.meters.spectrum) enable bars; };
             vu = { inherit (cfg.desktop.meters.vu) floorDb; };
-            inherit (cfg.desktop.meters) history sampleMs thresholds;
+            inherit (cfg.desktop.meters) history sampleMs mounts thresholds;
           };
           notifications = {
             inherit (cfg.desktop.notifications) enable defaultTimeout maxVisible appRules;

@@ -11,11 +11,16 @@ FrameCell {
     padH: 8
     padV: 3
 
+    // One multiplier for both axes, so the trace keeps its aspect when it is
+    // dialled. At 3x the canvas is ~69 px tall, which is why the bottom bar
+    // grew to hold it — a scope clipped by its own bar reads as a bug.
+    readonly property real scopeScale: 3
+
     Canvas {
         id: trace
 
-        width: Metrics.body * 8
-        height: Metrics.body * 1.1
+        width: Metrics.body * 8 * parent.scopeScale
+        height: Metrics.body * 1.1 * parent.scopeScale
 
         Connections {
             target: Waveform

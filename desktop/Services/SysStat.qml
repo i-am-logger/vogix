@@ -2,10 +2,10 @@ pragma Singleton
 // System gauges from /proc and /sys, sampled on a slow timer — cheap
 // enough to always run while any widget shows them. Each stat also keeps
 // a ring buffer (meters.history samples) for the HUD graphs; buffers are
-// reassigned whole so Canvas bindings repaint. Disk is a 30 s df; the
-// CPU temperature source is enumerated ONCE from hwmon by driver
-// priority, and hasTemp degrades the widgets rather than erroring on
-// boards that expose none.
+// reassigned whole so Canvas bindings repaint. Filesystem usage is a
+// 30 s df over the configured mount points; the CPU temperature source
+// is enumerated ONCE from hwmon by driver priority, and hasTemp degrades
+// the widgets rather than erroring on boards that expose none.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -20,7 +20,6 @@ Singleton {
     property real cpu: 0        // 0..1
     property real memory: 0     // 0..1
     property real swap: 0       // 0..1
-    property real disk: 0       // 0..1 (used fraction of /)
     property bool hasSwap: false
     property bool hasTemp: false
     property real cpuTempC: 0
@@ -30,6 +29,54 @@ Singleton {
     property bool hasGpu: false
     property real gpuBusy: 0    // 0..1
     property real diskIoRate: 0 // bytes/s, reads+writes
+    property real uptimeSec: 0
+    // gauge name → device basename, and gauge name → live bytes/s; a
+    // gauge with no block device is simply absent from both.
+    property var gaugeDevice: ({})
+    property var gaugeIo: ({})
+    property var _lastDevSectors: ({})
+
+    // The capacity gauges the bar may show, in the order meters.mounts
+    // names them: absolute mount points, measured by df, plus the literal
+    // "swap", which answers from the meminfo figures sampled above rather
+    // than probing the same numbers a second way.
+    readonly property list<string> gaugePoints: (Config.doc.meters ?? {}).mounts ?? ["/"]
+
+    // The df targets. "/" is always among them — `disk` derives from it
+    // whether or not the config asks for a root gauge.
+    readonly property list<string> mountPoints: {
+        const out = ["/"];
+        for (let i = 0; i < root.gaugePoints.length; i++) {
+            const p = root.gaugePoints[i];
+            if (p.startsWith("/") && !out.includes(p))
+                out.push(p);
+        }
+        return out;
+    }
+
+    // Used fraction per mount point, 0..1, replaced WHOLE each df so a
+    // mount that goes away goes away. A configured path this host does
+    // not mount has NO key here: that absence is the whole point, since a
+    // 0% row would read as an empty filesystem instead of no filesystem.
+    property var mountUsage: ({})
+
+    // The root row, kept as its own name because the DISK cell predates
+    // the configured table and still reads it.
+    readonly property real disk: root.mountUsage["/"] ?? 0  // 0..1
+
+    // gaugePoints minus what this host does not have. This tests hasSwap
+    // directly instead of calling gaugeUsed, because the swap FRACTION
+    // moves on the fast tick and a model rebuilt ten times a second would
+    // recreate every cell bound to it.
+    readonly property list<string> gaugesPresent: {
+        const out = [];
+        for (let i = 0; i < root.gaugePoints.length; i++) {
+            const p = root.gaugePoints[i];
+            if (p === "swap" ? root.hasSwap : root.mountUsage[p] !== undefined)
+                out.push(p);
+        }
+        return out;
+    }
 
     property list<real> cpuHistory: []
     property list<real> memoryHistory: []
@@ -47,6 +94,16 @@ Singleton {
     property real lastDiskAt: 0
     property string tempPath: ""
     property string gpuPath: ""
+
+    // Used fraction of one gauge, or -1 where this host does not have it.
+    // Callers render nothing for -1; there is no substitute value that
+    // would not claim a filesystem exists.
+    function gaugeUsed(point: string): real {
+        if (point === "swap")
+            return root.hasSwap ? root.swap : -1;
+        const used = root.mountUsage[point];
+        return used === undefined ? -1 : used;
+    }
 
     function _push(arr, v) {
         const out = arr.length >= root.histLen ? arr.slice(arr.length - root.histLen + 1) : arr.slice();
@@ -83,6 +140,7 @@ Singleton {
             root.netRxHistory = root._push(root.netRxHistory, root.netRxRate);
             root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
             diskstatsFile.reload();
+            uptimeFile.reload();
             if (root.gpuPath !== "")
                 gpuFile.reload();
         }
@@ -172,17 +230,47 @@ Singleton {
         }
     }
 
+    // Per-mount usage. The TARGET column comes back with the percentage
+    // because it is the only honest presence test: df drops a path that
+    // does not exist, and answers with the containing filesystem for one
+    // that exists but is not a mount point (a plain /persist directory
+    // reports "/"), so a row counts only when it names the path that was
+    // asked for. The paths go in as ARGUMENTS rather than interpolated
+    // into the script, and stderr is dropped because a mount this host
+    // lacks is the expected case, not a fault.
     Process {
         id: diskProc
-        command: ["sh", "-c", "df -B1 --output=pcent / | tail -1"]
+        command: {
+            const argv = ["sh", "-c", "df --output=pcent,target \"$@\" 2>/dev/null", "df"];
+            for (let i = 0; i < root.mountPoints.length; i++)
+                argv.push(root.mountPoints[i]);
+            return argv;
+        }
 
         stdout: StdioCollector {
             onStreamFinished: {
-                const m = text.match(/(\d+)%/);
-                if (m)
-                    root.disk = Math.max(0, Math.min(1, Number(m[1]) / 100));
+                const seen = {};
+                for (const line of text.split("\n")) {
+                    const m = line.match(/^\s*(\d+)%\s+(\S.*)$/);
+                    if (m && root.mountPoints.includes(m[2]))
+                        seen[m[2]] = Math.max(0, Math.min(1, Number(m[1]) / 100));
+                }
+                // Not one row means df itself failed, since "/" is always
+                // asked for and always answers. Keep the last reading
+                // rather than publish an empty table, which would read as
+                // every mount at 0% instead of as no measurement.
+                if (Object.keys(seen).length > 0)
+                    root.mountUsage = seen;
             }
         }
+    }
+
+    FileView {
+        id: uptimeFile
+        path: "/proc/uptime"
+        watchChanges: false
+        preload: true
+        onLoaded: root.uptimeSec = Number(text().split(" ")[0])
     }
 
     // Disk THROUGHPUT (the usage fraction is `disk`): whole physical
@@ -193,21 +281,73 @@ Singleton {
         watchChanges: false
         preload: true
         onLoaded: {
+            // Whole physical devices feed the TOTAL I/O instrument; the
+            // per-gauge devices (partitions, zram) each get their own rate
+            // so a mount cell can show what ITS filesystem is doing.
+            const wanted = Object.values(root.gaugeDevice);
+            const perDev = {};
             let sectors = 0;
             for (const line of text().split("\n")) {
                 const f = line.trim().split(/\s+/);
-                if (f.length < 11 || !/^(nvme\d+n\d+|sd[a-z]+|vd[a-z]+)$/.test(f[2]))
+                if (f.length < 11)
                     continue;
-                sectors += Number(f[5]) + Number(f[9]);
+                const s = Number(f[5]) + Number(f[9]);
+                if (/^(nvme\d+n\d+|sd[a-z]+|vd[a-z]+)$/.test(f[2]))
+                    sectors += s;
+                if (wanted.includes(f[2]))
+                    perDev[f[2]] = s;
             }
             const now = Date.now();
             const dt = (now - root.lastDiskAt) / 1000;
             if (root.lastDiskAt > 0 && dt > 0 && sectors >= root.lastDiskSectors) {
                 root.diskIoRate = (sectors - root.lastDiskSectors) * 512 / dt;
                 root.diskIoHistory = root._push(root.diskIoHistory, root.diskIoRate);
+
+                const io = {};
+                for (const [name, dev] of Object.entries(root.gaugeDevice)) {
+                    const cur = perDev[dev];
+                    const prev = root._lastDevSectors[dev];
+                    if (cur !== undefined && prev !== undefined && cur >= prev)
+                        io[name] = (cur - prev) * 512 / dt;
+                }
+                root.gaugeIo = io;
             }
+            root._lastDevSectors = perDev;
             root.lastDiskSectors = sectors;
             root.lastDiskAt = now;
+        }
+    }
+
+    // One-shot mount→device map for the per-gauge I/O rates. Only rows
+    // backed by a real block device count: tmpfs mounts have no I/O and
+    // must read ABSENT, and a btrfs subvolume source keeps its device
+    // once the [subvol] suffix is stripped.
+    Process {
+        id: mountDevProc
+        running: true
+        command: ["sh", "-c", "findmnt -rn -o TARGET,SOURCE; echo '--swaps--'; tail -n +2 /proc/swaps 2>/dev/null | cut -d' ' -f1"]
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const map = {};
+                let inSwaps = false;
+                for (const line of text.trim().split("\n")) {
+                    if (line === "--swaps--") {
+                        inSwaps = true;
+                        continue;
+                    }
+                    if (inSwaps) {
+                        const dev = line.trim();
+                        if (dev.startsWith("/dev/"))
+                            map["swap"] = dev.slice(5);
+                        continue;
+                    }
+                    const parts = line.split(" ");
+                    if (parts.length >= 2 && parts[1].startsWith("/dev/"))
+                        map[parts[0]] = parts[1].slice(5).replace(/\[.*$/, "");
+                }
+                root.gaugeDevice = map;
+            }
         }
     }
 

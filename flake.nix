@@ -477,7 +477,7 @@
                     size = 32;
                     layout = {
                       start = [ "media" "spacer" ];
-                      center = [ "stat-cpu" "stat-temp" "stat-mem" "stat-swap" "stat-disk" "stat-net" "vu-out" "vu-mic" ];
+                      center = [ "stat-cpu" "stat-temp" "stat-mem" "stat-swap" "stat-disk" "stat-mounts" "stat-net" "vu-out" "vu-mic" ];
                       end = [ "tailscale" "weather" "update" "tray" ];
                     };
                   };
@@ -490,12 +490,16 @@
                     enable = true;
                     size = 48;
                     layout = {
-                      start = [ "vu-rail" "spectrum-rail" ];
+                      start = [ "vu-rail" "audio-out-picker" "audio-in-picker" "spectrum-rail" ];
                       center = [ "graph-cpu" "graph-mem" "graph-net" ];
                       end = [ "batteries" "battery" "audio" "mic" "network" "bluetooth" ];
                     };
                   };
                 };
+                # One mount every host has and one no host has: the mounts
+                # cell must come up for the first and simply not exist for
+                # the second.
+                meters.mounts = [ "/" "/vogix-smoke-absent" ];
                 # The one-release schema-1 mirror the serializer emits.
                 bar = {
                   enable = true;
@@ -573,6 +577,8 @@
               qs -p $qml ipc call power close >> $TMPDIR/result 2>&1
               qs -p $qml ipc call panel toggle calendar >> $TMPDIR/result
               qs -p $qml ipc call panel status >> $TMPDIR/result
+              qs -p $qml ipc call panel toggle audio-out >> $TMPDIR/result
+              qs -p $qml ipc call panel toggle audio-in >> $TMPDIR/result
               qs -p $qml ipc call panel close >> $TMPDIR/result 2>&1
               qs -p $qml ipc call stayawake toggle >> $TMPDIR/result
               qs -p $qml ipc call stayawake status >> $TMPDIR/result
@@ -610,6 +616,8 @@
               grep -q '^closed$' $TMPDIR/result
               grep -q '^open$' $TMPDIR/result
               grep -q '^calendar$' $TMPDIR/result
+              grep -q '^audio-out$' $TMPDIR/result
+              grep -q '^audio-in$' $TMPDIR/result
               grep -q '^on$' $TMPDIR/result
               grep -q '^off$' $TMPDIR/result
               grep -q '^no reminders$' $TMPDIR/result

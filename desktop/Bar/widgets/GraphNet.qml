@@ -1,11 +1,12 @@
-// Network history — untitled beside the NET stat cell (which carries
-// the rates). Download solid, upload dashed, both normalized to the
-// window's own peak.
+// Network instrument: download solid, upload dashed, both normalized to
+// the window's own peak, with the live download rate as the value.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
 
 GraphCell {
+    id: root
+
     function norm(arr: list<real>): list<real> {
         let max = 1;
         for (const v of arr)
@@ -14,6 +15,16 @@ GraphCell {
         return arr.map(v => v / max);
     }
 
+    function fmt(rate: real): string {
+        if (rate >= 1024 * 1024)
+            return (rate / (1024 * 1024)).toFixed(1) + "M";
+        if (rate >= 1024)
+            return Math.round(rate / 1024) + "K";
+        return Math.round(rate) + "B";
+    }
+
+    title: "NET"
     values: norm(SysStat.netRxHistory)
     secondary: norm(SysStat.netTxHistory)
+    valueText: "▼" + root.fmt(SysStat.netRxRate)
 }

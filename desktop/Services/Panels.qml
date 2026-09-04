@@ -1,7 +1,7 @@
 pragma Singleton
-// Which panel popup is open (one at a time): audio, network, bluetooth,
-// power, monitor, tailscale, calendar, weather. Bar widgets toggle their
-// panel; the `vogix desktop panel` verb mirrors it.
+// Which panel popup is open (one at a time): audio, audio-out, audio-in,
+// network, bluetooth, power, monitor, tailscale, calendar, weather. Bar
+// widgets toggle their panel; the `vogix desktop panel` verb mirrors it.
 import QtQuick
 import Quickshell
 
@@ -9,7 +9,7 @@ Singleton {
     id: root
 
     readonly property list<string> known: [
-        "audio", "network", "bluetooth", "power",
+        "audio", "audio-out", "audio-in", "network", "bluetooth", "power",
         "monitor", "tailscale", "calendar", "weather", "agents",
     ]
 

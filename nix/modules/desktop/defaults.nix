@@ -12,7 +12,7 @@ _:
 {
   font = {
     family = "Fira Code Nerd Font";
-    size = 16;
+    size = 21;
   };
 
   # The HUD: four bars on every monitor. Sections run start→end along the
@@ -21,57 +21,64 @@ _:
   bars = {
     top = {
       enable = true;
-      size = 44;
+      size = 96;
       layout = {
         start = [ "workspaces" "mode" ];
         center = [ ];
-        end = [ "spectrum-mini" "kbd" "privacy" "dnd" "indicators" "theme" "clock" ];
+        end = [ "kbd" "privacy" "dnd" "indicators" "theme" "clock" ];
       };
     };
     bottom = {
       enable = true;
-      size = 40;
+      size = 96;
       layout = {
         # Stereo spectrum split to the far corners: left channel at the
         # left edge, right at the right, bass at the outer edges.
         start = [ "spectrum-left" ];
-        # Each stat cell with its history graph beside it (untitled — the
-        # adjacency binds them); I/O and GPU graphs stand alone, and the
-        # oscilloscope trails the instruments. Audio LEVELS live on the
-        # right rail (VU + MIC panels), not here.
-        center = [
-          "stat-cpu"
-          "graph-cpu"
-          "stat-temp"
-          "stat-mem"
-          "graph-mem"
-          "stat-swap"
-          "stat-disk"
-          "graph-disk"
-          "stat-net"
-          "graph-net"
-          "graph-gpu"
-          "oscilloscope"
+        center = [ "oscilloscope" ];
+        # The stat/graph run lives on the RIGHT RAIL; the bottom keeps
+        # the oscilloscope, status, and `spectrum-right` ending the
+        # stereo pair's far-corner split.
+        end = [
+          "uptime"
+          "weather"
+          "update"
+          "tray"
+          "spectrum-right"
         ];
-        end = [ "tailscale" "weather" "update" "tray" "spectrum-right" ];
       };
     };
     left = {
       enable = true;
-      size = 44;
+      size = 128;
       layout = {
-        start = [ "workspaces" "mode" ];
-        center = [ ];
+        start = [ "mode" ];
+        # The audio column, centered around the rail's middle: VU + OUT
+        # above it, MIC + IN below, the spacers holding the two clusters
+        # apart — each device picker under the meter it belongs to.
+        center = [ "vu-rail" "audio-out-picker" "spacer" "spacer" "spacer" "mic-rail" "audio-in-picker" ];
         end = [ "menu" "power-glyph" ];
       };
     };
     right = {
       enable = true;
-      size = 64;
+      size = 114;
       layout = {
-        start = [ "vu-rail" ];
+        # The instrument column: ONE panel per metric, like the VU and
+        # MIC boxes — CPU and MEM carry their history trace inside the
+        # cell (gauge over number over trace); I/O, NET and GPU are the
+        # standalone trace instruments.
+        start = [
+          "stat-cpu"
+          "stat-gpu"
+          "stat-temp"
+          "stat-mem"
+          "stat-mounts"
+          "graph-disk"
+          "graph-net"
+        ];
         center = [ ];
-        end = [ "batteries" "battery" "audio" "mic" "network" "bluetooth" ];
+        end = [ "batteries" "battery" "audio" "network" "bluetooth" ];
       };
     };
   };
@@ -81,13 +88,19 @@ _:
   meters = {
     spectrum = {
       enable = true;
-      bars = 16;
+      # Per channel — the corner spectrums span 48 bands each.
+      bars = 48;
     };
     vu.floorDb = -40;
     history = 64;
     # cpu/mem/net sample period — 10 Hz, so the graphs and readouts feel
     # ALIVE. Temperature stays on a slow tick, disk on 30 s.
     sampleMs = 100;
+    # The stat-mounts gauges, in the order they read along the bar. /nix
+    # and /persist are their own filesystems only on some hosts (the
+    # latter only under impermanence), and a mount this host does not
+    # have is DROPPED from the bar rather than drawn as an empty 0%.
+    mounts = [ "/nix" "/persist" "/boot" "swap" "/tmp" ];
     thresholds = {
       cpu = { warn = 50; danger = 90; };
       cpuTemp = { warn = 60; danger = 85; };
