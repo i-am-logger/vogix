@@ -51,5 +51,9 @@ FrameCell {
                 root.table = {};
             }
         }
+        // A failed load must clear the table, not leave the last good one in
+        // place: a stale color is indistinguishable from a current one, so the
+        // chip would keep asserting a mode mapping that no longer exists.
+        onLoadFailed: root.table = {}
     }
 }
