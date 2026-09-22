@@ -729,6 +729,13 @@
           # exitAfter, the Esc safety-net, repeat, the single-instance guard, and
           # input-locks.json following the grabbed keyboard's LEDs.
           input-engine = import ./nix/vm/tests/input-engine.nix testArgs;
+
+          # The desktop shell on a real Hyprland 0.56 session (Lua and
+          # hyprlang config providers) with PipeWire, NetworkManager and
+          # the input engine: clicks, placement, tray menus, privacy, the
+          # LANG cell, taps across a PipeWire restart, lock-time sampling
+          # and the late-NetworkManager restart.
+          desktop-hyprland = import ./nix/vm/tests/desktop-hyprland.nix testArgs;
         }
       );
 

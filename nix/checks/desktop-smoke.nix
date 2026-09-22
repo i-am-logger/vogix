@@ -15,8 +15,9 @@
 # or warning of the shell's own beyond the exact lines a fixture provokes.
 #
 # Compositor-, PipeWire- and NetworkManager-dependent behaviour is out of
-# reach here (cage has no layer-shell, session lock or idle protocol);
-# desktop-taps covers the taps against a real PipeWire.
+# reach here (cage has no layer-shell, session lock or idle protocol):
+# desktop-hyprland covers it on a real Hyprland session, and desktop-taps
+# covers the taps against a real PipeWire.
 { pkgs, qsPkgs, home-manager, hmModule }:
 
 let
