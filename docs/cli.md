@@ -173,6 +173,7 @@ vogix desktop check                      # validate desktop.json: schema 2; slot
                                          # home-manager runs it on the desktop.json it builds, failing that build
 vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
 vogix desktop bar show|hide|toggle       # the bar surface
+vogix desktop bar geometry               # where each placed widget sits: screen, edge, name, x y width height
 vogix desktop notify dismiss [--all]     # the notification surface
 vogix desktop notify dnd on|off|toggle|status
 vogix desktop notify history [-n N]      # recent notifications (works without a shell)

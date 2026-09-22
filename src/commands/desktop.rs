@@ -907,6 +907,7 @@ fn bar(shell: &mut dyn Shell, command: &BarCommands) -> Result<()> {
         BarCommands::Hide { edge } => IpcCall::new("bar", "hide").arg(edge),
         BarCommands::Toggle { edge } => IpcCall::new("bar", "toggle").arg(edge),
         BarCommands::Status => IpcCall::new("bar", "status"),
+        BarCommands::Geometry => IpcCall::new("bar", "geometry"),
     };
     match shell.call(&call) {
         Some(out) => {
@@ -1268,6 +1269,7 @@ mod tests {
             ),
             (vec!["bar", "toggle"], vec![call("bar", "toggle", &["all"])]),
             (vec!["bar", "status"], vec![call("bar", "status", &[])]),
+            (vec!["bar", "geometry"], vec![call("bar", "geometry", &[])]),
             (
                 vec!["notify", "dismiss"],
                 vec![call("notify", "dismiss", &[])],

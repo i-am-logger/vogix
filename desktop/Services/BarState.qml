@@ -67,4 +67,31 @@ Singleton {
             .map(e => e + ":" + (!enabled(e) ? "off" : (isHidden(e) ? "hidden" : "shown")))
             .join(" ");
     }
+
+    // Every widget slot the bars have placed (Section adds and drops its
+    // Loaders; each carries its bar's BarAxis as `axis` and its name as
+    // `modelData`). Whole-array reassigned, like hiddenEdges.
+    property var slots: []
+
+    function place(slot: var): void {
+        root.slots = root.slots.concat([slot]);
+    }
+
+    function unplace(slot: var): void {
+        root.slots = root.slots.filter(s => s !== slot);
+    }
+
+    // One line per placed widget, in placement order: the screen, the bar
+    // edge, the widget name, and where it sits on that screen when its bar
+    // is shown, as "x y width height" in logical pixels.
+    function geometry(): string {
+        return root.slots
+            .filter(s => s.axis?.window)
+            .map(s => {
+                const r = s.axis.screenRect(s);
+                return [s.axis.window.screen?.name ?? "-", s.axis.edge, s.modelData,
+                    Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)].join(" ");
+            })
+            .join("\n");
+    }
 }

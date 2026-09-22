@@ -50,6 +50,11 @@ GridLayout {
 
             required property string modelData
             readonly property var resolved: root.resolve(slot.modelData)
+            // The bar this slot sits on, for BarState's placement listing.
+            readonly property BarAxis axis: root.axis
+
+            Component.onCompleted: BarState.place(slot)
+            Component.onDestruction: BarState.unplace(slot)
 
             Layout.alignment: root.vertical ? Qt.AlignHCenter : Qt.AlignVCenter
             source: slot.resolved.source

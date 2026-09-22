@@ -463,6 +463,10 @@ pub enum BarCommands {
     },
     /// Per-edge state, e.g. "top:shown bottom:shown left:hidden right:off"
     Status,
+    /// Where each placed widget sits, one line per widget: screen, edge,
+    /// widget name, then x y width height on that screen in logical pixels
+    /// (e.g. "DP-1 top clock 3712 26 112 48"), as when its bar is shown
+    Geometry,
 }
 
 /// The bar edges the shell knows, plus "all".
@@ -899,6 +903,20 @@ mod tests {
             }
         ));
         assert!(Cli::try_parse_from(["vogix", "desktop", "privacy", "extra"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_desktop_bar_geometry() {
+        let cli = Cli::try_parse_from(["vogix", "desktop", "bar", "geometry"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Desktop {
+                command: DesktopCommands::Bar {
+                    command: BarCommands::Geometry
+                }
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "desktop", "bar", "geometry", "top"]).is_err());
     }
 
     // ── Property: invalid subcommands fail gracefully ──

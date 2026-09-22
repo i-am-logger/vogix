@@ -125,6 +125,7 @@ ShellRoot {
         function hide(edge: string): string { return BarState.setHidden(edge, true); }
         function toggle(edge: string): string { return BarState.toggleEdge(edge); }
         function status(): string { return BarState.statusLine(); }
+        function geometry(): string { return BarState.geometry(); }
     }
 
     IpcHandler {
