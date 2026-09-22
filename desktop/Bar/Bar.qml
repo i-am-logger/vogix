@@ -8,7 +8,6 @@ pragma ComponentBehavior: Bound
 // the rails from existing at all.
 import QtQuick
 import Quickshell
-import qs.Vogix
 
 Scope {
     Variants {
