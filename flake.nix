@@ -565,6 +565,13 @@
               if grep -rn --include='*.qml' 'Hyprland\.dispatch(' $qml; then
                 echo "raw Hyprland.dispatch() in the shell: use the typed, dialect-aware method"; exit 1
               fi
+              # A platform menu's display(window, x, y) takes raw window
+              # coordinates; menus open through QsMenuAnchor, which maps its
+              # anchor item into window space and hands the compositor's
+              # positioner the edge to open from.
+              if grep -rn --include='*.qml' '\.display(' $qml; then
+                echo "menu .display() in the shell: open menus through QsMenuAnchor"; exit 1
+              fi
               touch $out
             '';
 
