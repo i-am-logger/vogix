@@ -82,6 +82,27 @@ TestCase {
         fuzzyCompare(level[1], 0.7, 1e-9);
     }
 
+    function test_settles_only_once_the_cap_has_landed(): void {
+        const s = fresh(0);
+        Ballistics.advance([1], s.level, s.cap, s.hold, 0.033);
+        verify(!Ballistics.settled([0], s.level, s.cap));
+        // The bar is down after 1/3 s but the cap still hangs.
+        run(0, s, 0.4, 0.033);
+        compare(s.level[0], 0);
+        verify(!Ballistics.settled([0], s.level, s.cap));
+        // Hold plus fall: 0.53 s + 1/0.75 s.
+        run(0, s, 2, 0.033);
+        verify(Ballistics.settled([0], s.level, s.cap));
+        // A new target unsettles it.
+        verify(!Ballistics.settled([0.5], s.level, s.cap));
+    }
+
+    function test_a_steady_level_settles(): void {
+        const s = fresh(0);
+        run(0.6, s, 0.1, 0.033);
+        verify(Ballistics.settled([0.6], s.level, s.cap));
+    }
+
     function test_quantize_to_steps(): void {
         compare(Ballistics.quantize(0.51), 0.5);
         compare(Ballistics.quantize(0.52), 0.525);

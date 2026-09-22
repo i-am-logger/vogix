@@ -4,16 +4,19 @@
 # `meters status` (the IPC behind `vogix desktop meters`) plus the process
 # table are the observations. Proven here:
 #
-# - a shell that starts before PipeWire waits (no tap is launched) and
-#   starts both taps once PipeWire and a default sink appear;
+# - with nothing playing — PipeWire down or up — no tap is launched;
+# - a playback stream starts both taps and the output VU, and they stop
+#   when it ends;
 # - a tap that dies is relaunched;
-# - a PipeWire restart stops the taps and brings them back;
+# - without a default sink the taps wait, and start when one appears;
 # - a hidden bar's taps, VU monitors and stat samplers stop, per edge, and
 #   come back when it is shown;
+# - a PipeWire restart stops the taps and brings them back;
 # - launched as the unit launches it, quickshell writes no DEBUG records.
 #
-# No session manager runs, so nothing links the taps: they sit connected
-# and idle, which is all a lifecycle test needs.
+# No session manager runs, so nothing links the streams: the taps and the
+# playback stream sit connected and idle, which is all a lifecycle test
+# needs.
 { pkgs, qsPkgs }:
 
 let
@@ -149,44 +152,68 @@ let
       note "FAIL: no '$1' within $2 s (last: $s)"
       return 1
     }
+    # Fails the step if any tap process is alive.
+    notaps() {
+      sleep 1
+      if pgrep -x cava > /dev/null || pgrep -x pw-record > /dev/null; then
+        note "FAIL: a tap is running: $1"
+      else
+        note "ok: no taps: $1"
+      fi
+    }
     startpw() {
       pipewire -c ${pipewireConf} >> "$TMPDIR/pipewire.log" 2>&1 &
       PWPID=$!
     }
+    # A playback stream: what the taps and the output VU wait for.
+    play() {
+      pw-play --raw --format=s16 --rate=48000 --channels=2 /dev/zero >> "$TMPDIR/pipewire.log" 2>&1 &
+      PLAYPID=$!
+    }
+    running="spectrum:running scope:running vu-out:on"
+    idle="spectrum:idle scope:idle vu-out:idle"
 
     # Launched as the unit launches it (desktop.detailedLogs = false).
     qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs.log" 2>&1 &
     QSPID=$!
     sleep 3
 
-    # 1. Started before PipeWire: both taps wait, neither is launched.
-    await "spectrum:waiting scope:waiting" 10
-    if pgrep -x cava > /dev/null || pgrep -x pw-record > /dev/null; then
-      note "FAIL: a tap was launched without PipeWire"
-    fi
-
-    # 2. PipeWire and its default sink appear: both taps start.
+    # 1. Before PipeWire, and with PipeWire but nothing playing: idle.
+    await "$idle vu-mic:on" 10
+    notaps "before PipeWire"
     startpw
-    await "spectrum:running scope:running" 20
+    sleep 2
+    await "$idle vu-mic:on" 10
+    notaps "nothing playing"
+
+    # 2. Playback starts both taps and the output VU.
+    play
+    await "$running" 20
     cava1=$(pgrep -x cava) pw1=$(pgrep -x pw-record)
-    note "pids: cava=$cava1 pw-record=$pw1"
 
     # 3. A tap that dies comes back as a new process.
     kill $cava1 $pw1
     sleep 0.5
-    await "spectrum:running scope:running" 10
+    await "$running" 10
     cava2=$(pgrep -x cava) pw2=$(pgrep -x pw-record)
-    note "pids: cava=$cava2 pw-record=$pw2"
+    note "pids: cava $cava1 -> $cava2, pw-record $pw1 -> $pw2"
     if [ -n "$cava2" ] && [ "$cava2" != "$cava1" ] && [ -n "$pw2" ] && [ "$pw2" != "$pw1" ]; then
       note "ok: relaunched"
     else
       note "FAIL: not relaunched"
     fi
 
-    # 4. Every source runs while its bar is shown; hiding an edge stops
+    # 4. No default sink: the taps wait; one appears: they start.
+    pw-metadata -n default -d 0 default.audio.sink >> "$TMPDIR/pipewire.log" 2>&1
+    await "spectrum:waiting scope:waiting" 10
+    notaps "no default sink"
+    pw-metadata -n default 0 default.audio.sink '{ "name": "taps-sink" }' Spa:String:JSON >> "$TMPDIR/pipewire.log" 2>&1
+    await "$running" 10
+
+    # 5. Every source runs while its bar is shown; hiding an edge stops
     # exactly that edge's sources, hiding all stops everything, and
     # showing them again brings it all back.
-    await "spectrum:running scope:running vu-out:on vu-mic:on stats:cpu,uptime" 5
+    await "$running vu-mic:on stats:cpu,uptime" 5
     qs -p "$qml" ipc call bar hide bottom > /dev/null
     await "spectrum:running scope:off vu-out:off vu-mic:off stats:uptime" 5
     sleep 1
@@ -197,31 +224,29 @@ let
     fi
     qs -p "$qml" ipc call bar hide all > /dev/null
     await "spectrum:off scope:off vu-out:off vu-mic:off stats:none" 5
-    sleep 1
-    if pgrep -x cava > /dev/null || pgrep -x pw-record > /dev/null; then
-      note "FAIL: a tap outlived its hidden bar"
-    else
-      note "ok: all hidden"
-    fi
+    notaps "all bars hidden"
     qs -p "$qml" ipc call bar unhide all > /dev/null
-    await "spectrum:running scope:running vu-out:on vu-mic:on stats:cpu,uptime" 10
+    await "$running vu-mic:on stats:cpu,uptime" 10
 
-    # 5. PipeWire goes away: the taps stop and wait for it.
+    # 6. Playback ends: back to idle, no taps.
+    kill $PLAYPID
+    wait $PLAYPID
+    await "$idle" 10
+    notaps "playback ended"
+
+    # 7. A PipeWire restart: everything stops with it and returns with it.
+    play
+    await "$running" 10
     kill $PWPID
-    wait $PWPID
-    await "spectrum:waiting scope:waiting" 10
-    sleep 1
-    if pgrep -x cava > /dev/null || pgrep -x pw-record > /dev/null; then
-      note "FAIL: a tap outlived PipeWire"
-    else
-      note "ok: stopped with PipeWire"
-    fi
-
-    # 6. PipeWire comes back: so do the taps.
+    wait $PWPID $PLAYPID
+    await "$idle" 10
+    notaps "PipeWire stopped"
     startpw
-    await "spectrum:running scope:running" 20
+    sleep 1
+    play
+    await "$running" 20
 
-    kill $QSPID $PWPID 2>/dev/null
+    kill $QSPID $PWPID $PLAYPID 2>/dev/null
     wait
   '';
 in
@@ -268,6 +293,6 @@ pkgs.runCommand "vogix-desktop-taps"
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 13
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 22
   touch $out
 ''

@@ -5,8 +5,10 @@ pragma Singleton
 // dB = 20·log10(raw³) = 60·log10(raw). Levels are positions in the
 // [floorDb, 0] window, moved by the meter ballistics the spectrum
 // shares (qs.Components Ballistics); published values quantize and skip
-// unchanged writes, so a silent stream costs zero repaints. Monitors are
-// ref-counted and capture only while a VU widget is on screen.
+// unchanged writes. Monitors are ref-counted and capture only while a VU
+// widget is on screen — the output one only while something plays — and
+// the ballistics tick runs only while a level is moving, so a silent or
+// steady meter costs no wakeups of its own.
 import QtQuick
 import Quickshell
 import Quickshell.Services.Pipewire
@@ -33,6 +35,19 @@ Singleton {
             outRefs = Math.max(0, outRefs - 1);
     }
 
+    // With no playback stream the sink's monitor carries only silence.
+    readonly property bool outActive: root.outRefs > 0 && Audio.playing
+    readonly property bool micActive: root.micRefs > 0
+
+    // off: no visible widget · idle: visible, nothing playing · on.
+    function outStatus(): string {
+        return root.outRefs === 0 ? "off" : (Audio.playing ? "on" : "idle");
+    }
+
+    function micStatus(): string {
+        return root.micActive ? "on" : "off";
+    }
+
     readonly property real floorDb: ((Config.doc.meters ?? {}).vu ?? {}).floorDb ?? -40
 
     // Public state, 0..1 in the dB window, quantized. The output is
@@ -52,16 +67,15 @@ Singleton {
         return root.floorDb * (1 - level);
     }
 
-    // Raw (unquantized) ballistics state, per channel.
-    property real _outL: 0
-    property real _outR: 0
-    property real _outCapL: 0
-    property real _outCapR: 0
-    property real _outHoldL: 0
-    property real _outHoldR: 0
-    property real _micLevel: 0
-    property real _micCap: 0
-    property real _micHold: 0
+    // Ballistics state, one entry per channel in one order throughout:
+    // out L, out R, mic. `_pending` is the highest level each channel
+    // reached since the last tick, so a transient between ticks lands.
+    property var _pending: [0, 0, 0]
+    property var _level: [0, 0, 0]
+    property var _cap: [0, 0, 0]
+    property var _hold: [0, 0, 0]
+    // Nothing will move until a peak differs from the settled state.
+    property bool _settled: true
 
     function _norm(raw: real): real {
         if (raw <= 0)
@@ -70,83 +84,90 @@ Singleton {
         return Math.max(0, Math.min(1, 1 - db / root.floorDb));
     }
 
+    // One channel's new position in the window. Peaks below the floor
+    // normalize to 0, so sub-floor noise on a settled meter changes
+    // nothing and wakes nothing.
+    function _heard(channel: int, level: real): void {
+        if (level > root._pending[channel])
+            root._pending[channel] = level;
+        if (level !== root._level[channel] || root._cap[channel] !== root._level[channel])
+            root._settled = false;
+    }
+
+    function _publish(): void {
+        const write = (name, v) => {
+            if (v !== root[name])
+                root[name] = v;
+        };
+        write("outL", Ballistics.quantize(root._level[0]));
+        write("outR", Ballistics.quantize(root._level[1]));
+        write("outCapL", Ballistics.quantize(root._cap[0]));
+        write("outCapR", Ballistics.quantize(root._cap[1]));
+        write("outLevel", Math.max(root.outL, root.outR));
+        write("outCap", Math.max(root.outCapL, root.outCapR));
+        write("micLevel", Ballistics.quantize(root._level[2]));
+        write("micCap", Ballistics.quantize(root._cap[2]));
+    }
+
+    // A monitor that stops leaves its channels at zero, not mid-decay.
+    function _zero(channels: var): void {
+        for (const i of channels) {
+            root._pending[i] = 0;
+            root._level[i] = 0;
+            root._cap[i] = 0;
+            root._hold[i] = 0;
+        }
+        root._publish();
+    }
+
+    onOutActiveChanged: {
+        if (!outActive)
+            _zero([0, 1]);
+    }
+
+    onMicActiveChanged: {
+        if (!micActive)
+            _zero([2]);
+    }
+
     PwNodePeakMonitor {
         id: outMon
         node: Pipewire.defaultAudioSink
-        enabled: root.outRefs > 0
-        // Instant attack per channel; the tick only handles decay. A mono
-        // stream feeds both columns.
+        enabled: root.outActive
+        // A mono stream feeds both columns.
         onPeaksChanged: {
-            const l = peaks[0] ?? 0;
-            const r = peaks[1] ?? l;
-            root._outL = Math.max(root._outL, root._norm(l));
-            root._outR = Math.max(root._outR, root._norm(r));
+            const l = root._norm(peaks[0] ?? 0);
+            root._heard(0, l);
+            root._heard(1, peaks.length > 1 ? root._norm(peaks[1]) : l);
         }
     }
 
     PwNodePeakMonitor {
         id: micMon
         node: Pipewire.defaultAudioSource
-        enabled: root.micRefs > 0
-        onPeakChanged: root._micLevel = Math.max(root._micLevel, root._norm(peak))
+        enabled: root.micActive
+        onPeakChanged: root._heard(2, root._norm(peak))
     }
 
     Timer {
         // The 30 fps ballistics tick (NOT a FrameAnimation: that fires at
         // the display's full refresh rate — 160 Hz here — and the decay
-        // math neither needs nor deserves that). Runs only while
-        // something is audible or still decaying.
+        // math neither needs nor deserves that).
         interval: 33
         repeat: true
-        running: (root.outRefs > 0 || root.micRefs > 0)
-            && (root._outL > 0 || root._outR > 0 || root._outCapL > 0 || root._outCapR > 0
-                || root._micLevel > 0 || root._micCap > 0
-                || outMon.peak > 0 || micMon.peak > 0)
+        running: (root.outActive || root.micActive) && !root._settled
 
         onTriggered: {
-            // Channels in one order throughout: out L, out R, mic.
-            const target = [
+            const now = [
                 root._norm(outMon.peaks[0] ?? 0),
                 root._norm(outMon.peaks[1] ?? (outMon.peaks[0] ?? 0)),
                 root._norm(micMon.peak)
             ];
-            const level = [root._outL, root._outR, root._micLevel];
-            const cap = [root._outCapL, root._outCapR, root._micCap];
-            const hold = [root._outHoldL, root._outHoldR, root._micHold];
-            Ballistics.advance(target, level, cap, hold, interval / 1000);
-            root._outL = level[0];
-            root._outR = level[1];
-            root._micLevel = level[2];
-            root._outCapL = cap[0];
-            root._outCapR = cap[1];
-            root._micCap = cap[2];
-            root._outHoldL = hold[0];
-            root._outHoldR = hold[1];
-            root._micHold = hold[2];
-
-            const write = (name, v) => {
-                if (v !== root[name])
-                    root[name] = v;
-            };
-            write("outL", Ballistics.quantize(root._outL));
-            write("outR", Ballistics.quantize(root._outR));
-            write("outCapL", Ballistics.quantize(root._outCapL));
-            write("outCapR", Ballistics.quantize(root._outCapR));
-            write("outLevel", Math.max(root.outL, root.outR));
-            write("outCap", Math.max(root.outCapL, root.outCapR));
-            write("micLevel", Ballistics.quantize(root._micLevel));
-            write("micCap", Ballistics.quantize(root._micCap));
-        }
-
-        onRunningChanged: {
-            if (!running) {
-                // Settle to zero so nothing freezes mid-decay.
-                root._outL = 0; root._outR = 0; root._outCapL = 0; root._outCapR = 0;
-                root._micLevel = 0; root._micCap = 0;
-                root.outL = 0; root.outR = 0; root.outCapL = 0; root.outCapR = 0;
-                root.outLevel = 0; root.outCap = 0;
-                root.micLevel = 0; root.micCap = 0;
-            }
+            const target = now.map((v, i) => Math.max(v, root._pending[i]));
+            root._pending = [0, 0, 0];
+            Ballistics.advance(target, root._level, root._cap, root._hold, interval / 1000);
+            root._publish();
+            root._settled = Ballistics.settled(now, root._level, root._cap);
         }
     }
 }

@@ -145,10 +145,15 @@ Singleton {
     }
 
     onMemoryWantedChanged: {
-        if (!memoryWanted) {
-            _memoryFresh = false;
+        if (!memoryWanted)
             memoryHistory = [];
-        }
+    }
+
+    onUptimeWantedChanged: {
+        if (uptimeWanted)
+            uptimeFile.reload();
+        else
+            uptimeTick.stop();
     }
 
     onNetWantedChanged: {
@@ -180,7 +185,6 @@ Singleton {
     // Whether a sample exists since the stat was last acquired: the
     // history tick records real samples only, never a stale or zero one.
     property bool _cpuFresh: false
-    property bool _memoryFresh: false
     property bool _netFresh: false
 
     property real cpu: 0        // 0..1
@@ -251,7 +255,7 @@ Singleton {
 
     // gaugePoints minus what this host does not have. This tests hasSwap
     // directly instead of calling gaugeUsed, because the swap FRACTION
-    // moves on the fast tick and a model rebuilt ten times a second would
+    // moves with every sample and a model rebuilt on every sample would
     // recreate every cell bound to it.
     readonly property list<string> gaugesPresent: {
         const out = [];
@@ -339,18 +343,16 @@ Singleton {
         root.gpuHistory = root._push(root.gpuHistory, root.gpuBusy);
     }
 
-    // The fast tick — cpu/mem/net at meters.sampleMs (default 10 Hz), so
-    // the graphs move like instruments, not like a status page.
+    // The fast tick — cpu/net at meters.sampleMs (default 10 Hz), so the
+    // readouts move like instruments, not like a status page.
     Timer {
         interval: root.sampleMs
-        running: root.cpuWanted || root.memoryWanted || root.netWanted
+        running: root.cpuWanted || root.netWanted
         repeat: true
         triggeredOnStart: true
         onTriggered: {
             if (root.cpuWanted)
                 statFile.reload();
-            if (root.memoryWanted)
-                memFile.reload();
             if (root.netWanted)
                 netFile.reload();
         }
@@ -358,31 +360,38 @@ Singleton {
 
     // The history tick — 1 Hz, so the graphs show a real time window
     // (history samples = seconds) instead of a 6-second blur; the fast
-    // tick above keeps the READOUTS live. Disk I/O and the sysfs GPU
-    // sources sample here too — 1 Hz is their natural rate, and
-    // nvidia-smi streams at the same period.
+    // tick above keeps the cpu/net READOUTS live. Memory, disk I/O and the
+    // sysfs GPU sources sample here — 1 Hz is their natural rate (memory's
+    // three-digit percentage does not move faster), and nvidia-smi streams
+    // at the same period.
     Timer {
         interval: 1000
         running: root.cpuWanted || root.memoryWanted || root.netWanted
-            || root.diskWanted || root.gpuWanted || root.uptimeWanted
+            || root.diskWanted || root.gpuWanted
         repeat: true
         triggeredOnStart: true
         onTriggered: {
             if (root._cpuFresh)
                 root.cpuHistory = root._push(root.cpuHistory, root.cpu);
-            if (root._memoryFresh)
-                root.memoryHistory = root._push(root.memoryHistory, root.memory);
             if (root._netFresh) {
                 root.netRxHistory = root._push(root.netRxHistory, root.netRxRate);
                 root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
             }
+            if (root.memoryWanted)
+                memFile.reload();
             if (root.diskWanted)
                 diskstatsFile.reload();
-            if (root.uptimeWanted)
-                uptimeFile.reload();
             if (root.gpuWanted && (root.gpuSource === Gpu.Source.BusyPercent || root.gpuSource === Gpu.Source.IdleResidency))
                 gpuFile.reload();
         }
+    }
+
+    // Uptime is read once a minute, just after the minute turns over: the
+    // cell shows whole minutes, so a faster read changes nothing on screen.
+    Timer {
+        id: uptimeTick
+        repeat: false
+        onTriggered: uptimeFile.reload()
     }
 
     Timer {
@@ -450,7 +459,7 @@ Singleton {
             root.swap = swapTotal > 0
                 ? Math.max(0, Math.min(1, 1 - swapFree / swapTotal))
                 : 0;
-            root._memoryFresh = true;
+            root.memoryHistory = root._push(root.memoryHistory, root.memory);
         }
     }
 
@@ -532,7 +541,13 @@ Singleton {
         path: "/proc/uptime"
         watchChanges: false
         preload: true
-        onLoaded: root.uptimeSec = Number(text().split(" ")[0])
+        onLoaded: {
+            root.uptimeSec = Number(text().split(" ")[0]);
+            if (root.uptimeWanted) {
+                uptimeTick.interval = Math.round((60 - root.uptimeSec % 60) * 1000) + 20;
+                uptimeTick.restart();
+            }
+        }
     }
 
     // Disk THROUGHPUT (the usage fraction is `disk`): whole physical

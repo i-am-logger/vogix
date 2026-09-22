@@ -193,9 +193,11 @@ pub enum DesktopCommands {
     /// Report whether a shell instance is running (and the bar state)
     Status,
     /// What the HUD samples right now, one word per source, e.g.
-    /// "spectrum:running scope:waiting" (a tap is off, waiting for PipeWire
-    /// or a default sink, running, retrying after an exit, or parked after
-    /// repeated failures)
+    /// "spectrum:running scope:idle vu-out:on vu-mic:on stats:cpu,uptime".
+    /// A tap is off (no visible widget), idle (nothing playing), waiting
+    /// for PipeWire or a default sink, running, retrying after an exit, or
+    /// parked after repeated failures; a VU monitor is off, idle or on;
+    /// stats lists the samplers running, or none
     Meters,
     /// Control the bar surface
     Bar {

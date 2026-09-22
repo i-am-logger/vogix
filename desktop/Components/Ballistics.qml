@@ -56,4 +56,15 @@ QtObject {
         }
         return moved;
     }
+
+    // Whether nothing can move until `target` changes: every channel's
+    // level sits on its target and every cap has come down onto its
+    // level. A meter that has settled can stop ticking.
+    function settled(target: var, level: var, cap: var): bool {
+        for (let i = 0; i < target.length; i++) {
+            if (level[i] !== target[i] || cap[i] !== level[i])
+                return false;
+        }
+        return true;
+    }
 }

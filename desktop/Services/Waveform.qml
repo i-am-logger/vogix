@@ -1,10 +1,12 @@
 pragma Singleton
 // The oscilloscope's sample tap: pw-record on the default sink MONITOR
-// (stream.capture.sink), 8 kHz mono s16 piped through od into text the
-// shell can parse. The stream is tagged node.name=vogix-scope so the
-// privacy indicator can tell it from a real recording. Ref-counted —
-// capture runs only while a scope widget is on screen; UI writes are
-// throttled to ~30 fps regardless of sample rate. AudioTap supervises
+// (stream.capture.sink), 8 kHz mono s16 turned into text by od, one line
+// per 256 samples (32 ms), so the scope updates at ~31 fps as the data
+// arrives with no timer of its own. The stream is tagged
+// node.name=vogix-scope so the privacy indicator can tell it from a real
+// recording. Ref-counted — capture runs only while a scope widget is on
+// screen and something is playing. A line identical to the one before
+// (digital silence, a held tone) is not parsed again. AudioTap supervises
 // the process: it waits for PipeWire and a default sink, and comes back
 // after an exit nobody asked for.
 import QtQuick
@@ -25,12 +27,28 @@ Singleton {
 
     readonly property bool active: refs > 0
 
-    // -1..1 samples, most recent window (512 samples = 64 ms at 8 kHz).
+    // off: no visible widget · idle: visible, nothing playing · otherwise
+    // the tap's own state.
+    function status(): string {
+        if (!root.active)
+            return "off";
+        if (!Audio.playing)
+            return "idle";
+        return tap.status();
+    }
+
+    // -1..1 samples, the two most recent lines (512 samples = 64 ms).
     property list<real> waveform: []
-    property var _buf: []
+    // The last line's samples and text.
+    property var _prev: []
+    property string _lastLine: ""
+    // The window already shows the repeated line twice.
+    property bool _steady: false
 
     function _clear(): void {
-        root._buf = [];
+        root._prev = [];
+        root._lastLine = "";
+        root._steady = false;
         root.waveform = [];
     }
 
@@ -43,12 +61,13 @@ Singleton {
         id: tap
 
         name: "pw-record"
-        wanted: root.active
+        wanted: root.active && Audio.playing
         // bash execs into pw-record, so the process quickshell holds is the
         // capture itself; od runs in a process substitution and ends on
-        // pw-record's EOF.
+        // pw-record's EOF. Both run unbuffered/line-buffered (stdbuf), or
+        // stdio would hold 4 KiB — a quarter second — before od saw it.
         command: ["bash", "-c",
-            "exec pw-record -P '{ stream.capture.sink=true node.name=vogix-scope }' --format=s16 --rate=8000 --channels=1 - > >(exec od -An -td2 -v -w64)"]
+            "exec stdbuf -o0 pw-record --raw -P '{ stream.capture.sink=true node.name=vogix-scope }' --format=s16 --rate=8000 --channels=1 - > >(exec stdbuf -oL od -An -td2 -v -w512)"]
 
         onRunningChanged: {
             if (!running)
@@ -56,28 +75,24 @@ Singleton {
         }
 
         onLine: data => {
-            const parts = data.trim().split(/\s+/);
-            for (const p of parts) {
+            if (data === root._lastLine) {
+                if (!root._steady) {
+                    root._steady = true;
+                    root.waveform = root._prev.concat(root._prev);
+                }
+                return;
+            }
+            root._steady = false;
+            root._lastLine = data;
+            const cur = [];
+            for (const p of data.trim().split(/\s+/)) {
                 const n = Number(p);
                 if (!Number.isNaN(n))
-                    root._buf.push(n / 32768);
+                    cur.push(n / 32768);
             }
-            if (root._buf.length > 2048)
-                root._buf = root._buf.slice(-1024);
-        }
-    }
-
-    function status(): string {
-        return tap.status();
-    }
-
-    Timer {
-        interval: 33
-        running: root.active
-        repeat: true
-        onTriggered: {
-            if (root._buf.length >= 512)
-                root.waveform = root._buf.slice(-512);
+            if (root._prev.length > 0)
+                root.waveform = root._prev.concat(cur);
+            root._prev = cur;
         }
     }
 }

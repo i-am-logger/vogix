@@ -266,7 +266,7 @@ in
             enable = mkOption {
               type = types.bool;
               default = defaults.meters.spectrum.enable;
-              description = "Run the cava audio spectrum. The subprocess runs only while a spectrum widget is on a shown bar and the screen is in use (not locked, blanked by the idle stage or under the screensaver).";
+              description = "Run the cava audio spectrum. The subprocess runs only while a spectrum widget is on a shown bar, the screen is in use (not locked, blanked by the idle stage or under the screensaver) and something is playing.";
             };
             bars = mkOption {
               type = types.ints.positive;
@@ -289,7 +289,7 @@ in
           sampleMs = mkOption {
             type = types.ints.between 50 5000;
             default = defaults.meters.sampleMs;
-            description = "cpu/mem/net sample period in ms (the graphs' liveliness; temperature and disk stay on slow ticks).";
+            description = "cpu and network sample period in ms (the readouts' liveliness). Memory, disk I/O and GPU sample once a second, temperature every 3 s, filesystems every 30 s and uptime once a minute.";
           };
           mounts = mkOption {
             type = types.listOf types.str;

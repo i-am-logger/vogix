@@ -100,8 +100,8 @@ _:
     };
     vu.floorDb = -40;
     history = 64;
-    # cpu/mem/net sample period — 10 Hz, so the graphs and readouts feel
-    # ALIVE. Temperature stays on a slow tick, disk on 30 s.
+    # cpu/net sample period — 10 Hz, so those readouts feel ALIVE.
+    # Memory, disk I/O and GPU run at 1 Hz, temperature 3 s, df 30 s.
     sampleMs = 100;
     # The stat-mounts gauges, in the order they read along the bar. "/"
     # leads: on a host with one root filesystem it is the disk. /nix and

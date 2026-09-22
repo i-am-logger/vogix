@@ -240,13 +240,12 @@ ShellRoot {
     IpcHandler {
         target: "meters"
 
-        // What the HUD samples right now, one word per source (see
-        // AudioTap.status for the tap states; a VU monitor is on or off;
-        // stats lists the SysStat samplers running).
+        // What the HUD samples right now, one word per source: a tap is
+        // off, idle (nothing playing) or in an AudioTap state; a VU
+        // monitor is off, idle or on; stats lists the running samplers.
         function status(): string {
             return "spectrum:" + Cava.status() + " scope:" + Waveform.status()
-                + " vu-out:" + (Peaks.outRefs > 0 ? "on" : "off")
-                + " vu-mic:" + (Peaks.micRefs > 0 ? "on" : "off")
+                + " vu-out:" + Peaks.outStatus() + " vu-mic:" + Peaks.micStatus()
                 + " stats:" + SysStat.status();
         }
     }

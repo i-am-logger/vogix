@@ -25,6 +25,13 @@ Singleton {
     readonly property var sources: [...Pipewire.nodes.values].filter(n =>
         !n.isStream && (n.type & PwNodeType.AudioSource) === PwNodeType.AudioSource)
 
+    // Something is playing: a playback stream exists. The spectrum, the
+    // scope and the output VU all capture the default sink's monitor,
+    // which carries nothing but silence without one, so they capture
+    // only while this holds — and the sink is free to suspend otherwise.
+    readonly property bool playing: [...Pipewire.nodes.values].some(n =>
+        n.type === PwNodeType.AudioOutStream)
+
     // Pipewire hands out three names per node and any of them may be
     // empty. `label` is the terse one for the rail, `fullLabel` the
     // verbose one for a surface with room — the rail elides, the panel
