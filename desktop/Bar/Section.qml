@@ -74,6 +74,7 @@ GridLayout {
                 case "stat-cpu": return "widgets/StatCpu.qml";
                 case "stat-gpu": return "widgets/StatGpu.qml";
                 case "stat-temp": return "widgets/StatTemp.qml";
+                case "stat-fans": return "widgets/StatFans.qml";
                 case "stat-mem": return "widgets/StatMem.qml";
                 case "stat-swap": return "widgets/StatSwap.qml";
                 case "stat-disk": return "widgets/StatDisk.qml";

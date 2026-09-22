@@ -61,6 +61,7 @@
           "stat-cpu",
           "stat-gpu",
           "stat-temp",
+          "stat-fans",
           "stat-mem",
           "stat-mounts",
           "graph-disk",
@@ -225,6 +226,14 @@
       },
       "cpuTemp": {
         "danger": 85,
+        "warn": 60
+      },
+      "fan": {
+        "danger": 4500,
+        "warn": 3000
+      },
+      "gpu": {
+        "danger": 90,
         "warn": 60
       },
       "memory": {

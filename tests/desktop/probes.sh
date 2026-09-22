@@ -65,4 +65,24 @@ expect "xe card" \
   "card0${tab}xe${tab}on${tab}1${tab}0000:00:02.0${tab}-${tab}$xe/class/drm/card0/device/tile0/gt0/gtidle/idle_residency_ms${tab}0" \
   "$(sh "$data/gpu-probe.sh" "$xe")"
 
+# hwmon: a board chip with an unlabelled tachometer, a cooler chip with a
+# labelled one that reports its maximum, and a temperature-only chip.
+hw=$TMPDIR/sys-hwmon
+mkdir -p "$hw/class/hwmon/hwmon0" "$hw/class/hwmon/hwmon1" "$hw/class/hwmon/hwmon2"
+echo nct6799 >"$hw/class/hwmon/hwmon0/name"
+echo 812 >"$hw/class/hwmon/hwmon0/fan2_input"
+echo dell_smm >"$hw/class/hwmon/hwmon1/name"
+echo 2400 >"$hw/class/hwmon/hwmon1/fan1_input"
+echo "Processor Fan" >"$hw/class/hwmon/hwmon1/fan1_label"
+echo 4900 >"$hw/class/hwmon/hwmon1/fan1_max"
+echo k10temp >"$hw/class/hwmon/hwmon2/name"
+echo 41000 >"$hw/class/hwmon/hwmon2/temp1_input"
+expect "hwmon fans" \
+  "$hw/class/hwmon/hwmon0/fan2_input${tab}nct6799${tab}2${tab}-${tab}-
+$hw/class/hwmon/hwmon1/fan1_input${tab}dell_smm${tab}1${tab}Processor Fan${tab}4900" \
+  "$(sh "$data/fan-probe.sh" "$hw")"
+
+# No tachometer anywhere: no output at all.
+expect "no fans" "" "$(sh "$data/fan-probe.sh" "$amd")"
+
 exit $fail

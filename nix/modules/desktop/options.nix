@@ -152,7 +152,8 @@ let
   barEdges = [ "top" "bottom" "left" "right" ];
 
   # warn/danger pair for one meter; units differ per metric (percent for
-  # cpu/memory/swap, °C for cpuTemp) — the description carries them.
+  # cpu/gpu/memory/swap, °C for cpuTemp, RPM for fan) — the description
+  # carries them.
   thresholdPair = metric: unit: {
     warn = mkOption {
       type = types.ints.positive;
@@ -289,7 +290,9 @@ in
           };
           thresholds = {
             cpu = thresholdPair "cpu" "percent";
+            gpu = thresholdPair "gpu" "percent";
             cpuTemp = thresholdPair "cpuTemp" "°C";
+            fan = thresholdPair "fan" "RPM";
             memory = thresholdPair "memory" "percent";
             swap = thresholdPair "swap" "percent";
           };

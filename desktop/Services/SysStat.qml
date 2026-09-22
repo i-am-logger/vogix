@@ -1,4 +1,5 @@
 pragma Singleton
+pragma ComponentBehavior: Bound
 // System gauges from /proc and /sys, sampled on a slow timer — cheap
 // enough to always run while any widget shows them. Each stat also keeps
 // a ring buffer (meters.history samples) for the HUD graphs; buffers are
@@ -10,6 +11,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Vogix
+import "lib/fans.js" as Fans
 import "lib/gpu.js" as Gpu
 
 Singleton {
@@ -46,6 +48,16 @@ Singleton {
     property real cpuTempC: 0
     property real netRxRate: 0  // bytes/s
     property real netTxRate: 0  // bytes/s
+
+    // hwmon fans (data/fan-probe.sh, lib/fans.js), enumerated once:
+    // every tachometer, the latest RPM per fan, and the fans that have
+    // spun this session — the cells list only those, since an empty
+    // header reads 0 forever. fansPresent is reassigned only when a fan
+    // first spins, so the cells are not rebuilt on every reading.
+    property var fans: []
+    property var fanRpm: ({})
+    property list<string> fansPresent: []
+    property var _fanSeen: ({})
 
     property real gpuBusy: 0    // 0..1
     property real diskIoRate: 0 // bytes/s, reads+writes
@@ -138,6 +150,37 @@ Singleton {
         return out;
     }
 
+    // The probe record for one fan key, or null.
+    function fan(key: string): var {
+        return root.fans.find(f => f.key === key) ?? null;
+    }
+
+    function _fanReading(key: string, text: string): void {
+        const v = Fans.rpm(text);
+        if (v === null)
+            return;
+        const next = Object.assign({}, root.fanRpm);
+        next[key] = v;
+        root.fanRpm = next;
+        if (v > 0 && root._fanSeen[key] !== true) {
+            const seen = Object.assign({}, root._fanSeen);
+            seen[key] = true;
+            root._fanSeen = seen;
+            root.fansPresent = Fans.spinning(root.fans, seen);
+        }
+    }
+
+    // A tachometer that stopped being readable (a USB cooler unplugged)
+    // leaves the table instead of failing a read every tick.
+    function _fanGone(key: string): void {
+        console.warn("SysStat: " + key + " is no longer readable; dropping that fan");
+        root.fans = root.fans.filter(f => f.key !== key);
+        const next = Object.assign({}, root.fanRpm);
+        delete next[key];
+        root.fanRpm = next;
+        root.fansPresent = Fans.spinning(root.fans, root._fanSeen);
+    }
+
     // One raw busy sample, 0..1: folded into the window, published as its
     // mean.
     function _gpuSample(v: real): void {
@@ -189,6 +232,8 @@ Singleton {
         onTriggered: {
             if (root.tempPath !== "")
                 tempFile.reload();
+            for (const f of fanFiles.instances)
+                f.reload();
         }
     }
 
@@ -504,5 +549,33 @@ Singleton {
         preload: true
         onLoaded: root.cpuTempC = Number(text().trim()) / 1000
         onLoadFailed: root.hasTemp = false
+    }
+
+    Process {
+        id: fanProbeProc
+        running: true
+        command: ["sh", Quickshell.shellDir + "/data/fan-probe.sh"]
+
+        stdout: StdioCollector {
+            onStreamFinished: root.fans = Fans.parseProbe(text)
+        }
+    }
+
+    // One reader per tachometer, reloaded on the slow tick with the
+    // temperature.
+    Variants {
+        id: fanFiles
+        model: root.fans
+
+        FileView {
+            required property var modelData
+
+            path: modelData.key
+            watchChanges: false
+            preload: true
+            onLoaded: root._fanReading(modelData.key, text())
+            // Deferred: dropping the fan destroys this very reader.
+            onLoadFailed: Qt.callLater(root._fanGone, modelData.key)
+        }
     }
 }

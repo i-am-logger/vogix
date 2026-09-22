@@ -65,13 +65,16 @@ _:
       size = 114;
       layout = {
         # The instrument column: ONE panel per metric, like the VU and
-        # MIC boxes — CPU and MEM carry their history trace inside the
-        # cell (gauge over number over trace); I/O, NET and GPU are the
-        # standalone trace instruments.
+        # MIC boxes — CPU, GPU and MEM carry their history trace inside
+        # the cell (gauge over number over trace); I/O and NET are the
+        # standalone trace instruments. The fan cells sit under the
+        # temperature they answer to, and are absent on hosts whose hwmon
+        # reports no spinning fan.
         start = [
           "stat-cpu"
           "stat-gpu"
           "stat-temp"
+          "stat-fans"
           "stat-mem"
           "stat-mounts"
           "graph-disk"
@@ -84,7 +87,8 @@ _:
   };
 
   # Meter tuning: the 40dB VU window and the stat thresholds that flip a
-  # meter's segments to warning/danger colors (percent, °C for cpuTemp).
+  # meter's segments to warning/danger colors (percent, °C for cpuTemp,
+  # RPM for fan).
   meters = {
     spectrum = {
       enable = true;
@@ -106,7 +110,11 @@ _:
     mounts = [ "/" "/nix" "/persist" "/boot" "swap" "/tmp" ];
     thresholds = {
       cpu = { warn = 50; danger = 90; };
+      gpu = { warn = 60; danger = 90; };
       cpuTemp = { warn = 60; danger = 85; };
+      # Above what an AIO pump or an idle laptop fan turns at; a laptop
+      # fan crosses danger only near its top speed.
+      fan = { warn = 3000; danger = 4500; };
       memory = { warn = 60; danger = 90; };
       swap = { warn = 20; danger = 80; };
     };

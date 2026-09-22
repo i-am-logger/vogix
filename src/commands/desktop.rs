@@ -292,6 +292,7 @@ const KNOWN_WIDGETS: &[&str] = &[
     "privacy",
     "stat-cpu",
     "stat-temp",
+    "stat-fans",
     "stat-mem",
     "stat-swap",
     "stat-disk",
