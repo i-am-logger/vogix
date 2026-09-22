@@ -1,4 +1,4 @@
-# Pure geometry, no quickshell imports: desktop-qmltest loads this module
+# Pure geometry, no quickshell imports: desktop-logic loads this module
 # under plain Qt, and Qt loads every singleton a module lists.
 module qs.Geometry
 singleton Placement 1.0 Placement.qml

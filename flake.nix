@@ -575,44 +575,6 @@
               touch $out
             '';
 
-          # The shell's pure-QML logic under Qt's own test runner
-          # (tests/desktop/tst_*.qml), imported from the packaged tree the
-          # way quickshell resolves it: qs/ IS the package. Only files that
-          # need no quickshell engine are testable here.
-          desktop-qmltest =
-            let
-              qsPkgs = import nixpkgs {
-                inherit system;
-                overlays = [ self.overlays.default ];
-                config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
-              };
-            in
-            pkgs.runCommand "vogix-desktop-qmltest"
-              {
-                nativeBuildInputs = [ pkgs.qt6.qtdeclarative ];
-                qml = qsPkgs.vogix-desktop-qml;
-                tests = ./tests/desktop;
-              } ''
-              mkdir importroot
-              ln -s "$qml" importroot/qs
-              export HOME=$TMPDIR QT_QPA_PLATFORM=offscreen
-              export QT_PLUGIN_PATH=${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}
-              export QML_IMPORT_PATH=${pkgs.qt6.qtdeclarative}/${pkgs.qt6.qtbase.qtQmlPrefix}
-              qmltestrunner -import "$PWD/importroot" -input "$tests"
-
-              # The VU meters and the spectrum take their curve from
-              # Ballistics alone: neither may carry its own copy of the
-              # constants the test above pins.
-              for f in Services/Peaks.qml Services/Cava.qml; do
-                grep -q 'Ballistics\.advance' "$qml/$f" \
-                  || { echo "$f does not advance through Ballistics"; exit 1; }
-                if grep -nE '(^|[^0-9.])(3\.0|0\.53|0\.75)([^0-9]|$)' "$qml/$f"; then
-                  echo "$f carries its own ballistics constants"; exit 1
-                fi
-              done
-              touch $out
-            '';
-
           # The audio taps against a real PipeWire daemon: waiting for it,
           # relaunch after an exit, stop and return across a PipeWire
           # restart (nix/checks/desktop-taps.nix).
@@ -1021,9 +983,13 @@
               touch $out
             '';
 
-          # The shell's parsers and policies (desktop/Services/lib), unit
-          # tested under Qt Quick Test.
-          desktop-logic = import ./tests/desktop { inherit pkgs; };
+          # The shell's pure logic (Services/lib parsers and policies, the
+          # quickshell-free QML types) under Qt Quick Test, and its probe
+          # scripts against fixture trees.
+          desktop-logic = import ./tests/desktop {
+            inherit pkgs;
+            qml = self.packages.${system}.vogix-desktop-qml;
+          };
 
           # Quick sanity checks (binary, status, list, systemd)
           smoke = import ./nix/vm/tests/smoke.nix testArgs;

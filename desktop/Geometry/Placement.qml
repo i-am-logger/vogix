@@ -3,7 +3,7 @@ pragma Singleton
 // the notification column use ExclusionMode.Ignore, so they are placed
 // from the raw screen edge and every bar's live thickness arrives here as
 // an inset. Pure geometry over its arguments — no services, no
-// quickshell types — so the shell and the desktop-qmltest check run the
+// quickshell types — so the shell and the desktop-logic check run the
 // same rule.
 import QtQuick
 
