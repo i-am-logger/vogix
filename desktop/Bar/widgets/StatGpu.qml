@@ -1,5 +1,6 @@
 // GPU busy cell — gauge over number over trace, exactly the CPU cell's
-// shape, sitting right below it. Absent on hosts without the sysfs knob.
+// shape, sitting right below it. Absent on hosts where SysStat finds no
+// GPU it can measure without privileges.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services

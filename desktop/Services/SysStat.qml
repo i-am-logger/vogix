@@ -26,6 +26,18 @@ Singleton {
     readonly property int gpuMeanSamples: 5
     property list<real> _gpuSamples: []
 
+    // The GPU the cell measures, chosen once at startup from the DRM
+    // cards (data/gpu-probe.sh evidence, lib/gpu.js policy): nvidia-smi
+    // streaming, amdgpu's busy percent, or Intel's idle residency. None
+    // hides the GPU widgets.
+    property int gpuSource: Gpu.Source.None
+    property string gpuPath: ""
+    property string gpuPci: ""
+    readonly property bool hasGpu: root.gpuSource !== Gpu.Source.None
+    // The previous idle-residency reading and when it was taken.
+    property real _gpuIdleMs: -1
+    property real _gpuIdleAt: 0
+
     property real cpu: 0        // 0..1
     property real memory: 0     // 0..1
     property real swap: 0       // 0..1
@@ -35,7 +47,6 @@ Singleton {
     property real netRxRate: 0  // bytes/s
     property real netTxRate: 0  // bytes/s
 
-    property bool hasGpu: false
     property real gpuBusy: 0    // 0..1
     property real diskIoRate: 0 // bytes/s, reads+writes
     property real uptimeSec: 0
@@ -110,7 +121,6 @@ Singleton {
     property real lastDiskSectors: 0
     property real lastDiskAt: 0
     property string tempPath: ""
-    property string gpuPath: ""
 
     // Used fraction of one gauge, or -1 where this host does not have it.
     // Callers render nothing for -1; there is no substitute value that
@@ -152,8 +162,9 @@ Singleton {
 
     // The history tick — 1 Hz, so the graphs show a real time window
     // (history samples = seconds) instead of a 6-second blur; the fast
-    // tick above keeps the READOUTS live. Disk I/O and GPU sample here
-    // too — 1 Hz is their natural rate.
+    // tick above keeps the READOUTS live. Disk I/O and the sysfs GPU
+    // sources sample here too — 1 Hz is their natural rate, and
+    // nvidia-smi streams at the same period.
     Timer {
         interval: 1000
         running: true
@@ -166,7 +177,7 @@ Singleton {
             root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
             diskstatsFile.reload();
             uptimeFile.reload();
-            if (root.gpuPath !== "")
+            if (root.gpuSource === Gpu.Source.BusyPercent || root.gpuSource === Gpu.Source.IdleResidency)
                 gpuFile.reload();
         }
     }
@@ -383,31 +394,80 @@ Singleton {
         }
     }
 
-    // One-shot GPU enumeration: the first card exposing amdgpu/intel's
-    // busy percent; hasGpu degrades the widget away otherwise.
+    // One-shot GPU enumeration; gpuSource stays None on hosts with no
+    // unprivileged busy source (nouveau, or a runtime-suspended dGPU and
+    // nothing else), and hasGpu hides the widgets.
     Process {
         id: gpuProbeProc
         running: true
-        command: ["sh", "-c", "for f in /sys/class/drm/card*/device/gpu_busy_percent; do [ -f \"$f\" ] && { echo \"$f\"; break; }; done"]
+        command: ["sh", Quickshell.shellDir + "/data/gpu-probe.sh"]
 
         stdout: StdioCollector {
             onStreamFinished: {
-                const p = text.trim();
-                if (p !== "") {
-                    root.gpuPath = p;
-                    root.hasGpu = true;
-                }
+                const pick = Gpu.choose(Gpu.parseProbe(text));
+                root.gpuPath = pick.path;
+                root.gpuPci = pick.pci;
+                root.gpuSource = pick.source;
             }
         }
     }
 
+    // The sysfs sources, read on the history tick. The first residency
+    // reading only sets the baseline.
     FileView {
         id: gpuFile
         path: root.gpuPath
         watchChanges: false
         preload: true
-        onLoaded: root._gpuSample(Math.max(0, Math.min(1, Number(text().trim()) / 100)))
-        onLoadFailed: root.hasGpu = false
+        onLoaded: {
+            if (root.gpuSource === Gpu.Source.BusyPercent) {
+                const v = Gpu.busyPercent(text());
+                if (v !== null)
+                    root._gpuSample(v);
+            } else if (root.gpuSource === Gpu.Source.IdleResidency) {
+                const idleMs = Number(text().trim());
+                const now = Date.now();
+                const v = Gpu.residencyBusy(root._gpuIdleMs, idleMs, now - root._gpuIdleAt);
+                root._gpuIdleMs = idleMs;
+                root._gpuIdleAt = now;
+                if (v !== null)
+                    root._gpuSample(v);
+            }
+        }
+        onLoadFailed: {
+            console.warn("SysStat: " + root.gpuPath + " is unreadable; the GPU cell is off");
+            root.gpuSource = Gpu.Source.None;
+        }
+    }
+
+    // NVIDIA: one long-lived nvidia-smi printing utilization.gpu every
+    // second for the chosen device, instead of a process per sample. If it
+    // exits or prints something other than a number, the cell goes away
+    // rather than showing a stale or invented figure.
+    Process {
+        id: nvidiaProc
+        running: root.gpuSource === Gpu.Source.NvidiaSmi
+        command: ["nvidia-smi", "--id=" + root.gpuPci, "--query-gpu=utilization.gpu",
+            "--format=csv,noheader,nounits", "--loop-ms=1000"]
+
+        stdout: SplitParser {
+            onRead: line => {
+                const v = Gpu.nvidiaSample(line);
+                if (v === null) {
+                    console.warn("SysStat: nvidia-smi reported '" + line.trim() + "'; the GPU cell is off");
+                    root.gpuSource = Gpu.Source.None;
+                    return;
+                }
+                root._gpuSample(v);
+            }
+        }
+
+        onRunningChanged: {
+            if (running || root.gpuSource !== Gpu.Source.NvidiaSmi)
+                return;
+            console.warn("SysStat: nvidia-smi exited; the GPU cell is off");
+            root.gpuSource = Gpu.Source.None;
+        }
     }
 
     // One-shot hwmon enumeration, by driver priority: the CPU die sensor

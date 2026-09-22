@@ -1,5 +1,5 @@
-// GPU busy history (amdgpu/intel gpu_busy_percent) — absent entirely on
-// hosts without the sysfs knob.
+// GPU busy history (SysStat's source: nvidia-smi, amdgpu busy percent or
+// Intel idle residency) — absent entirely on hosts with none.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
