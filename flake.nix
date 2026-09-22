@@ -795,7 +795,7 @@
             in
             pkgs.runCommand "vogix-desktop-smoke"
               {
-                nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell hyprctlFixture ];
+                nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell hyprctlFixture pkgs.jq ];
                 qml = qsPkgs.vogix-desktop-qml;
                 geometryProbe = ./nix/checks/desktop-geometry-probe.qml;
                 inherit themeJson desktopJson schema1Json;
@@ -850,6 +850,8 @@
               qs -p $qml ipc call gallery status >> $TMPDIR/result
               qs -p $qml ipc call gallery close >> $TMPDIR/result 2>&1
               qs -p $qml ipc call reminders list >> $TMPDIR/result
+              qs -p $qml ipc call stats status > $TMPDIR/stats.json
+              qs -p $qml ipc call privacy status | sed 's/^/privacy /' >> $TMPDIR/result
               for cell in smoke gauge stream watched undefined; do
                 qs -p $qml ipc call custom status \$cell | sed "s/^/custom-\$cell /" >> $TMPDIR/result
               done
@@ -932,6 +934,16 @@
               grep -q '^on$' $TMPDIR/result
               grep -q '^off$' $TMPDIR/result
               grep -q '^no reminders$' $TMPDIR/result
+              # The live bars' stats have samples: memory is read by a
+              # FileView that reload()s on a tick, and reload() never
+              # performs a file's first load, so without a preload it would
+              # stay at nothing. The mounts cell shows "/" unless the root
+              # is RAM-backed, and never the path this host lacks.
+              echo "── stats:"; cat $TMPDIR/stats.json; echo
+              jq -e '.memory > 0 and .cpu != null' $TMPDIR/stats.json
+              jq -e '.gauges == (if .rootInMemory then [] else ["/"] end)
+                and (.mounts | has("/vogix-smoke-absent") | not)' $TMPDIR/stats.json
+              grep -q '^privacy mic:off screen:off$' $TMPDIR/result
               grep -q '^custom-smoke SMOKE-42$' $TMPDIR/result
               grep -q '^custom-gauge J-7$' $TMPDIR/result
               grep -q '^custom-stream S-2$' $TMPDIR/result

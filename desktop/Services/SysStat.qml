@@ -16,6 +16,7 @@ import qs.Vogix
 import "lib/blockdev.js" as BlockDev
 import "lib/fans.js" as Fans
 import "lib/gpu.js" as Gpu
+import "lib/mounts.js" as Mounts
 
 Singleton {
     id: root
@@ -133,6 +134,25 @@ Singleton {
         if (root.mountsWanted)
             on.push("mounts");
         return on.length > 0 ? on.join(",") : "none";
+    }
+
+    // What the cells show right now. A figure is null while its stat is
+    // not sampled or has no sample yet; the capacity table, the gauges and
+    // the devices behind them are the latest df and probe answers.
+    function readings(): var {
+        return {
+            cpu: root.cpuWanted && root._cpuFresh ? root.cpu : null,
+            memory: root.memoryWanted && root.memoryHistory.length > 0 ? root.memory : null,
+            swap: root.memoryWanted && root.memoryHistory.length > 0 && root.hasSwap ? root.swap : null,
+            gpu: root.gpuWanted && root._gpuSamples.length > 0 ? root.gpuBusy : null,
+            cpuTempC: root.tempWanted && root.hasTemp ? root.cpuTempC : null,
+            fanRpm: root.fansWanted ? root.fanRpm : {},
+            mounts: root.mountUsage,
+            rootInMemory: root.rootInMemory,
+            gauges: Array.from(root.gaugesPresent),
+            gaugeDevice: root.gaugeDevice,
+            hasGpu: root.hasGpu,
+        };
     }
 
     onCpuWantedChanged: {
@@ -257,18 +277,8 @@ Singleton {
     // directly instead of calling gaugeUsed, because the swap FRACTION
     // moves with every sample and a model rebuilt on every sample would
     // recreate every cell bound to it.
-    readonly property list<string> gaugesPresent: {
-        const out = [];
-        for (let i = 0; i < root.gaugePoints.length; i++) {
-            const p = root.gaugePoints[i];
-            const present = p === "swap" ? root.hasSwap
-                : p === "/" ? root.mountUsage[p] !== undefined && !root.rootInMemory
-                : root.mountUsage[p] !== undefined;
-            if (present)
-                out.push(p);
-        }
-        return out;
-    }
+    readonly property list<string> gaugesPresent:
+        Mounts.present(root.gaugePoints, root.mountUsage, root.rootInMemory, root.hasSwap)
 
     property list<real> cpuHistory: []
     property list<real> memoryHistory: []
@@ -494,15 +504,11 @@ Singleton {
         }
     }
 
-    // Per-mount usage. The TARGET column comes back with the percentage
-    // because it is the only honest presence test: df drops a path that
-    // does not exist, and answers with the containing filesystem for one
-    // that exists but is not a mount point (a plain /persist directory
-    // reports "/"), so a row counts only when it names the path that was
-    // asked for. FSTYPE tells a RAM-backed root apart. The paths go in as
-    // ARGUMENTS rather than interpolated into the script, and stderr is
-    // dropped because a mount this host lacks is the expected case, not a
-    // fault.
+    // Per-mount usage (lib/mounts.js reads the rows: TARGET is the
+    // presence test, FSTYPE tells a RAM-backed root apart). The paths go
+    // in as ARGUMENTS rather than interpolated into the script, and stderr
+    // is dropped because a mount this host lacks is the expected case, not
+    // a fault.
     Process {
         id: diskProc
         command: {
@@ -514,23 +520,14 @@ Singleton {
 
         stdout: StdioCollector {
             onStreamFinished: {
-                const seen = {};
-                let rootFsType = "";
-                for (const line of text.split("\n")) {
-                    const m = line.match(/^\s*(\d+)%\s+(\S+)\s+(\S.*)$/);
-                    if (!m || !root.mountPoints.includes(m[3]))
-                        continue;
-                    seen[m[3]] = Math.max(0, Math.min(1, Number(m[1]) / 100));
-                    if (m[3] === "/")
-                        rootFsType = m[2];
-                }
+                const df = Mounts.parseDf(text, root.mountPoints);
                 // Not one row means df itself failed, since "/" is always
                 // asked for and always answers. Keep the last reading
                 // rather than publish an empty table, which would read as
                 // every mount at 0% instead of as no measurement.
-                if (Object.keys(seen).length > 0) {
-                    root.rootInMemory = rootFsType === "tmpfs" || rootFsType === "ramfs";
-                    root.mountUsage = seen;
+                if (Object.keys(df.usage).length > 0) {
+                    root.rootInMemory = Mounts.inMemory(df.rootFsType);
+                    root.mountUsage = df.usage;
                 }
             }
         }

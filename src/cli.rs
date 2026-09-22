@@ -200,6 +200,15 @@ pub enum DesktopCommands {
     /// parked after repeated failures; a VU monitor is off, idle or on;
     /// stats lists the samplers running, or none
     Meters,
+    /// The readings behind the stat cells, as one JSON object: cpu, memory,
+    /// swap, gpu (0..1), cpuTempC and fanRpm, each null (or empty) while
+    /// its stat is not sampled; the df capacity per mount (`mounts`), the
+    /// gauges the mounts cell shows, whether the root is RAM-backed, and
+    /// the kernel device behind each gauge
+    Stats,
+    /// What the privacy cell reports: "mic:on|off screen:on|off" — another
+    /// program capturing a microphone, and a live screen capture
+    Privacy,
     /// Control the bar surface
     Bar {
         #[command(subcommand)]

@@ -23,6 +23,8 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::Check { config } => check(config.as_deref()),
         DesktopCommands::Status => status(),
         DesktopCommands::Meters => meters(),
+        DesktopCommands::Stats => relay_status("stats"),
+        DesktopCommands::Privacy => relay_status("privacy"),
         DesktopCommands::Bar { command } => bar(command),
         DesktopCommands::Notify { command } => notify(command),
         DesktopCommands::Lock {
@@ -868,6 +870,15 @@ fn status() -> Result<()> {
 /// What the HUD samples right now, as the shell reports it.
 fn meters() -> Result<()> {
     match qs_ipc(&["meters", "status"]) {
+        Some(state) => println!("{state}"),
+        None => println!("no responsive shell instance"),
+    }
+    Ok(())
+}
+
+/// A read-only status verb: print what the shell's `<target> status` says.
+fn relay_status(target: &str) -> Result<()> {
+    match qs_ipc(&[target, "status"]) {
         Some(state) => println!("{state}"),
         None => println!("no responsive shell instance"),
     }
