@@ -402,9 +402,15 @@
               customGuarded =
                 customRejected { bars.top.layout.end = [ "custom/nope" ]; }
                 && customRejected { custom."a/b".command = "date"; };
+              # Exit status 75 is the shell's fresh-start request
+              # (desktop/Services/NetworkBackend.qml); the unit must answer
+              # it with a restart, and not log it as a failure.
+              unit = hmConf.config.systemd.user.services.vogix-desktop.Service;
+              restartsOn75 = unit.RestartForceExitStatus == 75 && unit.SuccessExitStatus == 75;
             in
             assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
             assert customGuarded || throw "an undefined custom/<name> placement or a bad custom cell name did not trip its assertion";
+            assert restartsOn75 || throw "vogix-desktop.service does not restart the shell on exit status 75";
             pkgs.runCommand "vogix-desktop-options" { nativeBuildInputs = [ pkgs.jq ]; } ''
               jq -S . ${rendered} > got.json
               jq -S . ${./nix/modules/desktop/desktop-json.pin.json} > want.json

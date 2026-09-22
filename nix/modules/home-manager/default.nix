@@ -337,6 +337,7 @@ in
             pkgs.brightnessctl # the brightness slider and OSD
             pkgs.hyprsunset # night light
             pkgs.power-profiles-daemon # powerprofilesctl: the power panel's profile row
+            pkgs.dbus # dbus-monitor, dbus-send: NetworkBackend waits for NetworkManager
           ]
           ++ lib.optional d.meters.spectrum.enable pkgs.cava
           ++ lib.optional d.weather.enable pkgs.wttrbar
@@ -429,6 +430,11 @@ in
             ExecReload = "${cfg.package}/bin/vogix desktop reload";
             Restart = "on-failure";
             RestartSec = 2;
+            # Exit status 75 is the shell asking for a fresh process (a
+            # backend quickshell binds once per process came up late, see
+            # NetworkBackend.qml): a clean exit that is always restarted.
+            SuccessExitStatus = 75;
+            RestartForceExitStatus = 75;
             Environment = [
               "QS_DISABLE_FILE_WATCHER=1"
               "QS_NO_RELOAD_POPUP=1"

@@ -1,5 +1,7 @@
-// Primary network state: ethernet/wifi icon, muted when disconnected;
-// click opens the network panel.
+// Primary network state: ethernet/wifi icon, muted when disconnected, a
+// warning-colored network-off glyph when the shell has no NetworkManager
+// backend (so an unknown state never reads as "disconnected"); click
+// opens the network panel.
 import QtQuick
 import Quickshell.Networking
 import qs.Bar.widgets
@@ -11,12 +13,14 @@ BarText {
     readonly property var connectedDev: devices.find(d => d.connected) ?? null
 
     text: {
+        if (!NetworkBackend.attached)
+            return "󰲛";
         if (!connectedDev)
             return "󰤮";
         return connectedDev.type === DeviceType.Wifi ? "󰤨" : "󰈀";
     }
-    color: connectedDev
-        ? Tokens.color("bar", "foreground")
+    color: !NetworkBackend.attached ? Tokens.color("meter", "mid")
+        : connectedDev ? Tokens.color("bar", "foreground")
         : Tokens.color("bar", "muted")
 
     MouseArea {

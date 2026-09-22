@@ -17,6 +17,7 @@ singleton Waveform 1.0 Waveform.qml
 singleton KbLayout 1.0 KbLayout.qml
 singleton Tailscale 1.0 Tailscale.qml
 singleton Privacy 1.0 Privacy.qml
+singleton NetworkBackend 1.0 NetworkBackend.qml
 singleton SysStat 1.0 SysStat.qml
 singleton Weather 1.0 Weather.qml
 singleton Nightlight 1.0 Nightlight.qml

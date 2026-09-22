@@ -31,7 +31,7 @@ ShellRoot {
     readonly property list<QtObject> services: [
         Notifs, Audio, Osd, Idle, Lock, Backgrounds, Launcher, Power,
         Battery, Media, SysStat, Weather, Nightlight, StayAwake, Reminders,
-        Panels, Brightness,
+        Panels, Brightness, NetworkBackend,
     ]
 
     Bar {

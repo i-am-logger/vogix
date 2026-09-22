@@ -40,6 +40,7 @@ ColumnLayout {
         }
 
         PanelLabel {
+            visible: NetworkBackend.attached
             text: (Networking.wifiEnabled ?? false) ? "wifi on" : "wifi off"
             color: Tokens.color("popup", "accent")
 
@@ -48,6 +49,18 @@ ColumnLayout {
                 onClicked: Networking.wifiEnabled = !Networking.wifiEnabled
             }
         }
+    }
+
+    // No backend means no device or network list at all; say why instead
+    // of showing an empty panel.
+    PanelLabel {
+        visible: !NetworkBackend.attached
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: NetworkBackend.selfRestarts
+            ? "NetworkManager is not reachable. The shell restarts itself when it appears."
+            : "NetworkManager is not reachable. Restart the shell once it is running."
+        color: Tokens.color("popup", "muted")
     }
 
     Repeater {
