@@ -923,10 +923,10 @@ fn bar(shell: &mut dyn Shell, command: &BarCommands) -> Result<()> {
     Ok(())
 }
 
-/// Ask the running shell to re-read `theme.json` and `desktop.json`. The
-/// store-symlink swap a theme switch performs is invisible to Qt's file
-/// watcher, so the reload is an explicit verb wired as the app's
-/// `reload_command`.
+/// Ask the running shell to re-read `theme.json`, `desktop.json` and the
+/// theme's `backgrounds.json`. The store-symlink swap a theme switch
+/// performs is invisible to Qt's file watcher, so the reload is an explicit
+/// verb wired as the app's `reload_command`.
 ///
 /// No shell instance — a TTY session, tests, the shell not enabled, qs not
 /// installed — is SUCCESS by design: this runs on every theme switch for

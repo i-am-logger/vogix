@@ -1,6 +1,6 @@
-// The engine's current input mode (~/.local/state/vogix/current-mode).
-// This file IS written in place (std::fs::write), so watching works — the
-// one contract file where it does. Missing file = the root mode.
+// The engine's current input mode (~/.local/state/vogix/current-mode),
+// rewritten by the engine on every mode change and watched here. Missing
+// file = the root mode.
 pragma Singleton
 import QtQuick
 import Quickshell

@@ -1,9 +1,10 @@
 pragma Singleton
-// The shell's type + density scale: every size derives multiplicatively
-// from ONE root (desktop.json font.size), so a person changes a single
-// number and the whole HUD scales. The multiplier table is a shell design
-// constant (the v2 Rust shell reimplements the same table) — deliberately
-// NOT in desktop.json.
+// The shell's type + density scale: every type token and spacing unit
+// derives multiplicatively from ONE root (desktop.json font.size), so text,
+// meters and cell padding follow a single number. Bar thickness is its own
+// per-edge setting (bars.<edge>.size), and the floating surfaces (cards,
+// panels, launcher, OSD, lock box) have fixed pixel widths. The multiplier
+// table is a shell design constant, deliberately NOT in desktop.json.
 import QtQuick
 import Quickshell
 

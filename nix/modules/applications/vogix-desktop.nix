@@ -4,8 +4,8 @@
 # it lands in the theme package at `<pkg>/vogix-desktop/theme.json`, the
 # symlink chain serves it at `~/.config/vogix-desktop/theme.json` through
 # `current-theme`, and a theme switch reaches the running shell through the
-# declared reload command. The desktop shell (QML in v1, Rust in v2) reads
-# ONLY this file for colors — the contract in the desktop plan, section A.
+# declared reload command. The desktop shell reads ONLY this file for
+# colors.
 #
 # The 16 `semantic` keys are exactly praxis `Vogix16Semantic::key()`
 # (snake_case); the per-scheme branches derive them so the shell never sees a
@@ -13,13 +13,14 @@
 # fill goes through the praxis slot mapping — so the preview widget reads one
 # shape whatever the scheme. `polarity`
 # comes from the theme data — no luminance math in the shell. `backgrounds`
-# arrives with the backgrounds increment (plan step 5) and is empty until
-# then, so the schema is stable from day one.
+# is always empty: the background set carries store paths only Nix knows,
+# so it lives in backgrounds.json beside this file (generators.nix), and
+# this one stays identical between the two render layers.
 #
 # The generators return a JSON STRING (the theme-file-only branch, the
 # console/ripgrep precedent). A Tera template per scheme renders the same
-# bytes into the on-demand cache; the desktop VM suite asserts the two
-# render layers byte-identical.
+# bytes into the on-demand cache; contract-tests.nix (checks.nix-unit) and
+# the Rust template test pin both layers to one golden line.
 { lib, ... }:
 
 let
@@ -58,11 +59,10 @@ in
 {
   configFile = "theme.json";
 
-  # The shell re-reads the contract through its own verb: v1 relays to the
-  # quickshell instance over `qs ipc`, v2 to vogix-desktop's socket; with no
-  # shell running (TTY, tests) it exits 0 quietly. `touch`/file-watching is
-  # deliberately NOT used — the store symlink swap is invisible to Qt's
-  # watcher (plan section A).
+  # The shell re-reads the contract through its own verb, which relays to
+  # the running shell; with no shell running (TTY, tests) it exits 0
+  # quietly. `touch`/file-watching is deliberately NOT used — the store
+  # symlink swap is invisible to Qt's watcher.
   reloadMethod = {
     method = "command";
     command = "vogix desktop reload";

@@ -3,9 +3,11 @@
 # The canonical semantic-color tables. praxis's `Vogix16Semantic` (theming
 # ontology, `applied/hmi/theming/schemes.rs`) is the source of truth for the
 # key set and the vogix16 slot assignment; the tables here mirror it for the
-# Nix render layer, and `tests/` + the desktop VM suite pin the two against
-# each other. Everything beyond `semanticColors` is DERIVED from it — no
-# second hand-maintained list.
+# Nix render layer. contract-tests.nix pins the rendered theme.json to the
+# golden line the Rust template test also pins, and `vogix desktop check`
+# validates every desktop.json token slot against praxis's key set.
+# Everything beyond `semanticColors` is DERIVED from it — no second
+# hand-maintained list.
 { lib }:
 
 let

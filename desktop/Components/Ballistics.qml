@@ -6,8 +6,8 @@ pragma Singleton
 // 0.75 full-scale/s (the fleet's cava-peaks tuning, a 4:1 bar/cap
 // ratio). Levels are fractions of full scale. Published values quantize
 // to 1/40, so a settled meter stops writing. The behaviour half of the
-// meter primitives beside it, and a shell design constant like Metrics:
-// the v2 Rust shell reimplements the same table.
+// meter primitives beside it, and a shell design constant like Metrics,
+// not a desktop.json setting.
 //
 // Plain QtQuick in a module with no quickshell singletons, so
 // qmltestrunner pins it (tests/desktop/tst_ballistics.qml) without a

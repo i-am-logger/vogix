@@ -1,5 +1,6 @@
-// Small toggles that only appear while active: night light and stay-awake.
-// Click turns the thing off (turning on goes through the menu or verbs).
+// Small indicators that only appear while active: night light and
+// stay-awake (a click turns them off; turning on goes through the menu or
+// verbs), and the count of pending reminders.
 import QtQuick
 import QtQuick.Layouts
 import qs.Bar.widgets

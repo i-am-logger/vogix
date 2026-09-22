@@ -1,13 +1,11 @@
 # Desktop shell options for Vogix
 #
-# Defines programs.vogix.desktop.* — the vogix desktop shell (bar,
-# notifications, lock, launcher, …; quickshell-rendered in v1, the
-# vogix-desktop Rust program in v2; the contract both consume is
-# `theme.json` + `desktop.json`).
+# Defines programs.vogix.desktop.* — the vogix desktop shell (bars,
+# notifications, lock, launcher, …), rendered by quickshell from the
+# contract files `theme.json` + `desktop.json`.
 #
 # Bare fragment in the behavior-options shape, merged into
-# `options.programs.vogix` by home-manager/options.nix. The per-surface
-# trees grow here increment by increment as the plan's steps land.
+# `options.programs.vogix` by home-manager/options.nix.
 { lib }:
 
 let
@@ -280,7 +278,7 @@ in
             bars = mkOption {
               type = types.ints.positive;
               default = defaults.meters.spectrum.bars;
-              description = "Number of spectrum bars.";
+              description = "Spectrum bands per stereo channel.";
             };
           };
           vu = {
@@ -516,9 +514,10 @@ in
           description = ''
             Per-surface color tokens ({ slot, alpha }, or a bare slot name).
             Surfaces are free-form names (bar, popup, notification, lock, …);
-            `vogix desktop check` projects them onto praxis surface functors
-            and rejects unknown slots. Defaults for the shipped surfaces merge
-            underneath (defaults.nix).
+            `vogix desktop check` rejects a slot outside the 16 semantic keys,
+            an alpha outside [0,1] and a slot the current theme does not
+            resolve. Defaults for the shipped surfaces merge underneath
+            (defaults.nix).
           '';
         };
       };

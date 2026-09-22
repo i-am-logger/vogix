@@ -51,7 +51,7 @@ pub enum Effect {
     /// Set a Hyprland keyword over the control socket (`keyword <key> <value>`),
     /// e.g. a per-mode border colour — the mode-visibility surface.
     Keyword { key: String, value: String },
-    /// The active mode changed (for visuals / logging / the waybar surface).
+    /// The active mode changed (for visuals / logging / the desktop shell's MODE cell).
     ModeChanged(String),
 }
 
@@ -1484,8 +1484,7 @@ fn execute(
                 }
             }
             Effect::ModeChanged(mode) => {
-                // waybar surface: publish the active mode to a state file a custom
-                // waybar module reads (the module wiring is a follow-on).
+                // The desktop shell's MODE cell reads the published mode.
                 publish_mode(&mode);
                 log::info!("mode → {mode}");
             }
@@ -1493,8 +1492,9 @@ fn execute(
     }
 }
 
-/// Publish the active mode to `~/.local/state/vogix/current-mode` for the waybar
-/// mode surface. Best-effort: a write failure never affects input handling.
+/// Publish the active mode to `~/.local/state/vogix/current-mode`, which the
+/// desktop shell's MODE cell watches. Best-effort: a write failure never
+/// affects input handling.
 fn publish_mode(mode: &str) {
     let path = crate::config::Config::state_dir().join("current-mode");
     let _ = std::fs::write(path, mode);

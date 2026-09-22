@@ -1,6 +1,6 @@
 // A real oscilloscope: the sink monitor's waveform (qs.Services.Waveform),
-// centered zero line, accent trace. Ref-counts the sample tap so
-// capture runs only while this is on screen.
+// centered zero line, accent trace. Holds the sample tap while its bar is
+// live; the tap captures only while something plays.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
@@ -16,8 +16,9 @@ FrameCell {
     padV: 3
 
     // One multiplier for both axes, so the trace keeps its aspect when it is
-    // dialled. At 3x the canvas is ~69 px tall, which is why the bottom bar
-    // grew to hold it — a scope clipped by its own bar reads as a bug.
+    // dialled. At 3x and the default 21 px type the canvas is ~69 px tall,
+    // which the default 96 px bottom bar holds with the frame around it — a
+    // scope clipped by its own bar reads as a bug.
     readonly property real scopeScale: 3
 
     Canvas {

@@ -433,7 +433,7 @@ in
             StartLimitBurst = 3;
             StartLimitIntervalSec = 30;
             # A desktop.json-only change reloads in place (sd-switch): the
-            # shell re-reads both contract files, MainPID unchanged. The
+            # shell re-reads its contract files, MainPID unchanged. The
             # store-symlink swap is invisible to file watchers, which is
             # also why the watcher is disabled outright below.
             X-Reload-Triggers = [ "${desktopJsonText}" ];

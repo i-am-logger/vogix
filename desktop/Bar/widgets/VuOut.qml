@@ -1,6 +1,6 @@
 // Output VU cell: framed OUT title, segmented meter with peak cap, dB
-// readout. Ref-counts the peak monitor so pipewire capture runs only
-// while this is on screen.
+// readout. Holds the output peak monitor while its bar is live; the
+// monitor captures only while something plays.
 import QtQuick
 import qs.Bar.widgets
 import qs.Components

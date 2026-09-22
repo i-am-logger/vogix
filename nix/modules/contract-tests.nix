@@ -9,7 +9,7 @@
 #   package, on-demand cache) provably produce identical bytes;
 # - every scheme branch yields valid JSON carrying all 16 praxis semantic
 #   keys and all 16 palette slots;
-# - the per-scheme semantic tables map the slots the plan writes down.
+# - the per-scheme semantic tables map the slots lib/vogix16.nix documents.
 #
 # Run with: nix eval --impure -f nix/modules/contract-tests.nix --apply 'f: f {}'
 { pkgs ? import <nixpkgs> { }
@@ -78,7 +78,7 @@ let
       (builtins.attrNames doc.semantic == v16.semanticKeys))
     (check "${name}: all 16 palette slots, exactly"
       (builtins.attrNames doc.palette == v16.baseSlots))
-    (check "${name}: backgrounds present and empty until step 5"
+    (check "${name}: backgrounds present and empty (the set is backgrounds.json)"
       (doc.backgrounds == [ ]))
     (assertEq "${name}: identity carried" "goldtest" doc.theme)
     (assertEq "${name}: polarity carried" "dark" doc.polarity)

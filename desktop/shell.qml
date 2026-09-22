@@ -102,7 +102,7 @@ ShellRoot {
         }
     }
 
-    // IPC targets mirror the `vogix desktop …` verbs 1:1; nothing else may
+    // The transport behind the `vogix desktop …` verbs; nothing else may
     // talk to these directly (the verb is the contract, qs the transport).
     IpcHandler {
         target: "theme"
