@@ -128,7 +128,7 @@ When a user runs `vogix theme set -t catppuccin -v mocha` or `vogix theme set -v
 2. **Theme Management** (`src/theme/`): discovery, loader (per-scheme), query, types
 3. **Template Rendering** (`src/template/`): Tera-based config rendering
 4. **Cache** (`src/cache/`): Theme cache paths and rendering
-5. **Input engine** (`src/input/`): device (pure Router + the evdev-grab/uinput loop), schema (input.json loader → praxis ModeGraph), paradigm (project a praxis BindingSet + topology into a ModeGraph), catalog (vogix-native paradigm BindingSets), hypr (compositor IPC + active-window stream), keys (chord ↔ praxis-Key codec), taphold (dual-role CapsLock detector), devfilter (keyboard-device selection), health (daemon liveness/diagnostics)
+5. **Input engine** (`src/input/`): device (pure Router + the evdev-grab/uinput loop), schema (input.json loader → praxis ModeGraph), paradigm (project a praxis BindingSet + topology into a ModeGraph), catalog (vogix-native paradigm BindingSets), hypr (compositor IPC + active-window stream), keys (chord ↔ praxis-Key codec), taphold (dual-role CapsLock detector), devfilter (keyboard-device selection), health (daemon liveness/diagnostics), locks (Caps/Num/Scroll Lock from the grabbed keyboards' LEDs, published for the desktop shell)
 6. **Core modules**: cli.rs, config/, errors.rs, reload.rs, scheme.rs, state.rs, symlink.rs
 
 ## 7. Input Engine
@@ -156,6 +156,13 @@ evdev grab  →  Router (pure)  →  uinput re-emit + compositor IPC (Hyprland)
   (a failed start can never hold the keyboard), re-syncs held modifiers, subscribes
   to Hyprland's active-window event stream, and is single-instance-guarded +
   self-healing across compositor restarts.
+- **State it publishes** (`~/.local/state/vogix/`): `current-mode` (the active
+  mode), `input-health.json` (for `vogix input doctor`) and `input-locks.json`
+  (Caps/Num/Scroll Lock as `true`/`false`, `null` where no grabbed keyboard has
+  that LED). The compositor lights the lock LEDs of every keyboard, grabbed
+  ones included, and the grab delivers those EV_LED events to the engine, so
+  the lock document is rewritten on each change from a writer thread off the
+  poll loop, and removed when the engine stops.
 
 ### Ontology (praxis)
 

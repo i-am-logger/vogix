@@ -23,6 +23,8 @@
 //!     in-process, dispatches window actions to the compositor's IPC socket and
 //!     re-emits normal keys via uinput. No kanata, no submaps, no F22/F23/F24
 //!     bridge.
+//!   - [`locks`] — Caps/Num/Scroll Lock as the grabbed keyboards' LEDs show
+//!     it, published for the desktop shell off the poll loop.
 //!
 //! caps↓ enters a (validated) mode; caps↑ is `ReleaseHold`, which is always
 //! legal. "Stuck" is not a bug to fix here — it is an unrepresentable state.
@@ -35,6 +37,7 @@ pub mod hypr;
 pub mod hypr_lua;
 pub mod hypr_realize;
 pub mod keys;
+pub mod locks;
 pub mod paradigm;
 pub mod schema;
 pub mod taphold;

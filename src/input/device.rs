@@ -24,6 +24,7 @@ use super::keys::{
     Chord, Modifier, Mods, is_capslock, key_to_keycode, keycode_to_key, modifier_code, modifier_of,
     modifiers_to_mods, parse_chord,
 };
+use super::locks;
 use super::schema::{ActionKind, Schema, parse_action};
 use super::taphold::{CapsDetector, CapsEvent, CapsIntent};
 use evdev::KeyCode;
@@ -55,15 +56,16 @@ pub enum Effect {
 }
 
 /// One grabbed keyboard the engine owns: the evdev device, its `/dev/input`
-/// node (to dedup inotify add events), and its observability identity +
-/// counters. Held in a stable `Vec<Option<Grabbed>>` slot — a slot is `None`d
-/// when its device unplugs (so the counter indices never shift) and a
-/// hotplugged keyboard reuses a free slot or pushes a new one.
+/// node (to dedup inotify add events), its observability identity +
+/// counters, and its lock LEDs. Held in a stable `Vec<Option<Grabbed>>` slot —
+/// a slot is `None`d when its device unplugs (so the counter indices never
+/// shift) and a hotplugged keyboard reuses a free slot or pushes a new one.
 struct Grabbed {
     dev: evdev::Device,
     node: std::path::PathBuf,
     meta: health::DeviceMeta,
     counters: health::Counters,
+    leds: locks::Leds,
 }
 
 /// A binding resolved from the schema for fast lookup.
@@ -964,6 +966,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             d.grab()
                 .map_err(|e| VogixError::Config(format!("cannot grab keyboard {name:?}: {e}")))?;
             log::info!("grabbing keyboard {name:?} ({vendor:04x}:{product:04x})");
+            let leds = locks::Leds::read(&d);
             slots.push(Some(Grabbed {
                 dev: d,
                 node,
@@ -973,6 +976,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                     product,
                 },
                 counters: health::Counters::default(),
+                leds,
             }));
         } else {
             log::info!(
@@ -1018,6 +1022,13 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     router.arm_semantic();
     execute(&mut vdev, &mut hypr, router.paint_current_mode());
     publish_mode(&router.mode());
+
+    // Lock state for the desktop shell: seeded from the grabbed keyboards'
+    // LEDs, republished when an EV_LED event, a hotplug or an unplug changes
+    // it. Dropping the publisher — on every return from this function —
+    // removes the document.
+    let mut lock_state = locks::Publisher::spawn(locks::document_path());
+    lock_state.publish(locks::fold(slots.iter().flatten().map(|g| &g.leds)));
 
     let start = Instant::now();
     let ms = move |start: &Instant| start.elapsed().as_millis() as u64;
@@ -1179,6 +1190,8 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             // With the engine gone there is no mode: publish the root so the
             // bar's Mode widget doesn't show a mode nothing will ever exit.
             publish_mode(&router.root_mode());
+            // Nor any tracked lock state: retract the document.
+            drop(lock_state);
             // Let the kernel deliver the key-up events before the uinput fd closes
             // on return (device teardown isn't ordered after the compositor reads
             // them) — otherwise a modifier could be left stuck across the restart.
@@ -1246,13 +1259,21 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             let Some(g) = slots[slot].as_mut() else {
                 continue;
             };
-            let events: Vec<(u16, i32)> = match g.dev.fetch_events() {
-                Ok(it) => it
-                    .filter(|e| e.event_type() == EventType::KEY)
-                    .map(|e| (e.code(), e.value()))
-                    .collect(),
+            // Keys go to the router; LED events are the compositor lighting
+            // this keyboard's lock state.
+            let mut events: Vec<(u16, i32)> = Vec::new();
+            match g.dev.fetch_events() {
+                Ok(it) => {
+                    for e in it {
+                        match e.event_type() {
+                            EventType::KEY => events.push((e.code(), e.value())),
+                            EventType::LED => g.leds.apply(e.code(), e.value()),
+                            _ => {}
+                        }
+                    }
+                }
                 Err(_) => continue,
-            };
+            }
             for (code, value) in events {
                 let now = ms(&start);
                 // CapsLock is the mode trigger — consumed by the tap/hold detector
@@ -1275,6 +1296,9 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         {
             handle_hotplug(ino, &mut inotify_buf, &filter, &mut slots, &mut router);
         }
+        // A LED event, a grab or an unplug may have changed the merged lock
+        // state; `publish` queues only a change, and never blocks.
+        lock_state.publish(locks::fold(slots.iter().flatten().map(|g| &g.leds)));
         // Refresh the health snapshot on a coarse wall-clock interval even under
         // steady typing (the idle branch never fires while keys flow), so `doctor`
         // always sees a fresh per-device view — including the "went silent" tell.
@@ -1312,6 +1336,7 @@ fn try_grab_keyboard(
         return None;
     }
     log::info!("vogix input: grabbed hotplugged keyboard {name:?} ({vendor:04x}:{product:04x})");
+    let leds = locks::Leds::read(&dev);
     Some(Grabbed {
         dev,
         node: node.to_path_buf(),
@@ -1321,6 +1346,7 @@ fn try_grab_keyboard(
             product,
         },
         counters: health::Counters::default(),
+        leds,
     })
 }
 

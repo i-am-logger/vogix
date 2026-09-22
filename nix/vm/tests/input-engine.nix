@@ -227,7 +227,9 @@ let
         # Enter + home-row letters so it passes the strict text-keyboard floor
         # (DeviceFilter), exercising the STRICT grab path rather than the fail-safe.
         e.KEY_ENTER, e.KEY_S, e.KEY_D, e.KEY_F,
-    ] }
+    ],
+    # Lock LEDs, which the lock-state document (Test 1f) follows.
+    e.EV_LED: [e.LED_CAPSL, e.LED_NUML] }
     ui = UInput(caps, name="vogix-test-kbd")
 
     # A YubiKey-shaped device: it passes the broad "has KEY_A" filter AND the
@@ -411,6 +413,40 @@ let
     # (a live EVIOCGKEY), and the synthetic uinput devices in this VM do not
     # surface an injected held key through a grabbed fd, so it cannot be exercised
     # end-to-end in the harness.
+
+    # --- Test 1f: lock state follows the grabbed keyboard's LEDs, pushed ---
+    # The compositor lights CapsLock by writing EV_LED to every keyboard through
+    # its own evdev fd (libinput). A write to a GRABBED keyboard still lands, and
+    # the grab delivers the LED event to the engine, which rewrites
+    # input-locks.json. Make the same write from a second evdev client and
+    # assert the document follows it. (The VM's own PS/2 keyboard is grabbed
+    # too and declares every lock LED, so each lock is known here; the
+    # no-such-LED → null case is a unit test in src/input/locks.rs.)
+    locks_path = "/root/.local/state/vogix/input-locks.json"
+    def read_locks():
+        try:
+            return json.loads(open(locks_path).read())
+        except (OSError, ValueError):
+            return None
+    def wait_locks(pred, what):
+        doc = None
+        for _ in range(40):
+            doc = read_locks()
+            if doc is not None and pred(doc):
+                return doc
+            time.sleep(0.05)
+        fail(f"input-locks.json never showed {what}; last read: {doc}")
+    def set_caps_led(value):
+        # As libevdev_kernel_set_led_values writes it: the LED, then SYN_REPORT
+        # (the kernel hands a LED change to readers only on the SYN).
+        ui.device.write(e.EV_LED, e.LED_CAPSL, value)
+        ui.device.write(e.EV_SYN, e.SYN_REPORT, 0)
+    wait_locks(lambda d: d.get("capsLock") is False, "the seeded state (caps off)")
+    set_caps_led(1)
+    wait_locks(lambda d: d.get("capsLock") is True, "capsLock on after the LED lit")
+    set_caps_led(0)
+    wait_locks(lambda d: d.get("capsLock") is False, "capsLock off after the LED went dark")
+    print("PASS: lock state follows the grabbed keyboard's LEDs")
 
     # --- Test 2: caps-hold + h → IPC 'dispatch movefocus l', h swallowed ---
     received.clear()
@@ -729,6 +765,8 @@ let
     time.sleep(0.3)
     if e.KEY_A not in emitted_codes():
         fail("first engine must keep working after a second instance is rejected")
+    if read_locks() is None:
+        fail("a refused second engine must leave the running engine's input-locks.json")
     print("PASS: single-instance guard — 2nd engine refused, 1st intact + typing works")
 
     # ── Flat default behavioural coverage: the SHIPPED default proven end-to-end ──
@@ -756,6 +794,12 @@ let
         if vogix_dev() is None:
             break
         time.sleep(0.1)
+    # A stopped engine tracks no locks, so its document is gone; light CapsLock
+    # while no engine holds the keyboard, for the next one to seed from.
+    if os.path.exists(locks_path):
+        fail("input-locks.json must be removed when the engine stops")
+    set_caps_led(1)
+    print("PASS: lock state retracted when the engine stopped")
     proc = subprocess.Popen(
         ["vogix", "input", "run", "--config", "/etc/vogix-real-defaults.json"],
         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -769,6 +813,10 @@ let
     if vogix_dev() is None:
         fail("flat default: vogix-input device not found (engine didn't grab)")
     time.sleep(1.0)  # let the keyboard grab settle before injecting
+    wait_locks(lambda d: d.get("capsLock") is True, "capsLock seeded from the LED lit before start")
+    set_caps_led(0)
+    wait_locks(lambda d: d.get("capsLock") is False, "capsLock off after the LED went dark")
+    print("PASS: a starting engine seeds the lock state from the keyboard's LEDs")
 
     def flat_expect(label, inject, expect):
         # After Test 18 the live compositor mock is testsig2 (received2); the

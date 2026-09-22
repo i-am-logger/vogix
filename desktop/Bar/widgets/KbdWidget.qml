@@ -40,8 +40,11 @@ FrameCell {
 
         // Lit/dim rather than shown/hidden: a cell that changes width every
         // time caps is pressed shoves the rest of the bar sideways, and the
-        // eye reads the movement before the letters.
+        // eye reads the movement before the letters. Hidden only while the
+        // state is unknown (no input engine, or no keyboard with a CapsLock
+        // LED), which does not change per keypress.
         BarText {
+            visible: KbLayout.capsKnown
             text: "CAPS"
             font.pixelSize: Metrics.caption
             font.bold: KbLayout.capsOn

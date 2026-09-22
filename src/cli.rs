@@ -294,7 +294,7 @@ pub enum DesktopCommands {
         command: CustomCommands,
     },
     /// What the LANG cell shows: the keyboard it follows, that keyboard's
-    /// layouts and the active one
+    /// layouts, the active one, and CapsLock as the input engine publishes it
     Keyboard,
     /// The dev gallery: every surface's tokens rendered as swatches
     Gallery {

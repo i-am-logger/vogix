@@ -851,6 +851,31 @@
               sleep 1
               qs -p $qml ipc call custom status counter | sed 's/^/custom-counter /' >> $TMPDIR/result
               qs -p $qml ipc call keyboard status >> $TMPDIR/result
+              # The input engine's lock document, handled as the engine does:
+              # written tmp + rename, rewritten the same way, removed on stop.
+              # The LANG cell must follow every step through its file watch.
+              put_locks() {
+                printf '%s' "\$1" > $XDG_STATE_HOME/vogix/input-locks.json.tmp
+                mv $XDG_STATE_HOME/vogix/input-locks.json.tmp $XDG_STATE_HOME/vogix/input-locks.json
+              }
+              caps_until() {
+                for _ in \$(seq 50); do
+                  s=\$(qs -p $qml ipc call keyboard status)
+                  case "\$s" in *" caps:\$1") break ;; esac
+                  sleep 0.1
+                done
+                echo "\$2 \$s" >> $TMPDIR/result
+              }
+              put_locks '{"capsLock":true,"numLock":false,"scrollLock":null}'
+              caps_until on locks-on
+              put_locks '{"capsLock":false,"numLock":false,"scrollLock":null}'
+              caps_until off locks-off
+              put_locks '{"capsLock":null,"numLock":null,"scrollLock":null}'
+              caps_until unknown locks-null
+              put_locks '{"capsLock":true,"numLock":false,"scrollLock":null}'
+              caps_until on locks-back
+              rm $XDG_STATE_HOME/vogix/input-locks.json
+              caps_until unknown locks-gone
               kill \$QSPID 2>/dev/null || true
               sleep 1
 
@@ -894,7 +919,12 @@
               grep -q '^custom-counter-refresh refreshing$' $TMPDIR/result
               grep -q '^custom-counter RUN-2$' $TMPDIR/result
               grep -q '^custom-undefined unknown custom cell: undefined$' $TMPDIR/result
-              grep -q '^device:vogix-input layouts:de,us active:de$' $TMPDIR/result
+              grep -q '^device:vogix-input layouts:de,us active:de caps:unknown$' $TMPDIR/result
+              grep -q '^locks-on device:vogix-input layouts:de,us active:de caps:on$' $TMPDIR/result
+              grep -q '^locks-off .* caps:off$' $TMPDIR/result
+              grep -q '^locks-null .* caps:unknown$' $TMPDIR/result
+              grep -q '^locks-back .* caps:on$' $TMPDIR/result
+              grep -q '^locks-gone .* caps:unknown$' $TMPDIR/result
               ! grep -iq 'is not a type\|module .* is not installed\|Failed to load configuration' $TMPDIR/qs.log
               touch $out
             '';
@@ -996,7 +1026,8 @@
           # real `vogix input run` against a virtual keyboard + a mock compositor
           # socket and asserts the full daily-driver UX — re-emit/typing, the
           # Super→Ctrl remap, caps tap-sticky / hold-momentary, sub-mode routing,
-          # exitAfter, the Esc safety-net, repeat, and the single-instance guard.
+          # exitAfter, the Esc safety-net, repeat, the single-instance guard, and
+          # input-locks.json following the grabbed keyboard's LEDs.
           input-engine = import ./nix/vm/tests/input-engine.nix testArgs;
         }
       );
