@@ -10,32 +10,16 @@ import Quickshell.Io
 Singleton {
     id: root
 
+    // The desktop.json schema this shell reads. A document of any other
+    // schema was written by a different vogix than the one running: it is
+    // refused LOUDLY and its bars stay off until a rebuild regenerates it.
+    readonly property int schema: 2
+
     property var doc: ({})
-    readonly property var bar: doc.bar ?? ({})
-    // The canonical four-edge table (schema 2). A schema-1 doc carries only
-    // `bar`; synthesize its edge and leave the other three off, so a shell
-    // ahead of its config still renders the bar the user configured.
-    readonly property var bars: doc.bars ?? legacyBars()
+    readonly property bool supported: (doc.schema ?? 0) === schema
+    readonly property var bars: supported ? (doc.bars ?? ({})) : ({})
     readonly property string fontFamily: (doc.font ?? {}).family ?? "monospace"
     readonly property int fontSize: (doc.font ?? {}).size ?? 16
-
-    function legacyBars(): var {
-        const b = doc.bar ?? {};
-        const l = b.layout ?? {};
-        const off = { enable: false, size: 0, layout: { start: [], center: [], end: [] } };
-        const on = {
-            enable: b.enable ?? false,
-            size: b.height ?? 32,
-            layout: { start: l.left ?? [], center: l.center ?? [], end: l.right ?? [] },
-        };
-        const edge = b.position ?? "top";
-        return {
-            top: edge === "top" ? on : off,
-            bottom: edge === "bottom" ? on : off,
-            left: off,
-            right: off,
-        };
-    }
 
     function reload(): void {
         view.reload();
@@ -45,7 +29,14 @@ Singleton {
         id: view
         path: Paths.stateRoot + "/desktop.json"
         watchChanges: false
-        onLoaded: root.doc = JSON.parse(text())
+        onLoaded: {
+            const parsed = JSON.parse(text());
+            if ((parsed.schema ?? 0) !== root.schema)
+                console.warn("vogix: desktop.json schema " + parsed.schema
+                    + " is not supported (this shell reads schema " + root.schema
+                    + "); rebuild to regenerate it");
+            root.doc = parsed;
+        }
         onLoadFailed: console.warn("vogix: cannot read", path)
     }
 }

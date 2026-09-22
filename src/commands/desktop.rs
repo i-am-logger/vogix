@@ -167,12 +167,22 @@ struct CheckReport {
     menu_commands: usize,
 }
 
+/// The desktop.json schema the shell reads (the four-edge `bars` table).
+const DESKTOP_SCHEMA: u64 = 2;
+
 /// The whole desktop.json contract, checked without touching the
-/// filesystem: surface tokens, the four-bar widget table, and the launcher
-/// menu's commands. `semantic` is the live theme's semantic map, when one
-/// is active.
+/// filesystem: the schema, surface tokens, the four-bar widget table, and
+/// the launcher menu's commands. `semantic` is the live theme's semantic
+/// map, when one is active.
 fn validate(doc: &Value, semantic: Option<&Value>) -> CheckReport {
     let mut report = CheckReport::default();
+    match doc.get("schema") {
+        Some(v) if v.as_u64() == Some(DESKTOP_SCHEMA) => {}
+        found => report.errors.push(format!(
+            "schema {} is not supported (the shell reads schema {DESKTOP_SCHEMA}; rebuild to regenerate desktop.json)",
+            found.map_or_else(|| "(missing)".to_string(), Value::to_string)
+        )),
+    }
     check_surfaces(doc, semantic, &mut report);
     check_bar_widgets(doc, &mut report);
     check_menu_commands(doc, &mut report);
@@ -840,6 +850,24 @@ mod tests {
         let report = validate(&default_doc(), None);
         assert!(report.errors.is_empty(), "{:#?}", report.errors);
         assert!(report.widgets > 0 && report.tokens > 0);
+    }
+
+    #[test]
+    fn only_schema_2_is_accepted() {
+        for doc in [
+            serde_json::json!({ "schema": 1, "bar": { "enable": true } }),
+            serde_json::json!({ "schema": "2" }),
+            serde_json::json!({}),
+        ] {
+            let report = validate(&doc, None);
+            assert_eq!(report.errors.len(), 1, "{doc}: {:#?}", report.errors);
+            assert!(report.errors[0].starts_with("schema "));
+        }
+        assert!(
+            validate(&serde_json::json!({ "schema": 2 }), None)
+                .errors
+                .is_empty()
+        );
     }
 
     #[test]

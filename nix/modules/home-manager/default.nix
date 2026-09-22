@@ -296,19 +296,6 @@ in
             inherit (cfg.desktop.bars.${edge}) enable size;
             layout = { inherit (cfg.desktop.bars.${edge}.layout) start center end; };
           });
-          # One-release legacy mirror of the top bar in the schema-1 shape,
-          # so a schema-1 reader keeps a bar through the transition. Dropped
-          # next release.
-          bar = {
-            inherit (cfg.desktop.bars.top) enable;
-            position = "top";
-            height = cfg.desktop.bars.top.size;
-            layout = {
-              left = cfg.desktop.bars.top.layout.start;
-              inherit (cfg.desktop.bars.top.layout) center;
-              right = cfg.desktop.bars.top.layout.end;
-            };
-          };
           meters = {
             spectrum = { inherit (cfg.desktop.meters.spectrum) enable bars; };
             vu = { inherit (cfg.desktop.meters.vu) floorDb; };

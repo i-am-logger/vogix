@@ -500,13 +500,6 @@
                 # cell must come up for the first and simply not exist for
                 # the second.
                 meters.mounts = [ "/" "/vogix-smoke-absent" ];
-                # The one-release schema-1 mirror the serializer emits.
-                bar = {
-                  enable = true;
-                  position = "top";
-                  height = 36;
-                  layout = { left = [ "workspaces" "mode" ]; center = [ "window" ]; right = [ "theme" "clock" ]; };
-                };
                 surfaces.bar = {
                   background = { slot = "background"; alpha = 0.92; };
                   foreground = { slot = "foreground_text"; alpha = 1.0; };
@@ -516,10 +509,10 @@
                   urgent = { slot = "danger"; alpha = 1.0; };
                 };
               };
-              # A schema-1 desktop.json as the previous release wrote it: no
-              # `bars`, only the single-bar shape. The shell must synthesize
-              # the four-edge table from it (Config.legacyBars).
-              legacyJson = builtins.toJSON {
+              # A schema-1 desktop.json (the single-bar shape, no `bars`).
+              # The shell reads schema 2 only: it must stay up, render no
+              # bar, and say why in its log.
+              schema1Json = builtins.toJSON {
                 schema = 1;
                 font = { family = "monospace"; size = 13; };
                 bar = {
@@ -542,8 +535,8 @@
               {
                 nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell ];
                 qml = qsPkgs.vogix-desktop-qml;
-                inherit themeJson desktopJson legacyJson;
-                passAsFile = [ "themeJson" "desktopJson" "legacyJson" ];
+                inherit themeJson desktopJson schema1Json;
+                passAsFile = [ "themeJson" "desktopJson" "schema1Json" ];
               } ''
               export HOME=$TMPDIR/home
               export XDG_CONFIG_HOME=$HOME/.config
@@ -590,15 +583,14 @@
               kill \$QSPID 2>/dev/null || true
               sleep 1
 
-              # Fallback run: a schema-1 desktop.json from the previous
-              # release still renders its one bar through the synthesized
-              # four-edge table.
-              cp $legacyJsonPath $XDG_STATE_HOME/vogix/desktop.json
-              qs -p $qml > $TMPDIR/qs-legacy.log 2>&1 &
+              # Rejection run: a schema-1 desktop.json is refused, loudly,
+              # without taking the shell down.
+              cp $schema1JsonPath $XDG_STATE_HOME/vogix/desktop.json
+              qs -p $qml > $TMPDIR/qs-schema1.log 2>&1 &
               QSPID=\$!
               sleep 3
-              kill -0 \$QSPID 2>/dev/null && echo LEGACY-ALIVE >> $TMPDIR/result
-              qs -p $qml ipc call bar status | sed 's/^/legacy /' >> $TMPDIR/result
+              kill -0 \$QSPID 2>/dev/null && echo SCHEMA1-ALIVE >> $TMPDIR/result
+              qs -p $qml ipc call bar status | sed 's/^/schema1 /' >> $TMPDIR/result
               kill \$QSPID 2>/dev/null || true
               INNER
               chmod +x inner.sh
@@ -611,8 +603,9 @@
               test "$(grep -c '^top:shown bottom:shown left:shown right:shown$' $TMPDIR/result)" -ge 3
               grep -q 'left:hidden' $TMPDIR/result
               grep -q 'top:hidden bottom:hidden left:hidden right:hidden' $TMPDIR/result
-              grep -q '^LEGACY-ALIVE$' $TMPDIR/result
-              grep -q '^legacy top:shown bottom:off left:off right:off$' $TMPDIR/result
+              grep -q '^SCHEMA1-ALIVE$' $TMPDIR/result
+              grep -q '^schema1 top:off bottom:off left:off right:off$' $TMPDIR/result
+              grep -q 'desktop.json schema 1 is not supported' $TMPDIR/qs-schema1.log
               grep -q '^closed$' $TMPDIR/result
               grep -q '^open$' $TMPDIR/result
               grep -q '^calendar$' $TMPDIR/result

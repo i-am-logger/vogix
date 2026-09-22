@@ -4,26 +4,6 @@
     "enable": true,
     "scanlines": false
   },
-  "bar": {
-    "enable": true,
-    "height": 96,
-    "layout": {
-      "center": [],
-      "left": [
-        "workspaces",
-        "mode"
-      ],
-      "right": [
-        "kbd",
-        "privacy",
-        "dnd",
-        "indicators",
-        "theme",
-        "clock"
-      ]
-    },
-    "position": "top"
-  },
   "bars": {
     "bottom": {
       "enable": true,
