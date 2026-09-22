@@ -13,6 +13,7 @@ use crate::cli::{
 };
 use crate::errors::{Result, VogixError};
 use log::debug;
+use serde_json::Value;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -92,13 +93,12 @@ fn switch(target: &str, state: &SwitchCommands) -> Result<()> {
 
 fn remind(command: &RemindCommands) -> Result<()> {
     let reply = match command {
-        RemindCommands::Add { text, delay } => {
-            let ms = parse_duration_ms(delay)?;
+        RemindCommands::Add { text, delay_ms } => {
             let at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0)
-                + ms;
+                .saturating_add(*delay_ms);
             qs_ipc(&["reminders", "add", text, &at.to_string()])
         }
         RemindCommands::List => qs_ipc(&["reminders", "list"]),
@@ -111,204 +111,34 @@ fn remind(command: &RemindCommands) -> Result<()> {
     Ok(())
 }
 
-/// "10m", "1h30m", "45s", "2h" → milliseconds.
-fn parse_duration_ms(spec: &str) -> Result<u64> {
-    let mut total: u64 = 0;
-    let mut digits = String::new();
-    for c in spec.chars() {
-        if c.is_ascii_digit() {
-            digits.push(c);
-        } else {
-            let n: u64 = digits.parse().map_err(|_| {
-                VogixError::Config(format!("bad duration '{spec}' (use e.g. 10m, 1h30m, 45s)"))
-            })?;
-            digits.clear();
-            total += match c {
-                's' => n * 1000,
-                'm' => n * 60 * 1000,
-                'h' => n * 60 * 60 * 1000,
-                'd' => n * 24 * 60 * 60 * 1000,
-                _ => {
-                    return Err(VogixError::Config(format!(
-                        "bad duration unit '{c}' in '{spec}' (s, m, h, d)"
-                    )));
-                }
-            };
-        }
-    }
-    if !digits.is_empty() {
-        // A bare number means minutes.
-        total += digits
-            .parse::<u64>()
-            .map_err(|_| VogixError::Config(format!("bad duration '{spec}'")))?
-            * 60
-            * 1000;
-    }
-    if total == 0 {
-        return Err(VogixError::Config(format!(
-            "duration '{spec}' is zero (use e.g. 10m, 1h30m, 45s)"
-        )));
-    }
-    Ok(total)
-}
-
-/// Validate desktop.json's surface tokens against the praxis ontology:
-/// every `{ slot, alpha }` names one of the 16 semantic keys
-/// (Vogix16Semantic — praxis is the authority, nothing re-encoded here),
-/// alpha stays in [0,1], and when the current theme's contract file is
-/// readable, every referenced slot actually resolves in its semantic map
-/// (the SurfaceSlotsResolvable obligation, checked against the LIVE
-/// palette). Hard failure on any violation — the file is Nix-generated,
-/// so an error here is a generator bug, not user error.
+/// Validate desktop.json; see [`validate`] for what is checked. Hard
+/// failure on any violation — the file is Nix-generated, so an error here
+/// is a generator bug, not user error.
 fn check(config: Option<&str>) -> Result<()> {
-    use pr4xis::category::FinitelyGenerated;
-    use pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic;
-
     let path = config
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| crate::config::Config::state_dir().join("desktop.json"));
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| VogixError::Config(format!("cannot read {}: {e}", path.display())))?;
-    let doc: serde_json::Value = serde_json::from_str(&raw)
+    let doc: Value = serde_json::from_str(&raw)
         .map_err(|e| VogixError::Config(format!("{} is not valid JSON: {e}", path.display())))?;
 
-    let keys: Vec<String> = Vogix16Semantic::variants()
-        .iter()
-        .map(|s| s.key().to_string())
-        .collect();
-
     // The live palette, when a theme with the desktop contract is active.
-    let semantic: Option<serde_json::Value> = std::fs::read_to_string(
+    let semantic: Option<Value> = std::fs::read_to_string(
         crate::config::Config::state_dir().join("current-theme/vogix-desktop/theme.json"),
     )
     .ok()
-    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
     .and_then(|t| t.get("semantic").cloned());
 
-    let mut errors: Vec<String> = Vec::new();
-    let mut tokens = 0usize;
-    let empty = serde_json::Map::new();
-    let surfaces = doc
-        .get("surfaces")
-        .and_then(|s| s.as_object())
-        .unwrap_or(&empty);
-    for (surface, table) in surfaces {
-        let Some(table) = table.as_object() else {
-            errors.push(format!("surface '{surface}' is not an object"));
-            continue;
-        };
-        for (token, value) in table {
-            tokens += 1;
-            let slot = value.get("slot").and_then(|s| s.as_str()).unwrap_or("");
-            if !keys.iter().any(|k| k == slot) {
-                errors.push(format!(
-                    "{surface}.{token}: slot '{slot}' is not one of the 16 semantic keys"
-                ));
-                continue;
-            }
-            if let Some(alpha) = value.get("alpha").and_then(|a| a.as_f64())
-                && !(0.0..=1.0).contains(&alpha)
-            {
-                errors.push(format!("{surface}.{token}: alpha {alpha} outside [0,1]"));
-            }
-            if let Some(sem) = &semantic
-                && sem.get(slot).and_then(|v| v.as_str()).is_none()
-            {
-                errors.push(format!(
-                    "{surface}.{token}: slot '{slot}' does not resolve in the current theme"
-                ));
-            }
-        }
-    }
-
-    // The four-bar table: every named widget must be one the shell's
-    // registry knows, and horizontal-only widgets (they read sideways)
-    // may not appear on a vertical bar. The list is the contract name
-    // set — Section.qml's registry plus the widgets the default layout
-    // ships ahead of their implementations.
-    const KNOWN_WIDGETS: &[&str] = &[
-        "workspaces",
-        "window",
-        "clock",
-        "mode",
-        "theme",
-        "audio",
-        "mic",
-        "battery",
-        "network",
-        "bluetooth",
-        "media",
-        "tray",
-        "weather",
-        "cpu",
-        "memory",
-        "dnd",
-        "indicators",
-        "tailscale",
-        "uptime",
-        "update",
-        "spectrum-mini",
-        "kbd",
-        "privacy",
-        "stat-cpu",
-        "stat-temp",
-        "stat-mem",
-        "stat-swap",
-        "stat-disk",
-        "stat-mounts",
-        "stat-gpu",
-        "stat-net",
-        "vu-out",
-        "vu-mic",
-        "vu-rail",
-        "mic-rail",
-        "audio-out-picker",
-        "audio-in-picker",
-        "spectrum-rail",
-        "spectrum-left",
-        "spectrum-right",
-        "oscilloscope",
-        "graph-cpu",
-        "graph-mem",
-        "graph-net",
-        "graph-disk",
-        "graph-gpu",
-        "batteries",
-        "menu",
-        "power-glyph",
-        "spacer",
-    ];
-    const HORIZONTAL_ONLY: &[&str] = &["window", "media", "weather", "theme"];
-    let mut widgets = 0usize;
-    if let Some(bars) = doc.get("bars").and_then(|b| b.as_object()) {
-        for (edge, bar) in bars {
-            let vertical = edge == "left" || edge == "right";
-            let layout = bar.get("layout").and_then(|l| l.as_object());
-            for section in ["start", "center", "end"] {
-                let names = layout
-                    .and_then(|l| l.get(section))
-                    .and_then(|w| w.as_array());
-                for w in names.into_iter().flatten() {
-                    widgets += 1;
-                    let name = w.as_str().unwrap_or("");
-                    if !KNOWN_WIDGETS.contains(&name) {
-                        errors.push(format!(
-                            "bars.{edge}.layout.{section}: unknown widget '{name}'"
-                        ));
-                    } else if vertical && HORIZONTAL_ONLY.contains(&name) {
-                        errors.push(format!(
-                            "bars.{edge}.layout.{section}: '{name}' is horizontal-only and cannot render on a vertical bar"
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    if errors.is_empty() {
+    let report = validate(&doc, semantic.as_ref());
+    if report.errors.is_empty() {
         println!(
-            "desktop.json OK — {} surfaces, {tokens} tokens, {widgets} bar widgets, every slot {}",
-            surfaces.len(),
+            "desktop.json OK — {} surfaces, {} tokens, {} bar widgets, {} menu commands, every slot {}",
+            report.surfaces,
+            report.tokens,
+            report.widgets,
+            report.menu_commands,
             if semantic.is_some() {
                 "resolves in the current theme"
             } else {
@@ -317,13 +147,261 @@ fn check(config: Option<&str>) -> Result<()> {
         );
         Ok(())
     } else {
-        for e in &errors {
+        for e in &report.errors {
             eprintln!("✗ {e}");
         }
         Err(VogixError::Config(format!(
             "desktop.json failed validation with {} error(s)",
-            errors.len()
+            report.errors.len()
         )))
+    }
+}
+
+/// What one validation pass over a desktop.json found.
+#[derive(Debug, Default)]
+struct CheckReport {
+    errors: Vec<String>,
+    surfaces: usize,
+    tokens: usize,
+    widgets: usize,
+    menu_commands: usize,
+}
+
+/// The whole desktop.json contract, checked without touching the
+/// filesystem: surface tokens, the four-bar widget table, and the launcher
+/// menu's commands. `semantic` is the live theme's semantic map, when one
+/// is active.
+fn validate(doc: &Value, semantic: Option<&Value>) -> CheckReport {
+    let mut report = CheckReport::default();
+    check_surfaces(doc, semantic, &mut report);
+    check_bar_widgets(doc, &mut report);
+    check_menu_commands(doc, &mut report);
+    report
+}
+
+/// Every `{ slot, alpha }` names one of the 16 semantic keys
+/// (Vogix16Semantic — praxis is the authority, nothing re-encoded here),
+/// alpha stays in [0,1], and when the current theme's contract file is
+/// readable, every referenced slot actually resolves in its semantic map
+/// (the SurfaceSlotsResolvable obligation, checked against the LIVE
+/// palette).
+fn check_surfaces(doc: &Value, semantic: Option<&Value>, report: &mut CheckReport) {
+    use pr4xis::category::FinitelyGenerated;
+    use pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic;
+
+    let keys: Vec<String> = Vogix16Semantic::variants()
+        .iter()
+        .map(|s| s.key().to_string())
+        .collect();
+
+    let Some(surfaces) = doc.get("surfaces").and_then(|s| s.as_object()) else {
+        return;
+    };
+    report.surfaces = surfaces.len();
+    for (surface, table) in surfaces {
+        let Some(table) = table.as_object() else {
+            report
+                .errors
+                .push(format!("surface '{surface}' is not an object"));
+            continue;
+        };
+        for (token, value) in table {
+            report.tokens += 1;
+            let slot = value.get("slot").and_then(|s| s.as_str()).unwrap_or("");
+            if !keys.iter().any(|k| k == slot) {
+                report.errors.push(format!(
+                    "{surface}.{token}: slot '{slot}' is not one of the 16 semantic keys"
+                ));
+                continue;
+            }
+            if let Some(alpha) = value.get("alpha").and_then(|a| a.as_f64())
+                && !(0.0..=1.0).contains(&alpha)
+            {
+                report
+                    .errors
+                    .push(format!("{surface}.{token}: alpha {alpha} outside [0,1]"));
+            }
+            if let Some(sem) = semantic
+                && sem.get(slot).and_then(|v| v.as_str()).is_none()
+            {
+                report.errors.push(format!(
+                    "{surface}.{token}: slot '{slot}' does not resolve in the current theme"
+                ));
+            }
+        }
+    }
+}
+
+/// The contract widget names: Section.qml's registry, entry for entry.
+const KNOWN_WIDGETS: &[&str] = &[
+    "workspaces",
+    "window",
+    "clock",
+    "mode",
+    "theme",
+    "audio",
+    "mic",
+    "battery",
+    "network",
+    "bluetooth",
+    "media",
+    "tray",
+    "weather",
+    "cpu",
+    "memory",
+    "dnd",
+    "indicators",
+    "tailscale",
+    "uptime",
+    "update",
+    "spectrum-mini",
+    "kbd",
+    "privacy",
+    "stat-cpu",
+    "stat-temp",
+    "stat-mem",
+    "stat-swap",
+    "stat-disk",
+    "stat-mounts",
+    "stat-gpu",
+    "stat-net",
+    "vu-out",
+    "vu-mic",
+    "vu-rail",
+    "mic-rail",
+    "audio-out-picker",
+    "audio-in-picker",
+    "spectrum-rail",
+    "spectrum-left",
+    "spectrum-right",
+    "oscilloscope",
+    "graph-cpu",
+    "graph-mem",
+    "graph-net",
+    "graph-disk",
+    "graph-gpu",
+    "batteries",
+    "menu",
+    "power-glyph",
+    "spacer",
+];
+
+/// Widgets that read horizontally and so never render on a vertical bar.
+const HORIZONTAL_ONLY: &[&str] = &["window", "media", "weather", "theme"];
+
+/// The four-bar table: every named widget must be one the shell's
+/// registry knows, and horizontal-only widgets may not appear on a
+/// vertical bar.
+fn check_bar_widgets(doc: &Value, report: &mut CheckReport) {
+    let Some(bars) = doc.get("bars").and_then(|b| b.as_object()) else {
+        return;
+    };
+    for (edge, bar) in bars {
+        let vertical = edge == "left" || edge == "right";
+        let layout = bar.get("layout").and_then(|l| l.as_object());
+        for section in ["start", "center", "end"] {
+            let names = layout
+                .and_then(|l| l.get(section))
+                .and_then(|w| w.as_array());
+            for w in names.into_iter().flatten() {
+                report.widgets += 1;
+                let name = w.as_str().unwrap_or("");
+                if !KNOWN_WIDGETS.contains(&name) {
+                    report.errors.push(format!(
+                        "bars.{edge}.layout.{section}: unknown widget '{name}'"
+                    ));
+                } else if vertical && HORIZONTAL_ONLY.contains(&name) {
+                    report.errors.push(format!(
+                        "bars.{edge}.layout.{section}: '{name}' is horizontal-only and cannot render on a vertical bar"
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// The launcher menu's commands. The shell runs every `action` and `when`
+/// through `sh -c`, detached, so a malformed one fails invisibly at click
+/// time; here it fails the check instead. Entries nest one level
+/// (`submenu`).
+fn check_menu_commands(doc: &Value, report: &mut CheckReport) {
+    let Some(menu) = doc.pointer("/launcher/menu").and_then(|m| m.as_array()) else {
+        return;
+    };
+    for (i, entry) in menu.iter().enumerate() {
+        let at = format!("launcher.menu.{}", menu_entry_id(entry, i));
+        check_menu_entry(&at, entry, report);
+        let submenu = entry.get("submenu").and_then(|s| s.as_array());
+        for (j, sub) in submenu.into_iter().flatten().enumerate() {
+            let sub_at = format!("{at}.submenu.{}", menu_entry_id(sub, j));
+            check_menu_entry(&sub_at, sub, report);
+        }
+    }
+}
+
+fn menu_entry_id(entry: &Value, index: usize) -> String {
+    entry
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("#{index}"))
+}
+
+fn check_menu_entry(at: &str, entry: &Value, report: &mut CheckReport) {
+    for field in ["action", "when"] {
+        match entry.get(field) {
+            None | Some(Value::Null) => {}
+            Some(Value::String(command)) => {
+                report.menu_commands += 1;
+                if let Some(problem) = shell_command_problem(command) {
+                    report.errors.push(format!("{at}.{field}: {problem}"));
+                }
+            }
+            Some(_) => report.errors.push(format!("{at}.{field}: not a string")),
+        }
+    }
+}
+
+/// Why `sh -c <command>` would certainly fail, if it would. Every command
+/// must be valid shell quoting; one whose program is `vogix` must also
+/// parse with this binary's own CLI. A command that uses shell syntax
+/// beyond quoting (operators, redirections, expansions) is checked for
+/// quoting only: its words are not a single argv.
+fn shell_command_problem(command: &str) -> Option<String> {
+    use clap::Parser;
+
+    let Some(words) = shlex::split(command) else {
+        return Some(format!("`{command}` has unbalanced shell quoting"));
+    };
+    let Some(program) = words.first() else {
+        return Some("empty command".to_string());
+    };
+    let runs_vogix = program == "vogix" || program.ends_with("/vogix");
+    let beyond_quoting = command.contains([';', '&', '|', '<', '>', '$', '`', '(', ')', '\n']);
+    if !runs_vogix || beyond_quoting {
+        return None;
+    }
+    match crate::cli::Cli::try_parse_from(&words) {
+        Ok(_) => None,
+        Err(e)
+            if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) =>
+        {
+            None
+        }
+        Err(e) => {
+            let rendered = e.to_string();
+            let reason = rendered
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .trim_start_matches("error: ");
+            Some(format!(
+                "`{command}` is not a valid vogix command: {reason}"
+            ))
+        }
     }
 }
 
@@ -734,6 +812,104 @@ fn reload() -> Result<()> {
                 debug!("desktop reload: qs ipc timed out — no responsive shell instance");
                 return Ok(());
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The default desktop.json as the home-manager module renders it; the
+    /// `desktop-options` flake check keeps this pin equal to the render.
+    const DEFAULT_DESKTOP_JSON: &str =
+        include_str!("../../nix/modules/desktop/desktop-json.pin.json");
+
+    fn default_doc() -> Value {
+        serde_json::from_str(DEFAULT_DESKTOP_JSON).expect("the pin is valid JSON")
+    }
+
+    fn menu_doc(action: &str) -> Value {
+        serde_json::json!({
+            "launcher": { "menu": [ { "id": "probe", "action": action, "when": null, "submenu": [] } ] }
+        })
+    }
+
+    #[test]
+    fn the_default_desktop_json_validates() {
+        let report = validate(&default_doc(), None);
+        assert!(report.errors.is_empty(), "{:#?}", report.errors);
+        assert!(report.widgets > 0 && report.tokens > 0);
+    }
+
+    #[test]
+    fn every_default_menu_command_parses_with_the_cli() {
+        let doc = default_doc();
+        let mut report = CheckReport::default();
+        check_menu_commands(&doc, &mut report);
+        assert!(report.errors.is_empty(), "{:#?}", report.errors);
+        // Every root entry carries an action, so each reached the parser:
+        // a pin that lost its menu cannot pass by having nothing to check.
+        let entries = doc["launcher"]["menu"].as_array().map_or(0, Vec::len);
+        assert!(entries > 0);
+        assert!(report.menu_commands >= entries);
+    }
+
+    #[test]
+    fn a_positional_remind_delay_fails_the_check() {
+        let mut report = CheckReport::default();
+        check_menu_commands(
+            &menu_doc("vogix desktop remind add 'Reminder' 10m"),
+            &mut report,
+        );
+        assert_eq!(report.errors.len(), 1, "{:#?}", report.errors);
+        assert!(report.errors[0].starts_with("launcher.menu.probe.action:"));
+
+        let mut report = CheckReport::default();
+        check_menu_commands(
+            &menu_doc("vogix desktop remind add 'Reminder' --in 10m"),
+            &mut report,
+        );
+        assert!(report.errors.is_empty(), "{:#?}", report.errors);
+    }
+
+    #[test]
+    fn menu_commands_are_checked_in_submenus_and_guards() {
+        let doc = serde_json::json!({
+            "launcher": { "menu": [ {
+                "id": "outer",
+                "action": null,
+                "when": "vogix desktop no-such-verb",
+                "submenu": [ { "id": "inner", "action": "vogix theme set --bogus", "when": null } ]
+            } ] }
+        });
+        let mut report = CheckReport::default();
+        check_menu_commands(&doc, &mut report);
+        assert_eq!(report.menu_commands, 2);
+        assert_eq!(report.errors.len(), 2, "{:#?}", report.errors);
+        assert!(report.errors[0].starts_with("launcher.menu.outer.when:"));
+        assert!(report.errors[1].starts_with("launcher.menu.outer.submenu.inner.action:"));
+    }
+
+    #[test]
+    fn broken_quoting_and_empty_commands_fail_whatever_they_run() {
+        for bad in ["notify-send 'unterminated", "   "] {
+            let mut report = CheckReport::default();
+            check_menu_commands(&menu_doc(bad), &mut report);
+            assert_eq!(report.errors.len(), 1, "{bad:?}: {:#?}", report.errors);
+        }
+    }
+
+    #[test]
+    fn foreign_and_compound_commands_are_not_argv_parsed() {
+        for ok in [
+            "notify-send hello --whatever",
+            "vogix desktop bogus && notify-send done",
+            "vogix desktop remind add \"$(date)\" --in 5m",
+        ] {
+            let mut report = CheckReport::default();
+            check_menu_commands(&menu_doc(ok), &mut report);
+            assert!(report.errors.is_empty(), "{ok:?}: {:#?}", report.errors);
         }
     }
 }

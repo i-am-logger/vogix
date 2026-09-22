@@ -31,6 +31,9 @@ tera = "1.20"
 # System utilities
 dirs = "5.0"
 glob = "0.3"
+# POSIX word splitting: `desktop check` parses the shell commands desktop.json
+# carries the way `sh -c` will
+shlex = "1.3"
 
 # Error handling
 thiserror = "2.0"

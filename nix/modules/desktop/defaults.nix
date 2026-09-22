@@ -169,7 +169,7 @@ _:
     # host configuration. Hosts append or replace via desktop.launcher.menu.
     menu = [
       { id = "keybindings"; icon = "󰌌"; label = "Keybindings"; action = "vogix input keys"; }
-      { id = "remind"; icon = "󰀠"; label = "Remind me in 10m…"; action = "vogix desktop remind add 'Reminder' 10m"; }
+      { id = "remind"; icon = "󰀠"; label = "Remind me in 10m…"; action = "vogix desktop remind add 'Reminder' --in 10m"; }
       { id = "theme"; icon = "󰏘"; label = "Theme…"; action = "vogix desktop launcher --mode theme"; }
       { id = "background"; icon = "󰸉"; label = "Next background"; action = "vogix desktop background next"; }
       { id = "dnd"; icon = "󰂛"; label = "Do not disturb"; action = "vogix desktop notify dnd toggle"; }

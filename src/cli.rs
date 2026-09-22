@@ -178,10 +178,12 @@ pub enum DesktopCommands {
     /// shell instance (TTY, tests, shell disabled) this exits 0 quietly — it
     /// runs on every theme switch and must never fail one
     Reload,
-    /// Validate desktop.json against the praxis surface ontology: every
-    /// token's slot is one of the 16 semantic keys, every alpha in [0,1],
-    /// and (when a theme is active) every slot resolves in its palette —
-    /// to desktop.json what `vogix input check` is to input.json
+    /// Validate desktop.json: every surface token's slot is one of the 16
+    /// praxis semantic keys (resolving in the palette when a theme is
+    /// active) with alpha in [0,1], every bar widget is one the shell knows,
+    /// and every launcher menu command is valid shell quoting — parsing as a
+    /// vogix command when it runs vogix. To desktop.json what `vogix input
+    /// check` is to input.json
     Check {
         /// Path to desktop.json (defaults to ~/.local/state/vogix/desktop.json)
         #[arg(long)]
@@ -362,9 +364,9 @@ pub enum RemindCommands {
     Add {
         /// What to be reminded of
         text: String,
-        /// Delay, e.g. 10m, 1h30m, 45s
-        #[arg(long = "in", value_name = "DURATION")]
-        delay: String,
+        /// Delay, e.g. 10m, 1h30m, 45s (a bare number is minutes)
+        #[arg(long = "in", value_name = "DURATION", value_parser = parse_duration_ms)]
+        delay_ms: u64,
     },
     /// List pending reminders
     List,
@@ -420,6 +422,50 @@ pub enum BarCommands {
 
 /// The bar edges the shell knows, plus "all".
 pub const BAR_EDGES: [&str; 5] = ["top", "bottom", "left", "right", "all"];
+
+/// "10m", "1h30m", "45s", "2d" → milliseconds; a bare number is minutes.
+/// The `--in` value parser, so a malformed delay is a parse error like any
+/// other bad argument.
+pub fn parse_duration_ms(spec: &str) -> Result<u64, String> {
+    let mut total: u64 = 0;
+    let mut digits = String::new();
+    for c in spec.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+            continue;
+        }
+        let n: u64 = digits
+            .parse()
+            .map_err(|_| format!("bad duration '{spec}' (use e.g. 10m, 1h30m, 45s)"))?;
+        digits.clear();
+        let unit_ms: u64 = match c {
+            's' => 1000,
+            'm' => 60 * 1000,
+            'h' => 60 * 60 * 1000,
+            'd' => 24 * 60 * 60 * 1000,
+            _ => return Err(format!("bad duration unit '{c}' in '{spec}' (s, m, h, d)")),
+        };
+        total = n
+            .checked_mul(unit_ms)
+            .and_then(|ms| total.checked_add(ms))
+            .ok_or_else(|| format!("duration '{spec}' is too long"))?;
+    }
+    if !digits.is_empty() {
+        let n: u64 = digits
+            .parse()
+            .map_err(|_| format!("bad duration '{spec}'"))?;
+        total = n
+            .checked_mul(60 * 1000)
+            .and_then(|ms| total.checked_add(ms))
+            .ok_or_else(|| format!("duration '{spec}' is too long"))?;
+    }
+    if total == 0 {
+        return Err(format!(
+            "duration '{spec}' is zero (use e.g. 10m, 1h30m, 45s)"
+        ));
+    }
+    Ok(total)
+}
 
 #[derive(Subcommand)]
 pub enum ModesCommands {
@@ -793,5 +839,47 @@ mod tests {
         assert!(Cli::try_parse_from(["vogix", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "theme", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "session", "invalid"]).is_err());
+    }
+
+    // ── Reminder delays ──
+
+    #[test]
+    fn test_parse_duration_ms() {
+        assert_eq!(parse_duration_ms("45s"), Ok(45_000));
+        assert_eq!(parse_duration_ms("10m"), Ok(600_000));
+        assert_eq!(parse_duration_ms("1h30m"), Ok(5_400_000));
+        assert_eq!(parse_duration_ms("2d"), Ok(172_800_000));
+        assert_eq!(parse_duration_ms("5"), Ok(300_000));
+        assert!(parse_duration_ms("").is_err());
+        assert!(parse_duration_ms("0m").is_err());
+        assert!(parse_duration_ms("10x").is_err());
+        assert!(parse_duration_ms("m").is_err());
+        assert!(parse_duration_ms("99999999999999999999d").is_err());
+        assert!(parse_duration_ms("999999999999999d").is_err());
+    }
+
+    #[test]
+    fn test_remind_add_takes_the_delay_as_a_flag() {
+        let cli =
+            Cli::try_parse_from(["vogix", "desktop", "remind", "add", "Tea", "--in", "1h30m"])
+                .unwrap();
+        let Commands::Desktop {
+            command:
+                DesktopCommands::Remind {
+                    command: RemindCommands::Add { text, delay_ms },
+                },
+        } = cli.command
+        else {
+            panic!("expected desktop remind add");
+        };
+        assert_eq!(text, "Tea");
+        assert_eq!(delay_ms, 5_400_000);
+
+        // The delay is a flag, never a second positional.
+        assert!(Cli::try_parse_from(["vogix", "desktop", "remind", "add", "Tea", "10m"]).is_err());
+        assert!(
+            Cli::try_parse_from(["vogix", "desktop", "remind", "add", "Tea", "--in", "10x"])
+                .is_err()
+        );
     }
 }

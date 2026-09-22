@@ -2195,6 +2195,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
+ "shlex",
  "swayipc",
  "tempfile",
  "tera",

@@ -135,7 +135,7 @@
         "when": null
       },
       {
-        "action": "vogix desktop remind add 'Reminder' 10m",
+        "action": "vogix desktop remind add 'Reminder' --in 10m",
         "icon": "󰀠",
         "id": "remind",
         "label": "Remind me in 10m…",
