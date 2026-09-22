@@ -184,7 +184,8 @@ pub enum DesktopCommands {
     /// or a defined custom cell, every custom cell is well-formed, and every
     /// launcher menu and custom cell command is valid shell quoting —
     /// parsing as a vogix command when it runs vogix. To desktop.json what
-    /// `vogix input check` is to input.json
+    /// `vogix input check` is to input.json; home-manager runs it on the
+    /// desktop.json it builds
     Check {
         /// Path to desktop.json (defaults to ~/.local/state/vogix/desktop.json)
         #[arg(long)]

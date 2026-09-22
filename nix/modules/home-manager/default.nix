@@ -319,7 +319,21 @@ in
           idle = { inherit (cfg.desktop.idle) screensaver dim lock screenOff suspend; };
           surfaces = mergedSurfaces;
         };
-        desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;
+        # The document as generated, and the copy home-manager links once
+        # `vogix desktop check` has passed it, so a desktop.json the check
+        # rejects fails the build before any shell loads it. The reload
+        # trigger names the generated text, whose store path moves only
+        # with its content (the checked copy's also moves with the vogix
+        # package). A cross build cannot run the target's vogix and links
+        # the document unchecked.
+        desktopJsonText = pkgs.writeText "vogix-desktop.json" desktopJson;
+        desktopJsonFile =
+          if pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform then
+            pkgs.runCommand "vogix-desktop.json" { } ''
+              HOME=$TMPDIR ${cfg.package}/bin/vogix desktop check --config ${desktopJsonText}
+              cp ${desktopJsonText} $out
+            ''
+          else desktopJsonText;
 
         # The programs the shell spawns BY NAME, each gated on the surface
         # that uses it. They ride the unit's PATH rather than the user's
@@ -422,7 +436,7 @@ in
             # shell re-reads both contract files, MainPID unchanged. The
             # store-symlink swap is invisible to file watchers, which is
             # also why the watcher is disabled outright below.
-            X-Reload-Triggers = [ "${desktopJsonFile}" ];
+            X-Reload-Triggers = [ "${desktopJsonText}" ];
             # A QML change is a new process, not a reload — the engine never
             # re-reads loaded components. Without this, a rebuild that only
             # touches the QML package leaves the OLD shell running.

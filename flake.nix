@@ -399,6 +399,12 @@
                 bars.right.layout.end = [ "custom/updates" ];
               }).config.home.file.".local/state/vogix/desktop.json".source;
               customRejected = desktop: !(builtins.tryEval (customConf desktop).config.home.username).success;
+              # `vogix desktop check` runs while desktop.json builds (the
+              # default one above included): a document it rejects, here a
+              # menu command the CLI cannot parse, fails that build.
+              uncheckable = pkgs.testers.testBuildFailure (customConf {
+                launcher.menu = [{ id = "probe"; label = "Probe"; action = "vogix desktop remind add 'Reminder' 10m"; }];
+              }).config.home.file.".local/state/vogix/desktop.json".source;
               customGuarded =
                 customRejected { bars.top.layout.end = [ "custom/nope" ]; }
                 && customRejected { custom."a/b".command = "date"; };
@@ -440,6 +446,8 @@
                   title: "updates", command: "checkupdates | wc -l", output: "text",
                   interval: 3600, watch: [], stream: false, onClick: null, widest: null
                 } and .bars.right.layout.end == ["custom/updates"]' ${customRendered}
+              grep -F "launcher.menu.probe.action: \`vogix desktop remind add 'Reminder' 10m\` is not a valid vogix command" \
+                ${uncheckable}/testBuildFailure.log
               touch $out
             '';
 

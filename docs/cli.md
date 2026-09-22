@@ -167,7 +167,8 @@ vogix desktop status                     # is a shell instance running (and the 
 vogix desktop meters                     # what the HUD samples now: spectrum/scope taps, VU monitors, stat samplers
 vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
 vogix desktop check                      # validate desktop.json: schema 2; slots ∈ the 16 praxis keys, resolvable in the live palette;
-                                         # bar widgets in the shell's registry, custom cells; menu and custom commands parse
+                                         # bar widgets in the shell's registry, custom cells; menu and custom commands parse;
+                                         # home-manager runs it on the desktop.json it builds, failing that build
 vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
 vogix desktop bar show|hide|toggle       # the bar surface
 vogix desktop notify dismiss [--all]     # the notification surface
