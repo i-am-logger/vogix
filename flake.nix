@@ -797,6 +797,7 @@
               {
                 nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell hyprctlFixture ];
                 qml = qsPkgs.vogix-desktop-qml;
+                geometryProbe = ./nix/checks/desktop-geometry-probe.qml;
                 inherit themeJson desktopJson schema1Json;
                 passAsFile = [ "themeJson" "desktopJson" "schema1Json" ];
               } ''
@@ -809,6 +810,12 @@
               cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
               cp $desktopJsonPath $XDG_STATE_HOME/vogix/desktop.json
               sed -i "s|@RT@|$XDG_RUNTIME_DIR|g" $XDG_STATE_HOME/vogix/desktop.json
+
+              # The geometry probe replaces shell.qml in a copy of the tree,
+              # so `qs.` resolves to the shipped modules around it.
+              cp -r $qml $TMPDIR/probe
+              chmod -R u+w $TMPDIR/probe
+              cp $geometryProbe $TMPDIR/probe/shell.qml
 
               cat > inner.sh <<INNER
               #!${pkgs.runtimeShell}
@@ -884,6 +891,11 @@
               kill \$QSPID 2>/dev/null || true
               sleep 1
 
+              # Geometry run: the probe exits on its own with its verdict;
+              # the timeout only bounds a probe that never completes.
+              timeout 30 qs -p $TMPDIR/probe > $TMPDIR/qs-probe.log 2>&1
+              echo "PROBE-EXIT \$?" >> $TMPDIR/result
+
               # Rejection run: a schema-1 desktop.json is refused, loudly,
               # without taking the shell down.
               cp $schema1JsonPath $XDG_STATE_HOME/vogix/desktop.json
@@ -900,7 +912,12 @@
 
               echo "── result:"; cat $TMPDIR/result || true
               echo "── log tail:"; tail -5 $TMPDIR/qs.log || true
+              echo "── geometry:"; grep GEOMETRY $TMPDIR/qs-probe.log || true
               grep -q '^ALIVE$' $TMPDIR/result
+              # A canvas instrument must never lay out collapsed: the probe's
+              # verdict, and the oscilloscope's own measured size.
+              grep -q '^PROBE-EXIT 0$' $TMPDIR/result
+              grep -q 'GEOMETRY oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-probe.log
               test "$(grep -c '^top:shown bottom:shown left:shown right:shown$' $TMPDIR/result)" -ge 3
               grep -q 'left:hidden' $TMPDIR/result
               grep -q 'top:hidden bottom:hidden left:hidden right:hidden' $TMPDIR/result

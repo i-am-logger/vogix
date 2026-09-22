@@ -23,8 +23,10 @@ FrameCell {
     Canvas {
         id: trace
 
-        width: Metrics.body * 8 * parent.scopeScale
-        height: Metrics.body * 1.1 * parent.scopeScale
+        // By id, never `parent`: FrameCell's default property reparents
+        // the canvas into its inner slot, which has no scopeScale.
+        width: Metrics.body * 8 * root.scopeScale
+        height: Metrics.body * 1.1 * root.scopeScale
 
         Connections {
             target: Waveform
