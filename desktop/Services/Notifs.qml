@@ -15,8 +15,9 @@ import qs.Vogix
 Singleton {
     id: root
 
-    // [{ key, appName, summary, body, urgency, accent, timeout, live }]
-    // `live` indexes into liveRefs (server objects are not serializable).
+    // [{ key, appName, summary, body, urgency, accent, timeout, at, live }]
+    // `at` is the arrival time (epoch ms); `live` indexes into liveRefs
+    // (server objects are not serializable).
     property var popups: []
     property var liveRefs: ({})
     property bool dnd: false
@@ -108,11 +109,13 @@ Singleton {
     }
 
     // ── persistence ──
+    // Every field but the live server object survives a restart — `at`
+    // included, so a restored card still stamps when it ARRIVED.
     function save() {
         stateFile.setText(JSON.stringify(root.popups.map(p => ({
             key: p.key, appName: p.appName, summary: p.summary,
             body: p.body, urgency: p.urgency, accent: p.accent,
-            timeout: p.timeout, live: false
+            timeout: p.timeout, at: p.at, live: false
         }))));
     }
 

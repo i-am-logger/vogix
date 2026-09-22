@@ -103,8 +103,13 @@ PanelWindow {
                                 elide: Text.ElideRight
                             }
 
+                            // Arrival time; a card restored from a state
+                            // file that never recorded one says so rather
+                            // than stamping the restore.
                             Text {
-                                text: Qt.formatTime(new Date(card.modelData.at ?? Date.now()), "HH:mm:ss")
+                                text: typeof card.modelData.at === "number"
+                                    ? Qt.formatTime(new Date(card.modelData.at), "HH:mm:ss")
+                                    : "--:--:--"
                                 color: Tokens.color("notification", "muted")
                                 font.family: Config.fontFamily
                                 font.pixelSize: Metrics.micro
