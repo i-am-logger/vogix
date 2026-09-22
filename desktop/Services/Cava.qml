@@ -29,12 +29,9 @@ Singleton {
     readonly property bool active: (spectrumConf.enable ?? true) && refs > 0
 
     // 0..1 per bar, length == bars*2 (the raw mirrored stereo array);
-    // zero-filled while inactive.
+    // zero-filled while inactive. SpectrumWidget derives its per-channel
+    // views from this.
     property list<real> values: []
-
-    // Per-channel views, low→high frequency order.
-    readonly property var leftValues: values.slice(0, values.length >> 1).reverse()
-    readonly property var rightValues: values.slice(values.length >> 1)
 
     // VU BALLISTICS, taken verbatim from Peaks: instant attack, bar release
     // 3.0 FS/s, cap holds 0.53 s then falls 0.75 FS/s (the 4:1 bar/cap ratio).
