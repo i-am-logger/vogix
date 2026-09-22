@@ -1,6 +1,9 @@
 # Vogix CLI Tool
 
-The Vogix CLI is the primary user interface for managing themes in the Vogix system.
+The `vogix` command switches themes, runs the input engine, and drives the
+desktop shell. Every `vogix …` example on this page parses with the CLI it
+describes, and every command has at least one example: a unit test
+(`src/cli.rs`) checks both, so this page cannot fall behind the binary.
 
 ## Commands
 
@@ -55,6 +58,16 @@ Reapply the current theme (re-render templates and trigger reloads) without chan
 
 ```bash
 vogix theme refresh
+vogix theme refresh -q       # errors only
+```
+
+### Undo and Redo
+
+Step back and forth through the theme history:
+
+```bash
+vogix theme undo             # restore the selection before the last change
+vogix theme redo             # re-apply the change undo stepped back from
 ```
 
 ### Listing
@@ -78,8 +91,9 @@ vogix theme list -s base16
 # gruvbox
 # nord
 # ...
-#
-# Pass --variants to append per-theme variant lists:
+
+# Append per-theme variant lists
+vogix theme list -s base16 --variants
 #   catppuccin [latte(light), frappe(dark), macchiato(dark), mocha(dark)]
 ```
 
@@ -113,7 +127,8 @@ Beyond `theme`, the CLI exposes several top-level subcommands.
 
 ### Shader
 
-Toggle and tune the monochromatic screen shader (see [Shader](shader.md)):
+Toggle and tune the monochromatic screen shader (a Hyprland screen shader
+derived from the current theme's palette):
 
 ```bash
 vogix shader on            # apply the current theme's monochromatic tint
@@ -131,7 +146,8 @@ vogix shader on -i 0.5 -b 1.2 -s 1.0
 
 ### Input
 
-Drive the ontology-driven input/keybinding engine (see [Input Engine](input.md)):
+Drive the ontology-driven input/keybinding engine (see
+[the input engine](architecture.md#7-input-engine)):
 
 ```bash
 vogix input check            # validate the input schema's mode graph + engine invariants
@@ -142,6 +158,7 @@ vogix input keys             # show the resolved schema's keybindings (via $LAUN
 vogix input keys --print     # print the help text to stdout instead
 
 # check / run / keys accept --config <path> to override ~/.local/state/vogix/input.json
+vogix input check --config ./input.json
 ```
 
 ### Session
@@ -149,9 +166,11 @@ vogix input keys --print     # print the help text to stdout instead
 Save and restore desktop sessions (window layouts):
 
 ```bash
-vogix session save [name]            # save the current session (default name: "last")
-vogix session restore [name]         # restore a named session
-vogix session restore --json <path>  # restore from a JSON file instead of a named session
+vogix session save                   # save the current session as "last"
+vogix session save work              # …or under a name
+vogix session restore                # restore "last"
+vogix session restore work           # restore a named session
+vogix session restore --json ./session.json   # restore from a JSON file instead of a named session
 vogix session restore --dry-run      # validate and print the session without launching apps
 vogix session list                   # list saved sessions
 vogix session undo                   # undo the last window change (restore from autosave stack)
@@ -159,40 +178,195 @@ vogix session undo                   # undo the last window change (restore from
 
 ### Desktop
 
-The vogix desktop shell's verbs — the v1→v2 contract (the quickshell
-transport behind them is an implementation detail):
+These verbs drive the vogix desktop shell.
+Keybindings, the root menu, custom cells and scripts call them rather than the
+shell's own transport (`qs ipc`). Without a running shell most verbs print
+`no responsive shell instance` (a few stay silent) and exit 0; `lock`,
+`power lock`, `select` and `input` exit non-zero instead, because a lock that
+did not lock or a picker that never opened must not pass for success.
+
+#### The shell and its configuration
 
 ```bash
-vogix desktop status                     # is a shell instance running (and the bar state)
-vogix desktop meters                     # what the HUD samples now: spectrum/scope taps, VU monitors, stat samplers
-vogix desktop stats                      # the stat cells' readings as JSON (null while a stat is not sampled)
-vogix desktop privacy                    # mic:on|off screencast:on|off, as the PRIVACY cell shows them
-vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
-vogix desktop check                      # validate desktop.json: schema 2; slots ∈ the 16 praxis keys, resolvable in the live palette;
-                                         # bar widgets in the shell's registry, custom cells; menu and custom commands parse;
-                                         # home-manager runs it on the desktop.json it builds, failing that build
-vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
-vogix desktop bar show|hide|toggle       # the bar surface
-vogix desktop bar geometry               # where each placed widget sits: screen, edge, name, x y width height
-vogix desktop notify dismiss [--all]     # the notification surface
-vogix desktop notify dnd on|off|toggle|status
-vogix desktop notify history [-n N]      # recent notifications (works without a shell)
-vogix desktop lock [--wait-secure SECS]  # engage the session lock (fails LOUDLY)
+vogix desktop status                     # "shell: running" plus the bar line, or "shell: not running"
+vogix desktop reload                     # re-read theme.json, desktop.json and backgrounds.json (exits 0 with no shell)
+vogix desktop check                      # validate ~/.local/state/vogix/desktop.json
+vogix desktop check --config ./desktop.json
+vogix desktop restart                    # restart vogix-desktop.service (REFUSED while the session is locked)
+```
+
+`reload` runs on every theme switch, so it never fails one. `check` is to
+desktop.json what `vogix input check` is to input.json, and home-manager runs
+it on the desktop.json it builds, so a document it rejects fails that build.
+It fails on:
+
+- a `schema` other than 2
+- a surface token whose slot is not one of the 16 semantic keys, whose alpha
+  is outside [0,1], or whose slot the current theme does not resolve
+- a bar widget missing from the shell's widget registry
+  (`desktop/Bar/widgets/registry.json`), a `custom/<name>` for a cell
+  `custom` does not define, or a horizontal-only widget (window, media,
+  weather, theme) on the left or right bar
+- a malformed custom cell
+- a launcher-menu `action`/`when` or a custom `command`/`onClick` with broken
+  shell quoting, or one that runs `vogix` with arguments this CLI rejects
+
+#### Bars
+
+```bash
+vogix desktop bar status                 # top:shown bottom:shown left:hidden right:off
+vogix desktop bar hide left              # park one bar: top, bottom, left, right or all (the default)
+vogix desktop bar show                   # slide every bar back
+vogix desktop bar toggle right
+vogix desktop bar toggle                 # all bars, following the top bar's state
+vogix desktop bar geometry               # one line per placed widget: DP-1 top clock 3712 26 112 48
+```
+
+A hidden bar is parked off-screen, not unmapped: it slides back in about
+20 ms, and its widgets stay loaded, but nothing they sample runs while it is
+away. `off` is an edge desktop.json disables. `show`, `hide` and `toggle`
+print the resulting status line. `geometry` prints, for each placed widget,
+its screen, bar edge and name, then `x y width height` on that screen in
+logical pixels as when its bar is shown — a rectangle `grim -g` or a click can
+aim at.
+
+#### HUD state
+
+```bash
+vogix desktop meters                     # spectrum:idle scope:idle vu-out:idle vu-mic:on stats:cpu,memory,net,...
+vogix desktop keyboard                   # device:vogix-input layouts:us,il active:us caps:off
+vogix desktop stats                      # {"cpu":0.12,"memory":0.41,"swap":null,"gpu":null,...}
+vogix desktop privacy                    # mic:off screencast:off
+```
+
+`meters` reports each data source the HUD can run. The spectrum and scope taps
+are `off` (no visible widget), `idle` (nothing playing), `waiting` (for
+PipeWire or a default sink), `running`, `retrying` (after an exit) or
+`parked` (after repeated failures). The VU monitors are `off`, `idle` or `on`.
+`stats` lists the running samplers (cpu, memory, net, disk, gpu, uptime, temp,
+fans, mounts), or `none`.
+
+`keyboard` is what the LANG cell shows: the keyboard it follows (the input
+engine's `vogix-input` device, else Hyprland's main keyboard), that keyboard's
+layouts, the active one, and CapsLock as `on`, `off` or `unknown` (no input
+engine running, or no grabbed keyboard with a CapsLock LED).
+
+`stats` prints the readings behind the stat cells as one JSON object: `cpu`,
+`memory`, `swap` and `gpu` as fractions (0..1), `cpuTempC`, and `fanRpm` per
+fan, each `null` (or empty) while its stat is not sampled or has no sample
+yet; `mounts` (the df capacity per watched mount), `gauges` (the mounts the
+mounts cell shows), `rootInMemory` (a tmpfs or ramfs root, which gets no
+gauge), `gaugeDevice` (the kernel device behind each gauge) and `hasGpu`.
+
+`privacy` is what the PRIVACY cell shows: `mic:on` while another program
+captures a microphone (the shell's own audio taps never count), and
+`screencast:on` while a screen capture session runs.
+
+#### Notifications
+
+```bash
+vogix desktop notify dismiss             # the newest popup
+vogix desktop notify dismiss --all
+vogix desktop notify dnd toggle          # prints "dnd: on" or "dnd: off"
+vogix desktop notify dnd on              # critical and rule-exempt popups still show
+vogix desktop notify dnd off
+vogix desktop notify dnd status          # answered from the saved state when no shell runs
+vogix desktop notify history             # the last 20, newest last, read from disk (no shell needed)
+vogix desktop notify history -n 50
+```
+
+#### Lock and power
+
+```bash
+vogix desktop lock                       # engage the session lock; fails LOUDLY when it cannot
+vogix desktop lock --wait-secure 4       # and fail unless the compositor reports every output covered within 4 s
 vogix desktop lock status                # unlocked | locked | secure
-vogix desktop background set|next|clear|status   # the wallpaper layer
-vogix desktop osd volume --value 40      # flash the on-screen display
-vogix desktop launcher [--mode M]        # the launcher overlay (apps files calc emoji ssh clipboard theme background)
-vogix desktop menu [--summon ID]         # the root menu from desktop.json
-vogix desktop power [ACTION]             # the power menu; lock|logout|suspend|reboot|poweroff run directly
-vogix desktop panel [NAME|--close]      # bar panels: audio network bluetooth power monitor tailscale calendar weather
-vogix desktop nightlight on|off|toggle|status   # hyprsunset night light
-vogix desktop stay-awake on|off|toggle|status   # hold every idle stage open
-vogix desktop remind add "text" --in 10m        # timed reminder (list|clear too)
-vogix desktop custom refresh|status NAME        # a custom cell (desktop.custom.NAME, placed as custom/NAME)
-vogix desktop keyboard                   # the LANG cell's view: keyboard, layouts, active layout, CapsLock
-vogix desktop gallery [--close]          # the token/surface dev gallery
-vogix desktop select [-p PROMPT]         # dmenu mode: items on stdin, choice on stdout (exit 1 on cancel)
-vogix desktop input [-p PROMPT]          # dmenu mode: free-text entry
+vogix desktop power                      # toggle the power menu
+vogix desktop power lock                 # the same loud lock as `desktop lock`
+vogix desktop power logout               # end the Hyprland session
+vogix desktop power suspend              # systemctl suspend (through sleep.target, so the lock engages first)
+vogix desktop power reboot               # systemctl reboot
+vogix desktop power poweroff             # systemctl poweroff
+```
+
+#### Panels, launcher and menus
+
+```bash
+vogix desktop panel audio-out            # toggle a panel; prints its name, or "closed"
+vogix desktop panel                      # the open panel, or "closed"
+vogix desktop panel --close
+vogix desktop launcher                   # the apps mode
+vogix desktop launcher --mode calc --query '2^10'
+vogix desktop menu                       # the root menu desktop.json defines
+vogix desktop menu --summon theme        # one entry by id: its submenu, or its action run directly
+vogix desktop gallery                    # the dev gallery: every surface's tokens as swatches
+vogix desktop gallery --close
+```
+
+Panels: `audio` (volume and mutes), `audio-out` and `audio-in` (the device
+lists), `network`, `bluetooth`, `power` (battery and power profile),
+`monitor` (brightness and displays), `tailscale`, `calendar`, `weather` and
+`agents` (Claude Code usage). A panel a bar widget opens sits beside that
+bar; one opened by this verb sits under the top bar's end on the focused
+monitor.
+
+Launcher modes: `apps`, `files`, `calc`, `emoji`, `ssh`, `clipboard`, `theme`
+and `background`, each one switched by `programs.vogix.desktop.launcher.modes`.
+
+#### Wallpaper, OSD and switches
+
+```bash
+vogix desktop background status          # what the wallpaper shows: "<kind> <path>", or "none"
+vogix desktop background next            # the next background in the theme's set (clears an override)
+vogix desktop background set ~/Pictures/dunes.jpg   # override with an image file (kept across restarts)
+vogix desktop background clear           # drop the override: back to the theme's first background
+vogix desktop osd volume --value 40      # flash the on-screen display: a label and a 40% gauge
+vogix desktop osd mic --muted            # the muted style, no gauge
+vogix desktop osd caps --message 'CAPS ON'   # free text instead of the derived label
+vogix desktop nightlight toggle          # hyprsunset at desktop.nightlight.temperature
+vogix desktop nightlight on
+vogix desktop nightlight off
+vogix desktop nightlight status
+vogix desktop stay-awake toggle          # hold every idle stage open (screensaver, dim, lock, screen-off, suspend)
+vogix desktop stay-awake on
+vogix desktop stay-awake off
+vogix desktop stay-awake status
+```
+
+#### Reminders and custom cells
+
+```bash
+vogix desktop remind add 'Stretch' --in 10m   # also 45s, 1h30m, 2d; a bare number is minutes
+vogix desktop remind list
+vogix desktop remind clear
+vogix desktop custom status updates      # what custom/updates shows: its value, "failed: …", "pending" or "inactive"
+vogix desktop custom refresh updates     # run the cell's command now, or once its bar is back on screen
+```
+
+Reminders fire through the shell's own notification server and survive a
+shell restart. A custom cell is one `programs.vogix.desktop.custom.<name>`
+entry; `custom` exits non-zero for a name desktop.json does not define. Its
+command runs only while a bar showing the cell is on screen, so a `refresh`
+while every such bar is parked answers
+`queued: custom/<name> runs once its bar is on screen`, and one for a cell no
+bar places answers `inactive: no bar shows custom/<name>`.
+
+#### dmenu mode
+
+```bash
+vogix desktop select -p 'Pick one' < choices.txt   # items on stdin; the chosen line on stdout, exit 1 on cancel
+vogix desktop input -p 'Name'            # free text on stdout, exit 1 on cancel
+```
+
+### Hyprland IPC
+
+Talk to Hyprland in whichever config dialect it runs (see
+[Hyprland IPC under the two config engines](hyprland-lua-ipc.md)), so a bound
+command does not hardcode `hyprctl dispatch`/`keyword` legacy syntax:
+
+```bash
+vogix hypr dispatch 'movefocus, l'       # a dispatcher in the legacy action form, translated for the Lua engine
+vogix hypr keyword general:gaps_out 5 general:gaps_in 6   # KEY VALUE pairs, written in one atomic request
 ```
 
 ### Greeter
@@ -208,10 +382,12 @@ vogix greeter sync   # copy the live theme into /var/lib/vogix/greeter (the SDDM
 Switch the active desktop mode, and inspect submap-mode telemetry captured by the daemon:
 
 ```bash
-vogix mode <target>          # switch desktop mode (normal, focus, gaming, presentation, ...)
-vogix modes recent           # show the most recent transitions from modes.log (-n to set count)
+vogix mode gaming            # switch desktop mode (normal, focus, gaming, presentation, ...)
+vogix modes recent           # the most recent transitions from modes.log
+vogix modes recent -n 50
 vogix modes stats            # per-mode dwell-time histogram across the whole log
-vogix modes confusion        # re-entries within a short window (-t <ms> threshold)
+vogix modes confusion        # re-entries within a short window (1000 ms)
+vogix modes confusion -t 500
 ```
 
 ### Daemon & Cache
@@ -257,6 +433,11 @@ programs.vogix = {
 | `~/.local/state/vogix/state.toml` | User state (current theme selection) |
 | `~/.local/state/vogix/current-theme` | Symlink to active theme directory |
 | `~/.local/share/vogix/themes/` | All available theme packages |
+| `~/.local/state/vogix/input.json` | The input engine's schema (home-manager) |
+| `~/.local/state/vogix/current-mode`, `input-locks.json`, `input-health.json` | Published by the running input engine |
+| `~/.local/state/vogix/desktop.json` | The desktop shell's configuration (home-manager) |
+| `~/.config/vogix-desktop/theme.json` | The current theme's colors for the desktop shell, through `current-theme` |
+| `~/.local/state/vogix/desktop/` | The desktop shell's own state: notifications and their history, do-not-disturb, reminders, stay-awake, night light, the background override, the weather cache |
 
 ## System Integration
 

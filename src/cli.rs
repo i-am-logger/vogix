@@ -274,8 +274,8 @@ pub enum DesktopCommands {
         prompt: Option<String>,
     },
     /// Toggle a bar panel popup (audio, audio-out, audio-in, network,
-    /// bluetooth, power, monitor, tailscale, calendar, weather); no name
-    /// prints which one is open
+    /// bluetooth, power, monitor, tailscale, calendar, weather, agents); no
+    /// name prints which one is open
     Panel {
         /// Panel to toggle
         name: Option<String>,
@@ -986,5 +986,123 @@ mod tests {
             Cli::try_parse_from(["vogix", "desktop", "remind", "add", "Tea", "--in", "10x"])
                 .is_err()
         );
+    }
+
+    // ── docs/cli.md is the reference for this parser ──
+
+    const CLI_MD: &str = include_str!("../docs/cli.md");
+
+    /// The argv of every `vogix …` example in docs/cli.md's code blocks:
+    /// the trailing `# comment` dropped, and cut where a shell operator
+    /// (a redirection, a pipe, a command separator) ends the command.
+    fn doc_examples() -> Vec<Vec<String>> {
+        let mut examples = Vec::new();
+        let mut in_code = false;
+        for line in CLI_MD.lines() {
+            if line.trim_start().starts_with("```") {
+                in_code = !in_code;
+                continue;
+            }
+            let code = line.split(" #").next().unwrap_or_default().trim();
+            if !in_code || !code.starts_with("vogix ") {
+                continue;
+            }
+            let words = shlex::split(code)
+                .unwrap_or_else(|| panic!("docs/cli.md: unbalanced quoting in `{code}`"));
+            examples.push(
+                words
+                    .into_iter()
+                    .take_while(|w| !matches!(w.as_str(), "<" | ">" | ">>" | "|" | "&&" | ";"))
+                    .collect(),
+            );
+        }
+        examples
+    }
+
+    /// Every runnable command path: each leaf subcommand, plus each
+    /// command that also runs with its subcommand left out.
+    fn command_paths(cmd: &clap::Command, prefix: &mut Vec<String>, out: &mut Vec<String>) {
+        let subs: Vec<&clap::Command> = cmd
+            .get_subcommands()
+            .filter(|s| s.get_name() != "help")
+            .collect();
+        if (subs.is_empty() || !cmd.is_subcommand_required_set()) && !prefix.is_empty() {
+            out.push(prefix.join(" "));
+        }
+        for sub in subs {
+            prefix.push(sub.get_name().to_string());
+            command_paths(sub, prefix, out);
+            prefix.pop();
+        }
+    }
+
+    #[test]
+    fn every_cli_doc_example_parses() {
+        let examples = doc_examples();
+        assert!(examples.len() > 50, "docs/cli.md lost its examples");
+        for argv in &examples {
+            if let Err(e) = Cli::try_parse_from(argv) {
+                panic!("docs/cli.md: `{}` does not parse:\n{e}", argv.join(" "));
+            }
+        }
+    }
+
+    #[test]
+    fn every_command_has_a_doc_example() {
+        use clap::CommandFactory;
+
+        let examples = doc_examples();
+        let mut paths = Vec::new();
+        command_paths(&Cli::command(), &mut Vec::new(), &mut paths);
+        assert!(paths.iter().any(|p| p == "desktop bar status"));
+        let missing: Vec<&String> = paths
+            .iter()
+            .filter(|path| {
+                let want: Vec<&str> = path.split(' ').collect();
+                !examples
+                    .iter()
+                    .any(|argv| argv.len() > want.len() && argv[1..=want.len()] == want[..])
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "docs/cli.md has no example for: {missing:?}"
+        );
+    }
+
+    /// The panel verb's help names exactly the panels the shell knows
+    /// (desktop/Services/Panels.qml `known`).
+    #[test]
+    fn the_panel_help_names_every_panel_the_shell_knows() {
+        use clap::CommandFactory;
+
+        const PANELS_QML: &str = include_str!("../desktop/Services/Panels.qml");
+        let list = PANELS_QML
+            .split("property list<string> known: [")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .expect("Panels.qml declares its known panels");
+        let mut known: Vec<&str> = list
+            .split(',')
+            .map(|name| name.trim().trim_matches('"'))
+            .filter(|name| !name.is_empty())
+            .collect();
+        known.sort_unstable();
+
+        let cli = Cli::command();
+        let about = cli
+            .find_subcommand("desktop")
+            .and_then(|d| d.find_subcommand("panel"))
+            .and_then(|p| p.get_about())
+            .expect("the panel verb has help text")
+            .to_string();
+        let named = about
+            .split_once('(')
+            .and_then(|(_, rest)| rest.split_once(')'))
+            .map(|(names, _)| names)
+            .expect("the panel help lists its panels in parentheses");
+        let mut named: Vec<&str> = named.split(',').map(str::trim).collect();
+        named.sort_unstable();
+        assert_eq!(named, known);
     }
 }
