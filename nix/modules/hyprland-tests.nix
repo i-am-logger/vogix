@@ -209,7 +209,41 @@ let
         behaviorLua.settings.bind))
   ];
 
-  allTests = tests ++ propertyTests ++ luaTests;
+  # ── Keyboard layout: kb_layout / kb_options ── the layout list and the xkb
+  # options that carry the layout switch (grp:alt_caps_toggle = Alt+CapsLock;
+  # no compositor bind exists for it) render in BOTH projections — the shipped
+  # defaults, a caller's values, and an explicitly cleared kbOptions alike.
+  kbCustom = { input = { kbLayout = "de,fr"; kbOptions = "grp:win_space_toggle"; }; };
+  kbCleared = { input.kbOptions = ""; };
+  hyprKbCustom = (behaviorModule.mkHyprlandConfig kbCustom).settings.input;
+  luaKbCustom = (behaviorModule.mkHyprlandLuaConfig kbCustom).settings.config.input;
+  hyprKbCleared = (behaviorModule.mkHyprlandConfig kbCleared).settings.input;
+  luaKbCleared = (behaviorModule.mkHyprlandLuaConfig kbCleared).settings.config.input;
+
+  kbTests = [
+    (assertEq "K1: hyprlang kb_layout is the default layout list" "us,il" merged.input.kb_layout)
+    (assertEq "K1: hyprlang kb_options carries the Alt+CapsLock switch" "grp:alt_caps_toggle"
+      merged.input.kb_options)
+    (assertEq "K1: Lua kb_layout is the default layout list" "us,il" mergedLuaConfig.input.kb_layout)
+    (assertEq "K1: Lua kb_options carries the Alt+CapsLock switch" "grp:alt_caps_toggle"
+      mergedLuaConfig.input.kb_options)
+
+    (assertEq "K2: hyprlang kb_layout follows input.kbLayout" "de,fr" hyprKbCustom.kb_layout)
+    (assertEq "K2: hyprlang kb_options follows input.kbOptions" "grp:win_space_toggle"
+      hyprKbCustom.kb_options)
+    (assertEq "K2: Lua kb_layout follows input.kbLayout" "de,fr" luaKbCustom.kb_layout)
+    (assertEq "K2: Lua kb_options follows input.kbOptions" "grp:win_space_toggle"
+      luaKbCustom.kb_options)
+
+    # An empty kbOptions is a value, not "unset": it must clear the default
+    # switch rather than fall back to it, and leave the layouts alone.
+    (assertEq "K3: hyprlang kb_options cleared by an empty input.kbOptions" "" hyprKbCleared.kb_options)
+    (assertEq "K3: Lua kb_options cleared by an empty input.kbOptions" "" luaKbCleared.kb_options)
+    (assertEq "K3: hyprlang kb_layout unaffected by clearing kbOptions" "us,il" hyprKbCleared.kb_layout)
+    (assertEq "K3: Lua kb_layout unaffected by clearing kbOptions" "us,il" luaKbCleared.kb_layout)
+  ];
+
+  allTests = tests ++ propertyTests ++ luaTests ++ kbTests;
   # FORCE every assertion: a failing check/assertEq THROWS, so deepSeq makes the
   # eval fail loudly. (The old `map (t: t)` + `length` only counted unforced
   # thunks — it never actually evaluated an assertion, so it always "passed".)
