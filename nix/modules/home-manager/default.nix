@@ -356,7 +356,8 @@ in
       in
       {
         # Some widgets read horizontally (a window title, the media
-        # transport row): fail the build rather than render them sideways. A
+        # transport row; the registry marks them): fail the build rather
+        # than render them sideways. A
         # `custom/<name>` placement must name a defined custom cell, and a
         # cell's name must stay one path segment of that placement.
         assertions =
@@ -373,7 +374,7 @@ in
           (map
             (edge:
               let
-                horizontalOnly = [ "window" "media" "weather" "theme" ];
+                inherit (import ../desktop/registry.nix) horizontalOnly;
                 bad = lib.intersectLists horizontalOnly (barWidgets edge);
               in
               {

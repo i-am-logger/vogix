@@ -402,6 +402,13 @@
               customGuarded =
                 customRejected { bars.top.layout.end = [ "custom/nope" ]; }
                 && customRejected { custom."a/b".command = "date"; };
+              # A layout name is typed by the shell's widget registry: every
+              # registry name evaluates, a name outside it does not.
+              registryTyped =
+                (builtins.tryEval (customConf {
+                  bars.top.layout.center = (import ./nix/modules/desktop/registry.nix).names;
+                }).config.home.username).success
+                && customRejected { bars.top.layout.end = [ "clokc" ]; };
               unit = hmConf.config.systemd.user.services.vogix-desktop;
               # Exit status 75 is the shell's fresh-start request
               # (desktop/Services/NetworkBackend.qml); the unit must answer
@@ -417,6 +424,7 @@
             in
             assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
             assert customGuarded || throw "an undefined custom/<name> placement or a bad custom cell name did not trip its assertion";
+            assert registryTyped || throw "the bar layout options do not take exactly the shell's widget registry names";
             assert restartsOn75 || throw "vogix-desktop.service does not restart the shell on exit status 75";
             assert waitsForPipewire || throw "vogix-desktop.service lost its PipeWire ordering or QS_PIPEWIRE_IMMEDIATE_RECONNECT";
             assert sparseLogs || throw "vogix-desktop.service runs quickshell with detailed logs by default";

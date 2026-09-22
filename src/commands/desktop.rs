@@ -273,64 +273,37 @@ fn check_surfaces(doc: &Value, semantic: Option<&Value>, report: &mut CheckRepor
     }
 }
 
-/// The contract widget names: Section.qml's registry, entry for entry.
-const KNOWN_WIDGETS: &[&str] = &[
-    "workspaces",
-    "window",
-    "clock",
-    "mode",
-    "theme",
-    "audio",
-    "mic",
-    "battery",
-    "network",
-    "bluetooth",
-    "media",
-    "tray",
-    "weather",
-    "cpu",
-    "memory",
-    "dnd",
-    "indicators",
-    "tailscale",
-    "tailscale-glyph",
-    "uptime",
-    "update",
-    "spectrum-mini",
-    "kbd",
-    "privacy",
-    "stat-cpu",
-    "stat-temp",
-    "stat-fans",
-    "stat-mem",
-    "stat-swap",
-    "stat-disk",
-    "stat-mounts",
-    "stat-gpu",
-    "stat-net",
-    "vu-out",
-    "vu-mic",
-    "vu-rail",
-    "mic-rail",
-    "audio-out-picker",
-    "audio-in-picker",
-    "spectrum-rail",
-    "spectrum-left",
-    "spectrum-right",
-    "oscilloscope",
-    "graph-cpu",
-    "graph-mem",
-    "graph-net",
-    "graph-disk",
-    "graph-gpu",
-    "batteries",
-    "menu",
-    "power-glyph",
-    "spacer",
-];
+/// The shell's bar widget registry (desktop/Bar/widgets/registry.json), the
+/// same file Section.qml resolves names through and the Nix layout options
+/// take their name type from: compiled in, so this check always agrees
+/// with the shell it ships beside.
+const WIDGET_REGISTRY_JSON: &str = include_str!("../../desktop/Bar/widgets/registry.json");
 
-/// Widgets that read horizontally and so never render on a vertical bar.
-const HORIZONTAL_ONLY: &[&str] = &["window", "media", "weather", "theme"];
+#[derive(Debug, serde::Deserialize)]
+struct WidgetRegistry {
+    widgets: std::collections::BTreeMap<String, RegisteredWidget>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegisteredWidget {
+    /// The component in desktop/Bar/widgets that renders the name (the
+    /// registry tests hold it to an existing file; the check itself needs
+    /// only the name and the flag).
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by the registry tests"))]
+    component: String,
+    /// Reads only horizontally, so never renders on a vertical bar.
+    #[serde(default)]
+    horizontal_only: bool,
+}
+
+fn widget_registry() -> &'static WidgetRegistry {
+    static REGISTRY: std::sync::LazyLock<WidgetRegistry> = std::sync::LazyLock::new(|| {
+        serde_json::from_str(WIDGET_REGISTRY_JSON)
+            .expect("desktop/Bar/widgets/registry.json is compiled in and pinned by a test")
+    });
+    &REGISTRY
+}
 
 /// A bar places the custom cell `<name>` as `custom/<name>`.
 const CUSTOM_PREFIX: &str = "custom/";
@@ -444,14 +417,16 @@ fn check_bar_widgets(doc: &Value, report: &mut CheckReport) {
                             "bars.{edge}.layout.{section}: '{name}' names no cell under `custom`"
                         ));
                     }
-                } else if !KNOWN_WIDGETS.contains(&name) {
-                    report.errors.push(format!(
-                        "bars.{edge}.layout.{section}: unknown widget '{name}'"
-                    ));
-                } else if vertical && HORIZONTAL_ONLY.contains(&name) {
-                    report.errors.push(format!(
-                        "bars.{edge}.layout.{section}: '{name}' is horizontal-only and cannot render on a vertical bar"
-                    ));
+                } else {
+                    match widget_registry().widgets.get(name) {
+                        None => report.errors.push(format!(
+                            "bars.{edge}.layout.{section}: unknown widget '{name}'"
+                        )),
+                        Some(w) if vertical && w.horizontal_only => report.errors.push(format!(
+                            "bars.{edge}.layout.{section}: '{name}' is horizontal-only and cannot render on a vertical bar"
+                        )),
+                        Some(_) => {}
+                    }
                 }
             }
         }
@@ -1071,13 +1046,63 @@ mod tests {
         assert!(report.errors[0].starts_with("custom.a/b:"));
     }
 
-    /// The shell's registry (Section.qml) routes the same prefix this check
-    /// accepts to the custom cell.
+    const SECTION_QML: &str = include_str!("../../desktop/Bar/Section.qml");
+
+    /// The shell's Section routes the same prefix this check accepts to the
+    /// custom cell.
     #[test]
-    fn the_section_registry_places_custom_cells() {
-        const SECTION_QML: &str = include_str!("../../desktop/Bar/Section.qml");
-        assert!(SECTION_QML.contains(&format!("modelData.startsWith(\"{CUSTOM_PREFIX}\")")));
+    fn the_section_places_custom_cells() {
+        assert!(SECTION_QML.contains(&format!(".startsWith(\"{CUSTOM_PREFIX}\")")));
+        assert!(SECTION_QML.contains(&format!(".slice({})", CUSTOM_PREFIX.len())));
         assert!(SECTION_QML.contains("widgets/CustomCell.qml"));
+    }
+
+    /// Every registry entry names a component that exists, and the flag is
+    /// spelled the way the registry's readers look it up (an unknown field
+    /// fails the parse, so a misspelt flag cannot read as false).
+    #[test]
+    fn the_widget_registry_names_existing_components() {
+        let registry = widget_registry();
+        assert!(!registry.widgets.is_empty());
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("desktop/Bar/widgets");
+        for (name, w) in &registry.widgets {
+            let file = dir.join(format!("{}.qml", w.component));
+            assert!(file.is_file(), "{name}: {} does not exist", file.display());
+        }
+        assert!(registry.widgets["window"].horizontal_only);
+        assert!(!registry.widgets["clock"].horizontal_only);
+    }
+
+    /// Section.qml resolves every name through the registry rather than a
+    /// list of its own, so the shell cannot drift from this check.
+    #[test]
+    fn the_section_resolves_names_through_the_registry() {
+        const REGISTRY_QML: &str = include_str!("../../desktop/Services/WidgetRegistry.qml");
+        assert!(REGISTRY_QML.contains("Qt.resolvedUrl(\"../Bar/widgets/registry.json\")"));
+        assert!(SECTION_QML.contains("WidgetRegistry.widgets[name]"));
+        assert!(SECTION_QML.contains("entry.horizontalOnly"));
+        assert!(
+            !SECTION_QML.contains("case \""),
+            "Section.qml carries its own widget names again"
+        );
+    }
+
+    #[test]
+    fn unknown_and_misplaced_widgets_fail_the_check() {
+        let doc = |edge: &str, name: &str| {
+            serde_json::json!({
+                "schema": 2,
+                "bars": { edge: { "enable": true, "size": 32,
+                    "layout": { "start": [name], "center": [], "end": [] } } }
+            })
+        };
+        assert!(validate(&doc("top", "window"), None).errors.is_empty());
+        assert!(validate(&doc("left", "clock"), None).errors.is_empty());
+        let unknown = validate(&doc("top", "clokc"), None).errors;
+        assert_eq!(unknown, ["bars.top.layout.start: unknown widget 'clokc'"]);
+        let misplaced = validate(&doc("right", "window"), None).errors;
+        assert_eq!(misplaced.len(), 1, "{misplaced:#?}");
+        assert!(misplaced[0].contains("'window' is horizontal-only"));
     }
 
     #[test]

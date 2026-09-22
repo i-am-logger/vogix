@@ -26,5 +26,6 @@ singleton Reminders 1.0 Reminders.qml
 singleton Panels 1.0 Panels.qml
 singleton Brightness 1.0 Brightness.qml
 singleton Custom 1.0 Custom.qml
+singleton WidgetRegistry 1.0 WidgetRegistry.qml
 CustomRunner 1.0 CustomRunner.qml
 AudioTap 1.0 AudioTap.qml

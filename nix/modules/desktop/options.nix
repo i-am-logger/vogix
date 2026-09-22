@@ -32,7 +32,10 @@ let
     };
   });
 
-  widgetNames = types.listOf types.str;
+  # A layout entry: a name from the shell's widget registry, or
+  # `custom/<name>` for a custom cell.
+  registry = import ./registry.nix;
+  widgetNames = types.listOf (types.either (types.enum registry.names) (types.strMatching registry.customPattern));
 
   # A launcher menu entry. `action` is a shell command; `submenu` nests one
   # level; `when` guards visibility (entry shown
@@ -207,10 +210,11 @@ in
         # One bar per screen edge, each on every monitor. `size` is the
         # thickness: height for top/bottom, width for left/right. Sections
         # are start/center/end along the bar's axis (start = left on a
-        # horizontal bar, top on a vertical one). Some widgets are
-        # horizontal-only (window, media, weather, theme) — an assertion in
-        # the home-manager module rejects them on left/right. `custom/<name>`
-        # places a `custom` cell.
+        # horizontal bar, top on a vertical one). The names a section takes
+        # are the shell's widget registry (desktop/Bar/widgets/
+        # registry.json); the ones it marks horizontal-only are rejected
+        # on left/right by an assertion in the home-manager module.
+        # `custom/<name>` places a `custom` cell.
         bars = lib.genAttrs barEdges (edge: {
           enable = mkOption {
             type = types.bool;
