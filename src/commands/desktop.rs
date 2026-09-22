@@ -17,117 +17,161 @@ use serde_json::Value;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// One call on the shell's IPC surface: `qs -c vogix ipc call TARGET
+/// FUNCTION ARGS…`. Every verb reaches the shell through these, so what a
+/// verb asks of the shell is plain data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IpcCall {
+    target: &'static str,
+    function: &'static str,
+    args: Vec<String>,
+}
+
+impl IpcCall {
+    fn new(target: &'static str, function: &'static str) -> Self {
+        Self {
+            target,
+            function,
+            args: Vec::new(),
+        }
+    }
+
+    fn arg(mut self, value: impl Into<String>) -> Self {
+        self.args.push(value.into());
+        self
+    }
+}
+
+/// The shell instance the verbs talk to.
+trait Shell {
+    /// The instance's trimmed reply to `call`, or None when no responsive
+    /// instance answered.
+    fn call(&mut self, call: &IpcCall) -> Option<String>;
+}
+
+/// The running quickshell instance of the `vogix` config, over `qs ipc`.
+struct Quickshell;
+
+impl Shell for Quickshell {
+    fn call(&mut self, call: &IpcCall) -> Option<String> {
+        qs_ipc(call)
+    }
+}
+
 pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
+    run(command, &mut Quickshell)
+}
+
+fn run(command: &DesktopCommands, shell: &mut dyn Shell) -> Result<()> {
     match command {
-        DesktopCommands::Reload => reload(),
+        DesktopCommands::Reload => reload(shell),
         DesktopCommands::Check { config } => check(config.as_deref()),
-        DesktopCommands::Status => status(),
-        DesktopCommands::Meters => meters(),
-        DesktopCommands::Stats => relay_status("stats"),
-        DesktopCommands::Privacy => relay_status("privacy"),
-        DesktopCommands::Bar { command } => bar(command),
-        DesktopCommands::Notify { command } => notify(command),
+        DesktopCommands::Status => status(shell),
+        DesktopCommands::Meters => print_reply(shell, &IpcCall::new("meters", "status")),
+        DesktopCommands::Stats => print_reply(shell, &IpcCall::new("stats", "status")),
+        DesktopCommands::Privacy => print_reply(shell, &IpcCall::new("privacy", "status")),
+        DesktopCommands::Bar { command } => bar(shell, command),
+        DesktopCommands::Notify { command } => notify(shell, command),
         DesktopCommands::Lock {
             wait_secure,
             command,
         } => match command {
-            Some(LockCommands::Status) => lock_status(),
-            None => lock(*wait_secure),
+            Some(LockCommands::Status) => lock_status(shell),
+            None => lock(shell, *wait_secure),
         },
-        DesktopCommands::Restart => restart(),
-        DesktopCommands::Background { command } => background(command),
+        DesktopCommands::Restart => restart(shell),
+        DesktopCommands::Background { command } => background(shell, command),
         DesktopCommands::Osd {
             kind,
             value,
             muted,
             message,
-        } => osd(kind, *value, *muted, message.as_deref()),
-        DesktopCommands::Launcher { mode, query } => launcher(
-            mode.as_deref().unwrap_or(""),
-            query.as_deref().unwrap_or(""),
+        } => osd(shell, kind, *value, *muted, message.as_deref()),
+        DesktopCommands::Launcher { mode, query } => print_reply(
+            shell,
+            &IpcCall::new("launcher", "open")
+                .arg(mode.as_deref().unwrap_or(""))
+                .arg(query.as_deref().unwrap_or("")),
         ),
-        DesktopCommands::Menu { summon } => menu(summon.as_deref().unwrap_or("")),
-        DesktopCommands::Power { action } => power(action.as_ref()),
-        DesktopCommands::Select { prompt } => select(prompt.as_deref().unwrap_or(""), false),
-        DesktopCommands::Input { prompt } => select(prompt.as_deref().unwrap_or(""), true),
-        DesktopCommands::Panel { name, close } => panel(name.as_deref(), *close),
-        DesktopCommands::Nightlight { state } => switch("nightlight", state),
-        DesktopCommands::StayAwake { state } => switch("stayawake", state),
-        DesktopCommands::Remind { command } => remind(command),
-        DesktopCommands::Custom { command } => custom(command),
-        DesktopCommands::Keyboard => {
-            match qs_ipc(&["keyboard", "status"]) {
-                Some(r) => println!("{r}"),
-                None => println!("no responsive shell instance"),
-            }
-            Ok(())
+        DesktopCommands::Menu { summon } => print_reply(
+            shell,
+            &IpcCall::new("launcher", "menu").arg(summon.as_deref().unwrap_or("")),
+        ),
+        DesktopCommands::Power { action } => power(shell, action.as_ref()),
+        DesktopCommands::Select { prompt } => select(shell, prompt.as_deref().unwrap_or(""), false),
+        DesktopCommands::Input { prompt } => select(shell, prompt.as_deref().unwrap_or(""), true),
+        DesktopCommands::Panel { name, close } => {
+            print_reply(shell, &panel_call(name.as_deref(), *close))
         }
-        DesktopCommands::Gallery { close } => {
-            match qs_ipc(&["gallery", if *close { "close" } else { "open" }]) {
-                Some(r) => println!("{r}"),
-                None => println!("no responsive shell instance"),
-            }
-            Ok(())
+        DesktopCommands::Nightlight { state } => {
+            print_reply(shell, &switch_call("nightlight", state))
         }
+        DesktopCommands::StayAwake { state } => {
+            print_reply(shell, &switch_call("stayawake", state))
+        }
+        DesktopCommands::Remind { command } => print_reply(shell, &remind_call(command, now_ms())),
+        DesktopCommands::Custom { command } => custom(shell, command),
+        DesktopCommands::Keyboard => print_reply(shell, &IpcCall::new("keyboard", "status")),
+        DesktopCommands::Gallery { close } => print_reply(
+            shell,
+            &IpcCall::new("gallery", if *close { "close" } else { "open" }),
+        ),
     }
 }
 
-fn panel(name: Option<&str>, close: bool) -> Result<()> {
-    let reply = if close {
-        qs_ipc(&["panel", "close"])
-    } else {
-        match name {
-            Some(n) => qs_ipc(&["panel", "toggle", n]),
-            None => qs_ipc(&["panel", "status"]),
-        }
-    };
-    match reply {
+/// Relay one call and print the shell's reply.
+fn print_reply(shell: &mut dyn Shell, call: &IpcCall) -> Result<()> {
+    match shell.call(call) {
         Some(r) => println!("{r}"),
         None => println!("no responsive shell instance"),
     }
     Ok(())
 }
 
-fn switch(target: &str, state: &SwitchCommands) -> Result<()> {
-    let verb = match state {
-        SwitchCommands::On => "on",
-        SwitchCommands::Off => "off",
-        SwitchCommands::Toggle => "toggle",
-        SwitchCommands::Status => "status",
-    };
-    match qs_ipc(&[target, verb]) {
-        Some(r) => println!("{r}"),
-        None => println!("no responsive shell instance"),
-    }
-    Ok(())
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
-fn remind(command: &RemindCommands) -> Result<()> {
-    let reply = match command {
-        RemindCommands::Add { text, delay_ms } => {
-            let at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0)
-                .saturating_add(*delay_ms);
-            qs_ipc(&["reminders", "add", text, &at.to_string()])
-        }
-        RemindCommands::List => qs_ipc(&["reminders", "list"]),
-        RemindCommands::Clear => qs_ipc(&["reminders", "clear"]),
-    };
-    match reply {
-        Some(r) => println!("{r}"),
-        None => println!("no responsive shell instance"),
+fn panel_call(name: Option<&str>, close: bool) -> IpcCall {
+    match (close, name) {
+        (true, _) => IpcCall::new("panel", "close"),
+        (false, Some(n)) => IpcCall::new("panel", "toggle").arg(n),
+        (false, None) => IpcCall::new("panel", "status"),
     }
-    Ok(())
 }
 
-fn custom(command: &CustomCommands) -> Result<()> {
-    let reply = match command {
-        CustomCommands::Refresh { name } => qs_ipc(&["custom", "refresh", name]),
-        CustomCommands::Status { name } => qs_ipc(&["custom", "status", name]),
+fn switch_call(target: &'static str, state: &SwitchCommands) -> IpcCall {
+    IpcCall::new(
+        target,
+        match state {
+            SwitchCommands::On => "on",
+            SwitchCommands::Off => "off",
+            SwitchCommands::Toggle => "toggle",
+            SwitchCommands::Status => "status",
+        },
+    )
+}
+
+/// A reminder is handed to the shell as the wall-clock ms it fires at.
+fn remind_call(command: &RemindCommands, now_ms: u64) -> IpcCall {
+    match command {
+        RemindCommands::Add { text, delay_ms } => IpcCall::new("reminders", "add")
+            .arg(text)
+            .arg(now_ms.saturating_add(*delay_ms).to_string()),
+        RemindCommands::List => IpcCall::new("reminders", "list"),
+        RemindCommands::Clear => IpcCall::new("reminders", "clear"),
+    }
+}
+
+fn custom(shell: &mut dyn Shell, command: &CustomCommands) -> Result<()> {
+    let call = match command {
+        CustomCommands::Refresh { name } => IpcCall::new("custom", "refresh").arg(name),
+        CustomCommands::Status { name } => IpcCall::new("custom", "status").arg(name),
     };
-    match reply {
+    match shell.call(&call) {
         // A name desktop.json does not define is the caller's error.
         Some(r) if r.starts_with("unknown custom cell") => Err(VogixError::Config(r)),
         Some(r) => {
@@ -520,34 +564,14 @@ fn shell_command_problem(command: &str) -> Option<String> {
     }
 }
 
-fn launcher(mode: &str, query: &str) -> Result<()> {
-    match qs_ipc(&["launcher", "open", mode, query]) {
-        Some(r) => println!("{r}"),
-        None => println!("no responsive shell instance"),
-    }
-    Ok(())
-}
-
-fn menu(summon: &str) -> Result<()> {
-    match qs_ipc(&["launcher", "menu", summon]) {
-        Some(r) => println!("{r}"),
-        None => println!("no responsive shell instance"),
-    }
-    Ok(())
-}
-
 /// With no action: toggle the shell's power menu. With one: run it directly —
 /// systemd verbs work without a shell, `lock` keeps its loud-failure path.
-fn power(action: Option<&PowerCommands>) -> Result<()> {
+fn power(shell: &mut dyn Shell, action: Option<&PowerCommands>) -> Result<()> {
     let Some(action) = action else {
-        match qs_ipc(&["power", "toggle"]) {
-            Some(r) => println!("{r}"),
-            None => println!("no responsive shell instance"),
-        }
-        return Ok(());
+        return print_reply(shell, &IpcCall::new("power", "toggle"));
     };
     match action {
-        PowerCommands::Lock => lock(None),
+        PowerCommands::Lock => lock(shell, None),
         PowerCommands::Logout => {
             crate::commands::hypr::handle_hypr(&crate::cli::HyprCommands::Dispatch {
                 action: "exit".to_string(),
@@ -573,11 +597,19 @@ fn power(action: Option<&PowerCommands>) -> Result<()> {
     }
 }
 
+/// The call that opens the picker for session `id`: a list of items, or a
+/// free-text field.
+fn picker_call(text_only: bool, id: &str, prompt: &str) -> IpcCall {
+    IpcCall::new("launcher", if text_only { "inputText" } else { "select" })
+        .arg(id)
+        .arg(prompt)
+}
+
 /// dmenu mode. Items come in on stdin (one per line; `input` takes none),
 /// go to the shell through a session file, and the choice comes back through
 /// a result file the shell writes on every exit path — pick, cancel, close.
 /// dmenu convention on cancel: exit 1, nothing on stdout.
-fn select(prompt: &str, text_only: bool) -> Result<()> {
+fn select(shell: &mut dyn Shell, prompt: &str, text_only: bool) -> Result<()> {
     use std::io::Read;
 
     let items: Vec<String> = if text_only {
@@ -596,14 +628,7 @@ fn select(prompt: &str, text_only: bool) -> Result<()> {
     let dir = crate::config::Config::state_dir().join("desktop");
     std::fs::create_dir_all(&dir)
         .map_err(|e| VogixError::Config(format!("cannot create {}: {e}", dir.display())))?;
-    let id = format!(
-        "{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
+    let id = format!("{}-{}", std::process::id(), now_ms());
     let items_path = dir.join(format!("select-{id}.json"));
     let result_path = dir.join(format!("select-{id}.result"));
     std::fs::write(
@@ -612,9 +637,7 @@ fn select(prompt: &str, text_only: bool) -> Result<()> {
     )
     .map_err(|e| VogixError::Config(format!("cannot write {}: {e}", items_path.display())))?;
 
-    let verb = if text_only { "inputText" } else { "select" };
-    let opened = qs_ipc(&["launcher", verb, &id, prompt]);
-    if opened.is_none() {
+    if shell.call(&picker_call(text_only, &id, prompt)).is_none() {
         let _ = std::fs::remove_file(&items_path);
         return Err(VogixError::Config(
             "cannot open the picker: no responsive vogix shell instance".to_string(),
@@ -655,8 +678,8 @@ fn select(prompt: &str, text_only: bool) -> Result<()> {
 /// Engage the session lock. Unlike every other desktop verb, failure here is
 /// LOUD: a `vogix desktop lock` (or $LOCKER, or the sleep hook) that quietly
 /// does nothing leaves an unattended, unlocked machine.
-fn lock(wait_secure: Option<f64>) -> Result<()> {
-    let reply = qs_ipc(&["lock", "lock"]).ok_or_else(|| {
+fn lock(shell: &mut dyn Shell, wait_secure: Option<f64>) -> Result<()> {
+    let reply = shell.call(&IpcCall::new("lock", "lock")).ok_or_else(|| {
         VogixError::Config("cannot lock: no responsive vogix shell instance".to_string())
     })?;
     if reply.starts_with("refused") {
@@ -665,7 +688,7 @@ fn lock(wait_secure: Option<f64>) -> Result<()> {
     if let Some(secs) = wait_secure {
         let deadline = Instant::now() + Duration::from_secs_f64(secs);
         loop {
-            match qs_ipc(&["lock", "status"]).as_deref() {
+            match shell.call(&IpcCall::new("lock", "status")).as_deref() {
                 Some("secure") => break,
                 _ if Instant::now() >= deadline => {
                     return Err(VogixError::Config(format!(
@@ -679,8 +702,8 @@ fn lock(wait_secure: Option<f64>) -> Result<()> {
     Ok(())
 }
 
-fn lock_status() -> Result<()> {
-    match qs_ipc(&["lock", "status"]) {
+fn lock_status(shell: &mut dyn Shell) -> Result<()> {
+    match shell.call(&IpcCall::new("lock", "status")) {
         Some(state) => println!("{state}"),
         None => println!("unlocked (no shell instance)"),
     }
@@ -690,8 +713,8 @@ fn lock_status() -> Result<()> {
 /// Restart the shell — refused while locked: the WlSessionLock lives in the
 /// shell process, so restarting it would drop the lock and expose the
 /// session.
-fn restart() -> Result<()> {
-    match qs_ipc(&["lock", "status"]).as_deref() {
+fn restart(shell: &mut dyn Shell) -> Result<()> {
+    match shell.call(&IpcCall::new("lock", "status")).as_deref() {
         Some("locked") | Some("secure") => Err(VogixError::Config(
             "refusing to restart the shell while the session is locked \
              (the lock lives in the shell; restarting would unlock the screen)"
@@ -714,46 +737,48 @@ fn restart() -> Result<()> {
     }
 }
 
-fn notify(command: &NotifyCommands) -> Result<()> {
+fn notify(shell: &mut dyn Shell, command: &NotifyCommands) -> Result<()> {
     match command {
         NotifyCommands::Dismiss { all } => {
             let verb = if *all { "dismissAll" } else { "dismiss" };
-            if qs_ipc(&["notify", verb]).is_none() {
+            if shell.call(&IpcCall::new("notify", verb)).is_none() {
                 debug!("desktop notify {verb}: no responsive shell instance");
             }
             Ok(())
         }
-        NotifyCommands::Dnd { state } => dnd(state),
+        NotifyCommands::Dnd { state } => dnd(shell, state),
         NotifyCommands::History { count } => history(*count),
     }
 }
 
-fn dnd(state: &DndCommands) -> Result<()> {
+fn dnd(shell: &mut dyn Shell, state: &DndCommands) -> Result<()> {
     match state {
         DndCommands::On => {
-            if qs_ipc(&["notify", "dndOn"]).is_none() {
+            if shell.call(&IpcCall::new("notify", "dndOn")).is_none() {
                 debug!("desktop notify dnd on: no responsive shell instance");
             }
         }
         DndCommands::Off => {
-            if qs_ipc(&["notify", "dndOff"]).is_none() {
+            if shell.call(&IpcCall::new("notify", "dndOff")).is_none() {
                 debug!("desktop notify dnd off: no responsive shell instance");
             }
         }
-        DndCommands::Toggle => match qs_ipc(&["notify", "dndToggle"]) {
+        DndCommands::Toggle => match shell.call(&IpcCall::new("notify", "dndToggle")) {
             Some(now) => println!("dnd: {now}"),
             None => debug!("desktop notify dnd toggle: no responsive shell instance"),
         },
         DndCommands::Status => {
             // Prefer the live shell; fall back to the state file it persists,
             // so a TTY can still answer.
-            let state = qs_ipc(&["notify", "dndStatus"]).unwrap_or_else(|| {
-                let path = crate::config::Config::state_dir().join("desktop/dnd.json");
-                match std::fs::read_to_string(path) {
-                    Ok(s) if s.contains("true") => "on".to_string(),
-                    _ => "off".to_string(),
-                }
-            });
+            let state = shell
+                .call(&IpcCall::new("notify", "dndStatus"))
+                .unwrap_or_else(|| {
+                    let path = crate::config::Config::state_dir().join("desktop/dnd.json");
+                    match std::fs::read_to_string(path) {
+                        Ok(s) if s.contains("true") => "on".to_string(),
+                        _ => "off".to_string(),
+                    }
+                });
             println!("dnd: {state}");
         }
     }
@@ -781,9 +806,9 @@ fn history(count: usize) -> Result<()> {
     Ok(())
 }
 
-fn background(command: &crate::cli::BackgroundCommands) -> Result<()> {
+fn background(shell: &mut dyn Shell, command: &crate::cli::BackgroundCommands) -> Result<()> {
     use crate::cli::BackgroundCommands as B;
-    let reply = match command {
+    let call = match command {
         B::Set { path } => {
             // The shell renders whatever it is handed; catch a missing file
             // here, where the caller can read the error.
@@ -796,39 +821,46 @@ fn background(command: &crate::cli::BackgroundCommands) -> Result<()> {
             let canonical = p
                 .canonicalize()
                 .map_err(|e| VogixError::Config(format!("cannot resolve {path}: {e}")))?;
-            qs_ipc(&["background", "set", &canonical.to_string_lossy()])
+            IpcCall::new("background", "set").arg(canonical.to_string_lossy())
         }
-        B::Next => qs_ipc(&["background", "next"]),
-        B::Clear => qs_ipc(&["background", "clear"]),
-        B::Status => qs_ipc(&["background", "status"]),
+        B::Next => IpcCall::new("background", "next"),
+        B::Clear => IpcCall::new("background", "clear"),
+        B::Status => IpcCall::new("background", "status"),
     };
-    match reply {
-        Some(r) => println!("{r}"),
-        None => println!("no responsive shell instance"),
-    }
-    Ok(())
+    print_reply(shell, &call)
 }
 
-fn osd(kind: &str, value: Option<u8>, muted: bool, message: Option<&str>) -> Result<()> {
+fn osd(
+    shell: &mut dyn Shell,
+    kind: &str,
+    value: Option<u8>,
+    muted: bool,
+    message: Option<&str>,
+) -> Result<()> {
     let value = value.map(|v| v.min(100) as i32).unwrap_or(-1).to_string();
-    let muted = if muted { "true" } else { "false" };
     // Transport function is `flash`: "show" is quickshell's own `ipc call
     // <target> show` introspection verb and never reaches a handler.
-    if qs_ipc(&["osd", "flash", kind, &value, muted, message.unwrap_or("")]).is_none() {
+    let call = IpcCall::new("osd", "flash")
+        .arg(kind)
+        .arg(value)
+        .arg(if muted { "true" } else { "false" })
+        .arg(message.unwrap_or(""));
+    if shell.call(&call).is_none() {
         debug!("desktop osd {kind}: no responsive shell instance");
     }
     Ok(())
 }
 
 /// Run one `qs ipc` call against the vogix shell instance, bounded. Returns
-/// the trimmed stdout, or None when no responsive instance exists. qs
-/// conflates its failures onto stdout with exit 0 ("Target not found.", "No
-/// running instances…", "Not ready to accept queries yet"), so those are
-/// normalized to None here rather than surfacing as shell replies.
-fn qs_ipc(args: &[&str]) -> Option<String> {
+/// the trimmed stdout, or None when no responsive instance exists — qs is
+/// not installed, no instance answers within 2 s, or qs reports a failure.
+/// qs conflates its failures onto stdout with exit 0 ("Target not found.",
+/// "No running instances…", "Not ready to accept queries yet"), so those
+/// are normalized to None here rather than surfacing as shell replies.
+fn qs_ipc(call: &IpcCall) -> Option<String> {
     let mut child = Command::new("qs")
-        .args(["-c", "vogix", "ipc", "call"])
-        .args(args)
+        .args(["-c", "vogix", "ipc", "call", call.target, call.function])
+        .args(&call.args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -859,94 +891,51 @@ fn qs_ipc(args: &[&str]) -> Option<String> {
 }
 
 /// Whether a shell instance is running, and the bar state if so.
-fn status() -> Result<()> {
-    match qs_ipc(&["bar", "status"]) {
+fn status(shell: &mut dyn Shell) -> Result<()> {
+    match shell.call(&IpcCall::new("bar", "status")) {
         Some(bar_state) => println!("shell: running\nbar: {bar_state}"),
         None => println!("shell: not running"),
     }
     Ok(())
 }
 
-/// What the HUD samples right now, as the shell reports it.
-fn meters() -> Result<()> {
-    match qs_ipc(&["meters", "status"]) {
-        Some(state) => println!("{state}"),
-        None => println!("no responsive shell instance"),
-    }
-    Ok(())
-}
-
-/// A read-only status verb: print what the shell's `<target> status` says.
-fn relay_status(target: &str) -> Result<()> {
-    match qs_ipc(&[target, "status"]) {
-        Some(state) => println!("{state}"),
-        None => println!("no responsive shell instance"),
-    }
-    Ok(())
-}
-
-fn bar(command: &BarCommands) -> Result<()> {
+fn bar(shell: &mut dyn Shell, command: &BarCommands) -> Result<()> {
     // Transport name is `unhide`: "show" is quickshell's own `ipc call
     // <target> show` introspection verb and never reaches a handler.
-    let (verb, edge) = match command {
-        BarCommands::Show { edge } => ("unhide", Some(edge.as_str())),
-        BarCommands::Hide { edge } => ("hide", Some(edge.as_str())),
-        BarCommands::Toggle { edge } => ("toggle", Some(edge.as_str())),
-        BarCommands::Status => ("status", None),
+    let call = match command {
+        BarCommands::Show { edge } => IpcCall::new("bar", "unhide").arg(edge),
+        BarCommands::Hide { edge } => IpcCall::new("bar", "hide").arg(edge),
+        BarCommands::Toggle { edge } => IpcCall::new("bar", "toggle").arg(edge),
+        BarCommands::Status => IpcCall::new("bar", "status"),
     };
-    let args: Vec<&str> = match edge {
-        Some(e) => vec!["bar", verb, e],
-        None => vec!["bar", verb],
-    };
-    match qs_ipc(&args) {
+    match shell.call(&call) {
         Some(out) => {
             if !out.is_empty() {
                 println!("{out}");
             }
         }
-        None => debug!("desktop bar {verb}: no responsive shell instance"),
+        None => debug!(
+            "desktop bar {}: no responsive shell instance",
+            call.function
+        ),
     }
     Ok(())
 }
 
-/// Ask the running shell to re-read `theme.json` (and, once it exists,
-/// `desktop.json`). The store-symlink swap a theme switch performs is
-/// invisible to Qt's file watcher, so the reload is an explicit verb wired as
-/// the app's `reload_command`.
+/// Ask the running shell to re-read `theme.json` and `desktop.json`. The
+/// store-symlink swap a theme switch performs is invisible to Qt's file
+/// watcher, so the reload is an explicit verb wired as the app's
+/// `reload_command`.
 ///
-/// No shell instance — a TTY session, tests, the shell not enabled — is
-/// SUCCESS by design: this runs on every theme switch for every desktop
-/// user, and a missing shell must never fail the switch. The wait is bounded
-/// so a wedged shell cannot hang the switch either.
-fn reload() -> Result<()> {
-    let Ok(mut child) = Command::new("qs")
-        .args(["-c", "vogix", "ipc", "call", "theme", "reload"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    else {
-        debug!("desktop reload: quickshell (qs) not present — nothing to reload");
-        return Ok(());
-    };
-
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                debug!("desktop reload: qs ipc exited with {status}");
-                return Ok(());
-            }
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                debug!("desktop reload: qs ipc timed out — no responsive shell instance");
-                return Ok(());
-            }
-        }
+/// No shell instance — a TTY session, tests, the shell not enabled, qs not
+/// installed — is SUCCESS by design: this runs on every theme switch for
+/// every desktop user, and a missing shell must never fail the switch. The
+/// call is bounded, so a wedged shell cannot hang the switch either.
+fn reload(shell: &mut dyn Shell) -> Result<()> {
+    if shell.call(&IpcCall::new("theme", "reload")).is_none() {
+        debug!("desktop reload: no responsive shell instance — nothing to reload");
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1202,6 +1191,372 @@ mod tests {
             let mut report = CheckReport::default();
             check_menu_commands(&menu_doc(ok), &mut report);
             assert!(report.errors.is_empty(), "{ok:?}: {:#?}", report.errors);
+        }
+    }
+
+    // ── The verbs' transport: what each `vogix desktop` verb asks of the
+    // shell, and that the shell (desktop/shell.qml) answers exactly that.
+
+    /// Records every call a verb makes and answers it from `answer`: the
+    /// verbs' own code, with the `qs` process replaced.
+    struct Recorder<F: FnMut(&IpcCall) -> Option<String>> {
+        calls: Vec<IpcCall>,
+        answer: F,
+    }
+
+    impl<F: FnMut(&IpcCall) -> Option<String>> Shell for Recorder<F> {
+        fn call(&mut self, call: &IpcCall) -> Option<String> {
+            self.calls.push(call.clone());
+            (self.answer)(call)
+        }
+    }
+
+    /// A shell that answers every call, reporting the lock SECURE (so
+    /// `lock --wait-secure` returns at once and `restart` is refused
+    /// before it could reach systemctl).
+    fn answer(call: &IpcCall) -> Option<String> {
+        Some(match (call.target, call.function) {
+            ("lock", "status") => "secure".to_string(),
+            _ => "ok".to_string(),
+        })
+    }
+
+    /// Parse `vogix desktop ARGV…` with the real CLI and run it against a
+    /// recording shell.
+    fn drive(
+        argv: &[&str],
+        answer: impl FnMut(&IpcCall) -> Option<String>,
+    ) -> (Result<()>, Vec<IpcCall>) {
+        use clap::Parser;
+        let full = ["vogix", "desktop"].iter().chain(argv).copied();
+        let cli = crate::cli::Cli::try_parse_from(full)
+            .unwrap_or_else(|e| panic!("vogix desktop {argv:?}: {e}"));
+        let crate::cli::Commands::Desktop { command } = cli.command else {
+            unreachable!("parsed as `vogix desktop`")
+        };
+        let mut shell = Recorder {
+            calls: Vec::new(),
+            answer,
+        };
+        let result = run(&command, &mut shell);
+        (result, shell.calls)
+    }
+
+    fn call(target: &'static str, function: &'static str, args: &[&str]) -> IpcCall {
+        args.iter()
+            .fold(IpcCall::new(target, function), |c, a| c.arg(*a))
+    }
+
+    /// Every verb that talks to the shell, and the calls it makes — the
+    /// transport names that differ from the verb included (bar show →
+    /// unhide, osd → flash, notify dismiss --all → dismissAll).
+    fn relayed_verbs() -> Vec<(Vec<&'static str>, Vec<IpcCall>)> {
+        vec![
+            (vec!["reload"], vec![call("theme", "reload", &[])]),
+            (vec!["status"], vec![call("bar", "status", &[])]),
+            (vec!["meters"], vec![call("meters", "status", &[])]),
+            (vec!["stats"], vec![call("stats", "status", &[])]),
+            (vec!["privacy"], vec![call("privacy", "status", &[])]),
+            (vec!["bar", "show"], vec![call("bar", "unhide", &["all"])]),
+            (
+                vec!["bar", "show", "top"],
+                vec![call("bar", "unhide", &["top"])],
+            ),
+            (
+                vec!["bar", "hide", "left"],
+                vec![call("bar", "hide", &["left"])],
+            ),
+            (vec!["bar", "toggle"], vec![call("bar", "toggle", &["all"])]),
+            (vec!["bar", "status"], vec![call("bar", "status", &[])]),
+            (
+                vec!["notify", "dismiss"],
+                vec![call("notify", "dismiss", &[])],
+            ),
+            (
+                vec!["notify", "dismiss", "--all"],
+                vec![call("notify", "dismissAll", &[])],
+            ),
+            (
+                vec!["notify", "dnd", "on"],
+                vec![call("notify", "dndOn", &[])],
+            ),
+            (
+                vec!["notify", "dnd", "off"],
+                vec![call("notify", "dndOff", &[])],
+            ),
+            (
+                vec!["notify", "dnd", "toggle"],
+                vec![call("notify", "dndToggle", &[])],
+            ),
+            (
+                vec!["notify", "dnd", "status"],
+                vec![call("notify", "dndStatus", &[])],
+            ),
+            (vec!["lock"], vec![call("lock", "lock", &[])]),
+            (
+                vec!["lock", "--wait-secure", "1"],
+                vec![call("lock", "lock", &[]), call("lock", "status", &[])],
+            ),
+            (vec!["lock", "status"], vec![call("lock", "status", &[])]),
+            (
+                vec!["background", "next"],
+                vec![call("background", "next", &[])],
+            ),
+            (
+                vec!["background", "clear"],
+                vec![call("background", "clear", &[])],
+            ),
+            (
+                vec!["background", "status"],
+                vec![call("background", "status", &[])],
+            ),
+            (
+                vec![
+                    "osd",
+                    "volume",
+                    "--value",
+                    "40",
+                    "--muted",
+                    "--message",
+                    "Speakers",
+                ],
+                vec![call("osd", "flash", &["volume", "40", "true", "Speakers"])],
+            ),
+            (
+                vec!["osd", "caps"],
+                vec![call("osd", "flash", &["caps", "-1", "false", ""])],
+            ),
+            (vec!["launcher"], vec![call("launcher", "open", &["", ""])]),
+            (
+                vec!["launcher", "--mode", "calc", "--query", "2+2"],
+                vec![call("launcher", "open", &["calc", "2+2"])],
+            ),
+            (vec!["menu"], vec![call("launcher", "menu", &[""])]),
+            (
+                vec!["menu", "--summon", "power"],
+                vec![call("launcher", "menu", &["power"])],
+            ),
+            (vec!["power"], vec![call("power", "toggle", &[])]),
+            (vec!["power", "lock"], vec![call("lock", "lock", &[])]),
+            (vec!["panel"], vec![call("panel", "status", &[])]),
+            (
+                vec!["panel", "calendar"],
+                vec![call("panel", "toggle", &["calendar"])],
+            ),
+            (vec!["panel", "--close"], vec![call("panel", "close", &[])]),
+            (
+                vec!["nightlight", "on"],
+                vec![call("nightlight", "on", &[])],
+            ),
+            (
+                vec!["nightlight", "off"],
+                vec![call("nightlight", "off", &[])],
+            ),
+            (
+                vec!["nightlight", "toggle"],
+                vec![call("nightlight", "toggle", &[])],
+            ),
+            (
+                vec!["nightlight", "status"],
+                vec![call("nightlight", "status", &[])],
+            ),
+            (vec!["stay-awake", "on"], vec![call("stayawake", "on", &[])]),
+            (
+                vec!["stay-awake", "toggle"],
+                vec![call("stayawake", "toggle", &[])],
+            ),
+            (vec!["remind", "list"], vec![call("reminders", "list", &[])]),
+            (
+                vec!["remind", "clear"],
+                vec![call("reminders", "clear", &[])],
+            ),
+            (
+                vec!["custom", "refresh", "updates"],
+                vec![call("custom", "refresh", &["updates"])],
+            ),
+            (
+                vec!["custom", "status", "updates"],
+                vec![call("custom", "status", &["updates"])],
+            ),
+            (vec!["keyboard"], vec![call("keyboard", "status", &[])]),
+            (vec!["gallery"], vec![call("gallery", "open", &[])]),
+            (
+                vec!["gallery", "--close"],
+                vec![call("gallery", "close", &[])],
+            ),
+        ]
+    }
+
+    #[test]
+    fn every_verb_makes_its_shell_calls() {
+        for (argv, want) in relayed_verbs() {
+            let (result, calls) = drive(&argv, answer);
+            assert!(result.is_ok(), "vogix desktop {argv:?}: {result:?}");
+            assert_eq!(calls, want, "vogix desktop {argv:?}");
+        }
+    }
+
+    /// `remind add` hands the shell the text and the wall-clock ms the
+    /// reminder fires at.
+    #[test]
+    fn remind_add_sends_its_firing_time() {
+        let before = now_ms();
+        let (result, calls) = drive(&["remind", "add", "Tea", "--in", "10m"], answer);
+        let after = now_ms();
+        assert!(result.is_ok());
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        let (target, function) = (calls[0].target, calls[0].function);
+        assert_eq!((target, function), ("reminders", "add"));
+        assert_eq!(calls[0].args[0], "Tea");
+        let at: u64 = calls[0].args[1].parse().expect("a ms timestamp");
+        assert!((before + 600_000..=after + 600_000).contains(&at), "{at}");
+    }
+
+    /// `background set` hands the shell the file's canonical path, and
+    /// refuses a file that does not exist without calling the shell.
+    #[test]
+    fn background_set_sends_the_canonical_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let image = dir.path().join("wall.png");
+        std::fs::write(&image, b"png").expect("write");
+        let spelled = dir.path().join(".").join("wall.png");
+        let (result, calls) = drive(&["background", "set", &spelled.to_string_lossy()], answer);
+        assert!(result.is_ok());
+        let canonical = image.canonicalize().expect("canonical");
+        assert_eq!(
+            calls,
+            [call("background", "set", &[&canonical.to_string_lossy()])]
+        );
+
+        let missing = dir.path().join("missing.png");
+        let (result, calls) = drive(&["background", "set", &missing.to_string_lossy()], answer);
+        assert!(result.is_err());
+        assert!(calls.is_empty(), "{calls:?}");
+    }
+
+    /// `restart` asks for the lock state first and refuses while locked,
+    /// before it would restart anything.
+    #[test]
+    fn restart_is_refused_while_locked() {
+        for state in ["locked", "secure"] {
+            let (result, calls) = drive(&["restart"], |_| Some(state.to_string()));
+            assert!(result.is_err(), "{state}");
+            assert_eq!(calls, [call("lock", "status", &[])]);
+        }
+    }
+
+    /// A lock the shell refuses, or no shell at all, is a failure; a name
+    /// the shell's custom table lacks is too.
+    #[test]
+    fn loud_verbs_fail_on_refusal_or_absence() {
+        let (result, _) = drive(&["lock"], |_| Some("refused: no PAM service".to_string()));
+        assert!(result.is_err());
+        let (result, _) = drive(&["lock"], |_| None);
+        assert!(result.is_err());
+        let (result, _) = drive(&["custom", "status", "nope"], |_| {
+            Some("unknown custom cell: nope".to_string())
+        });
+        assert!(result.is_err());
+        // Every other verb tolerates a missing shell.
+        for (argv, _) in relayed_verbs() {
+            if argv[0] == "lock" || argv[..] == ["power", "lock"] {
+                continue;
+            }
+            let (result, _) = drive(&argv, |_| None);
+            assert!(result.is_ok(), "vogix desktop {argv:?} without a shell");
+        }
+    }
+
+    /// The IPC surface desktop/shell.qml declares: target → function →
+    /// parameter count, read from its `IpcHandler { target: …; function
+    /// f(…) }` blocks.
+    fn shell_ipc_surface()
+    -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, usize>> {
+        const SHELL_QML: &str = include_str!("../../desktop/shell.qml");
+        let code: String = SHELL_QML
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut surface = std::collections::BTreeMap::new();
+        let mut rest = code.as_str();
+        while let Some(at) = rest.find("IpcHandler {") {
+            let body_start = at + "IpcHandler {".len();
+            let mut depth = 1;
+            let mut end = rest.len();
+            for (i, c) in rest[body_start..].char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = body_start + i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let body = &rest[body_start..end];
+            let target = body
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("target: \""))
+                .and_then(|t| t.strip_suffix('"'))
+                .expect("every IpcHandler names its target")
+                .to_string();
+            let mut functions = std::collections::BTreeMap::new();
+            for piece in body.split("function ").skip(1) {
+                let (name, after) = piece.split_once('(').expect("function NAME(");
+                let params = after.split_once(')').expect("…)").0;
+                let count = params.split(',').filter(|p| !p.trim().is_empty()).count();
+                functions.insert(name.trim().to_string(), count);
+            }
+            assert!(
+                surface.insert(target.clone(), functions).is_none(),
+                "two IpcHandlers for {target}"
+            );
+            rest = &rest[end..];
+        }
+        surface
+    }
+
+    /// Every call a verb makes names a function the shell declares, with
+    /// the shell's parameter count, and never `show` (quickshell's own
+    /// `ipc call <target> show` introspection, which no handler receives);
+    /// and every target the shell declares is reached by some verb, so the
+    /// IPC surface and the verbs mirror each other.
+    #[test]
+    fn the_verbs_and_the_shell_ipc_surface_match() {
+        let surface = shell_ipc_surface();
+        // What the verbs actually send, not what the table above expects.
+        let mut calls: Vec<IpcCall> = relayed_verbs()
+            .into_iter()
+            .flat_map(|(argv, _)| drive(&argv, answer).1)
+            .collect();
+        calls.push(remind_call(
+            &RemindCommands::Add {
+                text: "t".into(),
+                delay_ms: 1,
+            },
+            0,
+        ));
+        calls.push(picker_call(false, "id", "prompt"));
+        calls.push(picker_call(true, "id", "prompt"));
+        for c in &calls {
+            assert_ne!(c.function, "show", "{c:?}");
+            let functions = surface
+                .get(c.target)
+                .unwrap_or_else(|| panic!("shell.qml has no IpcHandler for {c:?}"));
+            let params = functions
+                .get(c.function)
+                .unwrap_or_else(|| panic!("shell.qml's {} handler has no {c:?}", c.target));
+            assert_eq!(*params, c.args.len(), "{c:?}");
+        }
+        for target in surface.keys() {
+            assert!(
+                calls.iter().any(|c| c.target == target),
+                "no vogix desktop verb reaches the shell's `{target}` IPC target"
+            );
         }
     }
 }
