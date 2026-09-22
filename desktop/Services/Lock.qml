@@ -19,8 +19,13 @@ Singleton {
     readonly property string pamService: conf.pamService ?? "vogix-lock"
     property bool pamPresent: false
 
-    readonly property bool locked: sessionLock.locked
+    // WlSessionLock (quickshell 0.3.1) emits lockStateChanged when a lock
+    // ends but not when one engages, so a binding on sessionLock.locked
+    // stays false for the whole lock. The state is re-read after a lock
+    // request and on each of its signals instead.
+    readonly property bool locked: root._locked
     readonly property bool secure: sessionLock.secure
+    property bool _locked: false
 
     // Auth state shared by every per-screen surface.
     property string authMessage: ""
@@ -37,6 +42,7 @@ Singleton {
             return "refused: PAM service '" + root.pamService + "' not configured";
         }
         sessionLock.locked = true;
+        root._locked = sessionLock.locked;
         return "locking";
     }
 
@@ -98,6 +104,9 @@ Singleton {
 
     WlSessionLock {
         id: sessionLock
+
+        onLockStateChanged: root._locked = sessionLock.locked
+        onSecureStateChanged: root._locked = sessionLock.locked
 
         LockSurface {}
     }
