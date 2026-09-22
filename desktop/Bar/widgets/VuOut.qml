@@ -8,6 +8,10 @@ import qs.Services
 import qs.Vogix
 
 FrameCell {
+    id: root
+
+    property BarAxis axis: null
+
     title: "OUT"
     padH: 10
     padV: 4
@@ -37,6 +41,10 @@ FrameCell {
         }
     }
 
-    Component.onCompleted: Peaks.acquire("out")
-    Component.onDestruction: Peaks.release("out")
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: Peaks.acquire("out")
+        onRelease: Peaks.release("out")
+    }
 }

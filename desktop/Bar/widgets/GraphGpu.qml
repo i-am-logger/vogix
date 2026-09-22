@@ -6,9 +6,18 @@ import qs.Services
 import qs.Vogix
 
 GraphCell {
+    id: root
+
     visible: SysStat.hasGpu
     title: "GPU"
     values: SysStat.gpuHistory
     valueText: Math.round(SysStat.gpuBusy * 100) + "%"
     lineColor: Theme.semantic.highlight ?? Tokens.color("bar", "accent")
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["gpu"])
+        onRelease: SysStat.release(["gpu"])
+    }
 }

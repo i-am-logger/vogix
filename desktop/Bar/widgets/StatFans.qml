@@ -57,4 +57,12 @@ GridLayout {
                 : Tokens.color("bar", "foreground")
         }
     }
+
+    // Held while this bar is on screen: the tachometer reads on the slow
+    // tick.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["fans"])
+        onRelease: SysStat.release(["fans"])
+    }
 }

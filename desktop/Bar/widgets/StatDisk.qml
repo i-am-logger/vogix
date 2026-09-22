@@ -6,6 +6,8 @@ import qs.Services
 import qs.Vogix
 
 StatCell {
+    id: root
+
     readonly property int pct: Math.round(SysStat.disk * 100)
 
     title: "DISK"
@@ -17,4 +19,11 @@ StatCell {
     valueColor: pct >= 95 ? Tokens.color("meter", "high")
         : pct >= 80 ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["mounts"])
+        onRelease: SysStat.release(["mounts"])
+    }
 }

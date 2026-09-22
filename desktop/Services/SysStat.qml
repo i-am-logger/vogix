@@ -1,12 +1,14 @@
 pragma Singleton
 pragma ComponentBehavior: Bound
-// System gauges from /proc and /sys, sampled on a slow timer — cheap
-// enough to always run while any widget shows them. Each stat also keeps
-// a ring buffer (meters.history samples) for the HUD graphs; buffers are
-// reassigned whole so Canvas bindings repaint. Filesystem usage is a
-// 30 s df over the configured mount points; the CPU temperature source
-// is enumerated ONCE from hwmon by driver priority, and hasTemp degrades
-// the widgets rather than erroring on boards that expose none.
+// System gauges from /proc and /sys. Every sampler runs only while a
+// widget on a visible bar reads its stat: widgets hold per-stat
+// references through a Lease on their bar's `live`, so a stat nobody can
+// see is not sampled at all. Each stat also keeps a ring buffer
+// (meters.history samples) for the HUD graphs; buffers are reassigned
+// whole so Canvas bindings repaint. Filesystem usage is a 30 s df over
+// the configured mount points; the CPU temperature source is enumerated
+// ONCE from hwmon by driver priority, and hasTemp degrades the widgets
+// rather than erroring on boards that expose none.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -40,6 +42,146 @@ Singleton {
     // The previous idle-residency reading and when it was taken.
     property real _gpuIdleMs: -1
     property real _gpuIdleAt: 0
+
+    // References per stat, taken and dropped through acquire/release by
+    // the names below. A stat's samplers run only while it has one; when
+    // the last goes, its histories and rate baselines are dropped, so a
+    // resumed graph restarts instead of splicing across the gap.
+    property int cpuRefs: 0
+    property int memoryRefs: 0  // memory and swap
+    property int netRefs: 0
+    property int diskRefs: 0    // disk throughput, total and per gauge
+    property int gpuRefs: 0
+    property int uptimeRefs: 0
+    property int tempRefs: 0
+    property int fansRefs: 0
+    property int mountsRefs: 0  // the df gauges (mountUsage, disk)
+
+    readonly property bool cpuWanted: root.cpuRefs > 0
+    readonly property bool memoryWanted: root.memoryRefs > 0
+    readonly property bool netWanted: root.netRefs > 0
+    readonly property bool diskWanted: root.diskRefs > 0
+    readonly property bool gpuWanted: root.gpuRefs > 0
+    readonly property bool uptimeWanted: root.uptimeRefs > 0
+    readonly property bool tempWanted: root.tempRefs > 0
+    readonly property bool fansWanted: root.fansRefs > 0
+    readonly property bool mountsWanted: root.mountsRefs > 0
+
+    function acquire(stats: list<string>): void {
+        root._count(stats, 1);
+    }
+
+    function release(stats: list<string>): void {
+        root._count(stats, -1);
+    }
+
+    function _count(stats: list<string>, delta: int): void {
+        for (const s of stats) {
+            switch (s) {
+            case "cpu":
+                root.cpuRefs = Math.max(0, root.cpuRefs + delta);
+                break;
+            case "memory":
+                root.memoryRefs = Math.max(0, root.memoryRefs + delta);
+                break;
+            case "net":
+                root.netRefs = Math.max(0, root.netRefs + delta);
+                break;
+            case "disk":
+                root.diskRefs = Math.max(0, root.diskRefs + delta);
+                break;
+            case "gpu":
+                root.gpuRefs = Math.max(0, root.gpuRefs + delta);
+                break;
+            case "uptime":
+                root.uptimeRefs = Math.max(0, root.uptimeRefs + delta);
+                break;
+            case "temp":
+                root.tempRefs = Math.max(0, root.tempRefs + delta);
+                break;
+            case "fans":
+                root.fansRefs = Math.max(0, root.fansRefs + delta);
+                break;
+            case "mounts":
+                root.mountsRefs = Math.max(0, root.mountsRefs + delta);
+                break;
+            default:
+                console.error("vogix: SysStat has no stat named '" + s + "'");
+            }
+        }
+    }
+
+    // The stats being sampled, comma-joined ("none" when idle).
+    function status(): string {
+        const on = [];
+        if (root.cpuWanted)
+            on.push("cpu");
+        if (root.memoryWanted)
+            on.push("memory");
+        if (root.netWanted)
+            on.push("net");
+        if (root.diskWanted)
+            on.push("disk");
+        if (root.gpuWanted)
+            on.push("gpu");
+        if (root.uptimeWanted)
+            on.push("uptime");
+        if (root.tempWanted)
+            on.push("temp");
+        if (root.fansWanted)
+            on.push("fans");
+        if (root.mountsWanted)
+            on.push("mounts");
+        return on.length > 0 ? on.join(",") : "none";
+    }
+
+    onCpuWantedChanged: {
+        if (!cpuWanted) {
+            lastTotal = 0;
+            lastIdle = 0;
+            _cpuFresh = false;
+            cpuHistory = [];
+        }
+    }
+
+    onMemoryWantedChanged: {
+        if (!memoryWanted) {
+            _memoryFresh = false;
+            memoryHistory = [];
+        }
+    }
+
+    onNetWantedChanged: {
+        if (!netWanted) {
+            lastNetAt = 0;
+            _netFresh = false;
+            netRxHistory = [];
+            netTxHistory = [];
+        }
+    }
+
+    onDiskWantedChanged: {
+        if (!diskWanted) {
+            lastDiskAt = 0;
+            _lastDevSectors = {};
+            diskIoHistory = [];
+        }
+    }
+
+    onGpuWantedChanged: {
+        if (!gpuWanted) {
+            _gpuSamples = [];
+            _gpuIdleMs = -1;
+            _gpuIdleAt = 0;
+            gpuHistory = [];
+        }
+    }
+
+    // Whether a sample exists since the stat was last acquired: the
+    // history tick records real samples only, never a stale or zero one.
+    property bool _cpuFresh: false
+    property bool _memoryFresh: false
+    property bool _netFresh: false
 
     property real cpu: 0        // 0..1
     property real memory: 0     // 0..1
@@ -188,8 +330,10 @@ Singleton {
     }
 
     // One raw busy sample, 0..1: folded into the window, published as its
-    // mean.
+    // mean. A sample that lands after the last reader let go is dropped.
     function _gpuSample(v: real): void {
+        if (!root.gpuWanted)
+            return;
         root._gpuSamples = Gpu.pushWindow(root._gpuSamples, v, root.gpuMeanSamples);
         root.gpuBusy = Gpu.mean(root._gpuSamples);
         root.gpuHistory = root._push(root.gpuHistory, root.gpuBusy);
@@ -199,13 +343,16 @@ Singleton {
     // the graphs move like instruments, not like a status page.
     Timer {
         interval: root.sampleMs
-        running: true
+        running: root.cpuWanted || root.memoryWanted || root.netWanted
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            statFile.reload();
-            memFile.reload();
-            netFile.reload();
+            if (root.cpuWanted)
+                statFile.reload();
+            if (root.memoryWanted)
+                memFile.reload();
+            if (root.netWanted)
+                netFile.reload();
         }
     }
 
@@ -216,36 +363,45 @@ Singleton {
     // nvidia-smi streams at the same period.
     Timer {
         interval: 1000
-        running: true
+        running: root.cpuWanted || root.memoryWanted || root.netWanted
+            || root.diskWanted || root.gpuWanted || root.uptimeWanted
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            root.cpuHistory = root._push(root.cpuHistory, root.cpu);
-            root.memoryHistory = root._push(root.memoryHistory, root.memory);
-            root.netRxHistory = root._push(root.netRxHistory, root.netRxRate);
-            root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
-            diskstatsFile.reload();
-            uptimeFile.reload();
-            if (root.gpuSource === Gpu.Source.BusyPercent || root.gpuSource === Gpu.Source.IdleResidency)
+            if (root._cpuFresh)
+                root.cpuHistory = root._push(root.cpuHistory, root.cpu);
+            if (root._memoryFresh)
+                root.memoryHistory = root._push(root.memoryHistory, root.memory);
+            if (root._netFresh) {
+                root.netRxHistory = root._push(root.netRxHistory, root.netRxRate);
+                root.netTxHistory = root._push(root.netTxHistory, root.netTxRate);
+            }
+            if (root.diskWanted)
+                diskstatsFile.reload();
+            if (root.uptimeWanted)
+                uptimeFile.reload();
+            if (root.gpuWanted && (root.gpuSource === Gpu.Source.BusyPercent || root.gpuSource === Gpu.Source.IdleResidency))
                 gpuFile.reload();
         }
     }
 
     Timer {
         interval: 3000
-        running: true
+        running: (root.tempWanted && root.tempPath !== "") || (root.fansWanted && root.fans.length > 0)
         repeat: true
+        triggeredOnStart: true
         onTriggered: {
-            if (root.tempPath !== "")
+            if (root.tempWanted && root.tempPath !== "")
                 tempFile.reload();
-            for (const f of fanFiles.instances)
-                f.reload();
+            if (root.fansWanted)
+                for (const f of fanFiles.instances)
+                    f.reload();
         }
     }
 
     Timer {
         interval: 30000
-        running: true
+        running: root.mountsWanted
         repeat: true
         triggeredOnStart: true
         onTriggered: diskProc.running = true
@@ -257,13 +413,19 @@ Singleton {
         watchChanges: false
         preload: true
         onLoaded: {
+            // The startup preload must not seed a baseline that a later
+            // acquire would difference against.
+            if (!root.cpuWanted)
+                return;
             const parts = text().split("\n")[0].trim().split(/\s+/).slice(1).map(Number);
             const idle = parts[3] + (parts[4] ?? 0);
             const total = parts.reduce((a, b) => a + b, 0);
             const dTotal = total - root.lastTotal;
             const dIdle = idle - root.lastIdle;
-            if (root.lastTotal > 0 && dTotal > 0)
+            if (root.lastTotal > 0 && dTotal > 0) {
                 root.cpu = Math.max(0, Math.min(1, 1 - dIdle / dTotal));
+                root._cpuFresh = true;
+            }
             root.lastTotal = total;
             root.lastIdle = idle;
         }
@@ -275,6 +437,8 @@ Singleton {
         watchChanges: false
         preload: true
         onLoaded: {
+            if (!root.memoryWanted)
+                return;
             const t = text();
             const total = Number((t.match(/MemTotal:\s+(\d+)/) ?? [0, 0])[1]);
             const avail = Number((t.match(/MemAvailable:\s+(\d+)/) ?? [0, 0])[1]);
@@ -286,6 +450,7 @@ Singleton {
             root.swap = swapTotal > 0
                 ? Math.max(0, Math.min(1, 1 - swapFree / swapTotal))
                 : 0;
+            root._memoryFresh = true;
         }
     }
 
@@ -295,6 +460,8 @@ Singleton {
         watchChanges: false
         preload: true
         onLoaded: {
+            if (!root.netWanted)
+                return;
             let rx = 0;
             let tx = 0;
             for (const line of text().split("\n").slice(2)) {
@@ -310,6 +477,7 @@ Singleton {
             if (root.lastNetAt > 0 && dt > 0 && rx >= root.lastRx) {
                 root.netRxRate = (rx - root.lastRx) / dt;
                 root.netTxRate = (tx - root.lastTx) / dt;
+                root._netFresh = true;
             }
             root.lastRx = rx;
             root.lastTx = tx;
@@ -377,7 +545,7 @@ Singleton {
         watchChanges: false
         preload: true
         onLoaded: {
-            if (!root._blockProbed)
+            if (!root.diskWanted || !root._blockProbed)
                 return;
             // Whole physical disks feed the TOTAL I/O instrument; the
             // per-gauge devices (partitions, dm-N, zram) each get their
@@ -451,6 +619,10 @@ Singleton {
         watchChanges: false
         preload: true
         onLoaded: {
+            // The load on a path change must not seed a residency baseline
+            // that a later acquire would difference against.
+            if (!root.gpuWanted)
+                return;
             if (root.gpuSource === Gpu.Source.BusyPercent) {
                 const v = Gpu.busyPercent(text());
                 if (v !== null)
@@ -477,7 +649,7 @@ Singleton {
     // rather than showing a stale or invented figure.
     Process {
         id: nvidiaProc
-        running: root.gpuSource === Gpu.Source.NvidiaSmi
+        running: root.gpuWanted && root.gpuSource === Gpu.Source.NvidiaSmi
         command: ["nvidia-smi", "--id=" + root.gpuPci, "--query-gpu=utilization.gpu",
             "--format=csv,noheader,nounits", "--loop-ms=1000"]
 
@@ -494,7 +666,8 @@ Singleton {
         }
 
         onRunningChanged: {
-            if (running || root.gpuSource !== Gpu.Source.NvidiaSmi)
+            // Stopped because the last reader let go: not a failure.
+            if (running || !root.gpuWanted || root.gpuSource !== Gpu.Source.NvidiaSmi)
                 return;
             console.warn("SysStat: nvidia-smi exited; the GPU cell is off");
             root.gpuSource = Gpu.Source.None;

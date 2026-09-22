@@ -8,6 +8,10 @@ import qs.Services
 import qs.Vogix
 
 FrameCell {
+    id: root
+
+    property BarAxis axis: null
+
     title: "MIC"
     titleColor: Privacy.micInUse ? Tokens.color("bar", "urgent") : Tokens.color("meter", "label")
     padH: 6
@@ -31,6 +35,10 @@ FrameCell {
         }
     }
 
-    Component.onCompleted: Peaks.acquire("mic")
-    Component.onDestruction: Peaks.release("mic")
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: Peaks.acquire("mic")
+        onRelease: Peaks.release("mic")
+    }
 }

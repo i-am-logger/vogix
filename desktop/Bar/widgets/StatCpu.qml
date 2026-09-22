@@ -5,6 +5,8 @@ import qs.Services
 import qs.Vogix
 
 StatCell {
+    id: root
+
     readonly property int pct: Math.round(SysStat.cpu * 100)
     readonly property var th: ((Config.doc.meters ?? {}).thresholds ?? {}).cpu ?? ({})
 
@@ -18,4 +20,11 @@ StatCell {
     valueColor: pct >= (th.danger ?? 90) ? Tokens.color("meter", "high")
         : pct >= (th.warn ?? 50) ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["cpu"])
+        onRelease: SysStat.release(["cpu"])
+    }
 }

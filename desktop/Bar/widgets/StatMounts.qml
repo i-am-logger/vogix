@@ -81,4 +81,12 @@ GridLayout {
                 : Tokens.color("bar", "foreground")
         }
     }
+
+    // Held while this bar is on screen: the df gauges, meminfo for the
+    // swap row, diskstats for each filesystem's own I/O.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["mounts", "memory", "disk"])
+        onRelease: SysStat.release(["mounts", "memory", "disk"])
+    }
 }

@@ -9,6 +9,8 @@ import qs.Vogix
 FrameCell {
     id: root
 
+    property BarAxis axis: null
+
     title: "UP"
     padH: 8
     padV: 3
@@ -27,5 +29,12 @@ FrameCell {
         widestText: "99D23H"
         font.pixelSize: Metrics.bodySmall
         color: Tokens.color("bar", "foreground")
+    }
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["uptime"])
+        onRelease: SysStat.release(["uptime"])
     }
 }

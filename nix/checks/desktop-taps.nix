@@ -7,7 +7,9 @@
 # - a shell that starts before PipeWire waits (no tap is launched) and
 #   starts both taps once PipeWire and a default sink appear;
 # - a tap that dies is relaunched;
-# - a PipeWire restart stops the taps and brings them back.
+# - a PipeWire restart stops the taps and brings them back;
+# - a hidden bar's taps, VU monitors and stat samplers stop, per edge, and
+#   come back when it is shown.
 #
 # No session manager runs, so nothing links the taps: they sit connected
 # and idle, which is all a lifecycle test needs.
@@ -42,7 +44,8 @@ let
     };
   };
 
-  # One spectrum and one scope, nothing else: every tap has one consumer.
+  # One consumer per source, split over two bars so hiding one edge
+  # stops exactly its own sources.
   desktopJson = builtins.toJSON {
     schema = 2;
     font = { family = "monospace"; size = 16; };
@@ -50,12 +53,12 @@ let
       top = {
         enable = true;
         size = 36;
-        layout = { start = [ "spectrum-mini" ]; center = [ ]; end = [ ]; };
+        layout = { start = [ "spectrum-mini" ]; center = [ ]; end = [ "uptime" ]; };
       };
       bottom = {
         enable = true;
         size = 96;
-        layout = { start = [ ]; center = [ "oscilloscope" ]; end = [ ]; };
+        layout = { start = [ "stat-cpu" ]; center = [ "oscilloscope" ]; end = [ "vu-out" "vu-mic" ]; };
       };
       left = { enable = false; size = 36; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
       right = { enable = false; size = 36; layout = { start = [ ]; center = [ ]; end = [ ]; }; };
@@ -178,7 +181,30 @@ let
       note "FAIL: not relaunched"
     fi
 
-    # 4. PipeWire goes away: the taps stop and wait for it.
+    # 4. Every source runs while its bar is shown; hiding an edge stops
+    # exactly that edge's sources, hiding all stops everything, and
+    # showing them again brings it all back.
+    await "spectrum:running scope:running vu-out:on vu-mic:on stats:cpu,uptime" 5
+    qs -p "$qml" ipc call bar hide bottom > /dev/null
+    await "spectrum:running scope:off vu-out:off vu-mic:off stats:uptime" 5
+    sleep 1
+    if pgrep -x pw-record > /dev/null || ! pgrep -x cava > /dev/null; then
+      note "FAIL: hiding the bottom bar did not stop exactly the scope tap"
+    else
+      note "ok: bottom hidden"
+    fi
+    qs -p "$qml" ipc call bar hide all > /dev/null
+    await "spectrum:off scope:off vu-out:off vu-mic:off stats:none" 5
+    sleep 1
+    if pgrep -x cava > /dev/null || pgrep -x pw-record > /dev/null; then
+      note "FAIL: a tap outlived its hidden bar"
+    else
+      note "ok: all hidden"
+    fi
+    qs -p "$qml" ipc call bar unhide all > /dev/null
+    await "spectrum:running scope:running vu-out:on vu-mic:on stats:cpu,uptime" 10
+
+    # 5. PipeWire goes away: the taps stop and wait for it.
     kill $PWPID
     wait $PWPID
     await "spectrum:waiting scope:waiting" 10
@@ -189,7 +215,7 @@ let
       note "ok: stopped with PipeWire"
     fi
 
-    # 5. PipeWire comes back: so do the taps.
+    # 6. PipeWire comes back: so do the taps.
     startpw
     await "spectrum:running scope:running" 20
 
@@ -224,11 +250,16 @@ pkgs.runCommand "vogix-desktop-taps"
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── qs.log (vogix lines):"; grep 'vogix' $TMPDIR/qs.log || true
+  # The QML behind the taps and the leases must run clean.
+  if grep -E 'TypeError|ReferenceError|Binding loop|Unable to assign' $TMPDIR/qs.log; then
+    echo "script errors in qs.log"
+    exit 1
+  fi
   if grep -q '^FAIL' $TMPDIR/result; then
     echo "── qs.log:"; cat $TMPDIR/qs.log
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 7
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 13
   touch $out
 ''

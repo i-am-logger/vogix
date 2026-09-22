@@ -40,8 +40,12 @@ Canvas {
     implicitWidth: vertical ? Metrics.body * 2 : Math.max(1, vals.length) * barPitch
     implicitHeight: vertical ? Math.max(1, vals.length) * barPitch : Metrics.body * 1.25
 
-    Component.onCompleted: Cava.acquire()
-    Component.onDestruction: Cava.release()
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: Cava.acquire()
+        onRelease: Cava.release()
+    }
 
     Connections {
         target: Cava

@@ -6,6 +6,8 @@ import qs.Services
 import qs.Vogix
 
 StatCell {
+    id: root
+
     readonly property int degrees: Math.round(SysStat.cpuTempC)
     readonly property var th: ((Config.doc.meters ?? {}).thresholds ?? {}).cpuTemp ?? ({})
 
@@ -20,4 +22,11 @@ StatCell {
     valueColor: degrees >= (th.danger ?? 85) ? Tokens.color("meter", "high")
         : degrees >= (th.warn ?? 60) ? Tokens.color("meter", "mid")
         : Tokens.color("bar", "foreground")
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["temp"])
+        onRelease: SysStat.release(["temp"])
+    }
 }

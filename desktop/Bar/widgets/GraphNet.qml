@@ -27,4 +27,11 @@ GraphCell {
     values: norm(SysStat.netRxHistory)
     secondary: norm(SysStat.netTxHistory)
     valueText: "▼" + root.fmt(SysStat.netRxRate)
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["net"])
+        onRelease: SysStat.release(["net"])
+    }
 }

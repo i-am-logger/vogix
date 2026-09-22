@@ -7,6 +7,10 @@ import qs.Services
 import qs.Vogix
 
 FrameCell {
+    id: root
+
+    property BarAxis axis: null
+
     title: "SCOPE"
     padH: 8
     padV: 3
@@ -56,6 +60,10 @@ FrameCell {
         }
     }
 
-    Component.onCompleted: Waveform.acquire()
-    Component.onDestruction: Waveform.release()
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: Waveform.acquire()
+        onRelease: Waveform.release()
+    }
 }

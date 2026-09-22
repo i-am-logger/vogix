@@ -6,6 +6,8 @@ import qs.Services
 import qs.Vogix
 
 GraphCell {
+    id: root
+
     function norm(arr: list<real>): list<real> {
         let max = 1;
         for (const v of arr)
@@ -26,4 +28,11 @@ GraphCell {
     values: norm(SysStat.diskIoHistory)
     valueText: fmt(SysStat.diskIoRate)
     lineColor: Theme.semantic.notice ?? Tokens.color("bar", "accent")
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["disk"])
+        onRelease: SysStat.release(["disk"])
+    }
 }

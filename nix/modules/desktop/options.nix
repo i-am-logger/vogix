@@ -251,7 +251,7 @@ in
             enable = mkOption {
               type = types.bool;
               default = defaults.meters.spectrum.enable;
-              description = "Run the cava audio spectrum (subprocess starts only while a spectrum widget is visible).";
+              description = "Run the cava audio spectrum. The subprocess runs only while a spectrum widget is on a shown bar and the screen is in use (not locked, blanked by the idle stage or under the screensaver).";
             };
             bars = mkOption {
               type = types.ints.positive;

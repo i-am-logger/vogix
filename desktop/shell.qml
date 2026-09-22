@@ -241,9 +241,13 @@ ShellRoot {
         target: "meters"
 
         // What the HUD samples right now, one word per source (see
-        // AudioTap.status for the tap states).
+        // AudioTap.status for the tap states; a VU monitor is on or off;
+        // stats lists the SysStat samplers running).
         function status(): string {
-            return "spectrum:" + Cava.status() + " scope:" + Waveform.status();
+            return "spectrum:" + Cava.status() + " scope:" + Waveform.status()
+                + " vu-out:" + (Peaks.outRefs > 0 ? "on" : "off")
+                + " vu-mic:" + (Peaks.micRefs > 0 ? "on" : "off")
+                + " stats:" + SysStat.status();
         }
     }
 

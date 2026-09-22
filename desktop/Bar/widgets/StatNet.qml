@@ -9,6 +9,8 @@ import qs.Vogix
 FrameCell {
     id: root
 
+    property BarAxis axis: null
+
     title: "NET"
     padH: 8
     padV: 3
@@ -39,5 +41,12 @@ FrameCell {
             color: Tokens.color("bar", "foreground")
             anchors.verticalCenter: parent.verticalCenter
         }
+    }
+
+    // Held while this bar is on screen.
+    Lease {
+        active: root.axis?.live ?? false
+        onAcquire: SysStat.acquire(["net"])
+        onRelease: SysStat.release(["net"])
     }
 }

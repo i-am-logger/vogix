@@ -3,7 +3,8 @@ pragma ComponentBehavior: Bound
 // vertical ones top+bottom+edge (the layer-shell 1-or-3 anchor rule);
 // the free axis takes the implicit size, so `thickness` is the whole
 // geometry. Hiding PARKS the layer past its edge instead of unmapping
-// (remapping costs ~150 ms, a slide ~20 ms and keeps the widgets warm).
+// (remapping costs ~150 ms, a slide ~20 ms and keeps the widgets warm);
+// a parked bar's taps and samplers stop all the same (BarAxis.live).
 // The center section is anchored to the true center — never pushed
 // around by how wide start/end happen to be.
 import QtQuick
@@ -69,6 +70,7 @@ PanelWindow {
             vertical: panel.vertical
             thickness: panel.thickness
             edge: panel.edge
+            live: BarState.live(panel.edge)
         }
 
         Section {

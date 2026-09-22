@@ -18,6 +18,8 @@ FrameCell {
 
     SystemClock {
         id: clock
+        // Ticks only while this bar is on screen.
+        enabled: root.axis?.live ?? false
         precision: root.vertical ? SystemClock.Minutes : SystemClock.Seconds
     }
 

@@ -1,7 +1,9 @@
 pragma Singleton
 // Per-edge bar visibility — the ONE mutation point. Bars park (slide
 // off-screen) rather than unmap; everything bar-adjacent (panel popup,
-// OSD) reads effective thickness from here so it follows hides live.
+// OSD) reads effective thickness from here so it follows hides live, and
+// the data sources behind the widgets read `live` so a bar nobody can see
+// samples nothing.
 import QtQuick
 import Quickshell
 import qs.Vogix
@@ -16,6 +18,18 @@ Singleton {
 
     function isHidden(edge: string): bool {
         return hiddenEdges[edge] ?? false;
+    }
+
+    // Whether anything a bar draws can be seen at all: not while the
+    // session lock covers every output, the screensaver covers them, or the
+    // idle stage has switched them off.
+    readonly property bool viewable: !Lock.locked && !Idle.screensaverActive && !Idle.screensOff
+
+    // An edge's widgets are on screen: the bar is enabled, not parked, and
+    // the screen is viewable. Parked widgets stay instantiated (warm) but
+    // their taps and samplers stop.
+    function live(edge: string): bool {
+        return enabled(edge) && !isHidden(edge) && root.viewable;
     }
 
     function enabled(edge: string): bool {

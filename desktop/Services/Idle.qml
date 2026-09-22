@@ -17,6 +17,8 @@ Singleton {
     readonly property bool held: StayAwake.on
     property bool dimmed: false
     property bool screensaverActive: false
+    // True while the screen-off stage holds the outputs in DPMS off.
+    property bool screensOff: false
 
     IdleMonitor {
         enabled: !root.held && (root.conf.screensaver ?? null) !== null
@@ -49,6 +51,7 @@ Singleton {
         timeout: root.conf.screenOff ?? 0
         respectInhibitors: true
         onIsIdleChanged: {
+            root.screensOff = isIdle;
             // Dialect-correct on both config engines via the vogix verb.
             Quickshell.execDetached(["vogix", "hypr", "dispatch", isIdle ? "dpms, off" : "dpms, on"]);
         }
