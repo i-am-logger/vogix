@@ -336,7 +336,7 @@ pkgs.runCommand "vogix-desktop-smoke"
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── stats:"; cat $TMPDIR/stats.json || true
-  echo "── geometry:"; grep -hE "GEOMETRY|FIT" $TMPDIR/qs-geometry.log || true
+  echo "── geometry:"; grep -hE "GEOMETRY|FOOTPRINT|FIT" $TMPDIR/qs-geometry.log || true
 
   # The log gate. A failure is a script error, a binding problem, a
   # component that did not load, a program the shell could not start, or
@@ -413,10 +413,10 @@ pkgs.runCommand "vogix-desktop-smoke"
   grep -q '^locks-null .* caps:unknown$' $TMPDIR/result
   grep -q '^locks-back .* caps:on$' $TMPDIR/result
   grep -q '^locks-gone .* caps:unknown$' $TMPDIR/result
-  # A canvas instrument never lays out collapsed, and the default layout
-  # fits its bars: the probe's verdict over every registry widget on
-  # both bar axes and every default cell, with the oscilloscope measured
-  # and each bar's cells fitted.
+  # A canvas instrument never lays out collapsed nor resizes when audio
+  # arrives, and the default layout fits its bars: the probe's verdict
+  # over every registry widget on both bar axes and every default cell,
+  # with the oscilloscope measured and each bar's cells fitted.
   r 'GEOMETRY-EXIT 0'
   grep -q 'GEOMETRY bottom oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
   for edge in top bottom left right; do

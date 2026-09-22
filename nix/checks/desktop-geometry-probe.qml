@@ -3,13 +3,16 @@ pragma ComponentBehavior: Bound
 // over a copy of the shipped QML tree, so `qs.` resolves to the shipped
 // modules, and runs it with the shipped default desktop.json. The real
 // Section loads the real widgets, backed by the real singletons, in real
-// windows. Two checks, one verdict (the exit status):
+// windows. Three checks, one verdict (the exit status):
 //
 // - every widget the registry (WidgetRegistry) names, on a horizontal bar
 //   and, where it may sit there, on a vertical one: each Canvas it shows
 //   lays out at a non-zero size, measured on the canvas itself (a
 //   FrameCell keeps a minimum size of its own around empty content).
 //   `GEOMETRY <edge> <widget> <w>x<h>` per canvas;
+// - a frame of audio data resizes no canvas: the instruments keep their
+//   footprint whether or not anything plays. `FOOTPRINT <edge> <widget>`
+//   per canvas that moved;
 // - the default layout fits its bars: every cell's extent across its bar
 //   is within the bar's size. `FIT <edge> <widget> <w>x<h> in <size>`
 //   per cell.
@@ -72,13 +75,24 @@ ShellRoot {
     }
 
     property int failures: 0
+    // edge/widget/index → "WxH", taken before the audio frame.
+    property var before: ({})
 
-    function measureCanvases(edge: string, section: Item): void {
+    function measureCanvases(edge: string, section: Item, record: bool): void {
         for (const w of root.loaded(edge, section)) {
-            for (const canvas of root.shownCanvases(w.item)) {
-                console.info("GEOMETRY", edge, w.name, `${canvas.width}x${canvas.height}`);
-                if (!(canvas.width >= 1 && canvas.height >= 1))
+            const canvases = root.shownCanvases(w.item);
+            for (let i = 0; i < canvases.length; i++) {
+                const size = `${canvases[i].width}x${canvases[i].height}`;
+                const key = `${edge} ${w.name} ${i}`;
+                if (record) {
+                    console.info("GEOMETRY", edge, w.name, size);
+                    if (!(canvases[i].width >= 1 && canvases[i].height >= 1))
+                        root.failures++;
+                    root.before[key] = size;
+                } else if (root.before[key] !== size) {
+                    console.error("FOOTPRINT", edge, w.name, root.before[key], "->", size);
                     root.failures++;
+                }
             }
         }
     }
@@ -175,14 +189,29 @@ ShellRoot {
     }
 
     // Measured once the windows have laid out and drawn (a layout-sized
-    // canvas has no size before the first polish).
+    // canvas has no size before the first polish), then again after one
+    // frame of audio reaches the spectrum.
     Timer {
+        id: first
+
         interval: 1500
         running: true
         onTriggered: {
-            root.measureCanvases("bottom", horizontal);
-            root.measureCanvases("right", vertical);
+            root.measureCanvases("bottom", horizontal, true);
+            root.measureCanvases("right", vertical, true);
             root.measureFit();
+            Cava.values = Array(Cava.bars * 2).fill(0.5);
+            second.start();
+        }
+    }
+
+    Timer {
+        id: second
+
+        interval: 500
+        onTriggered: {
+            root.measureCanvases("bottom", horizontal, false);
+            root.measureCanvases("right", vertical, false);
             Qt.exit(root.failures === 0 ? 0 : 1);
         }
     }

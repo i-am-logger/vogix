@@ -36,9 +36,13 @@ Canvas {
     // packs the full mirrored array tighter so it stays a glanceable chip.
     readonly property int barPitch: channel === "all" ? 3 : 4
     readonly property int barSize: channel === "all" ? 2 : 3
+    // The bars this view draws, from the configured band count: the strip
+    // keeps its size whether or not a frame has arrived (nothing plays
+    // until audio does), so the bar never reflows around it.
+    readonly property int count: channel === "all" ? Cava.bars * 2 : Cava.bars
 
-    implicitWidth: vertical ? Metrics.body * 2 : Math.max(1, vals.length) * barPitch
-    implicitHeight: vertical ? Math.max(1, vals.length) * barPitch : Metrics.body * 1.25
+    implicitWidth: vertical ? Metrics.body * 2 : root.count * barPitch
+    implicitHeight: vertical ? root.count * barPitch : Metrics.body * 1.25
 
     // Held while this bar is on screen.
     Lease {
@@ -80,8 +84,9 @@ Canvas {
         const mid = Tokens.color("meter", "mid");
         const high = Tokens.color("meter", "high");
         const cap = Tokens.color("meter", "cap");
-        for (let i = 0; i < vals.length; i++) {
-            const v = Math.max(0.05, vals[i]);
+        // A band with no value yet sits at the floor, like a silent one.
+        for (let i = 0; i < root.count; i++) {
+            const v = Math.max(0.05, vals[i] ?? 0);
             ctx.fillStyle = v > root.dangerAt ? high : (v > root.warnAt ? mid : low);
             if (vertical)
                 ctx.fillRect(0, i * barPitch, v * width, barSize);
