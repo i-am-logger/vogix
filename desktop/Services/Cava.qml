@@ -7,6 +7,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.Components
 import qs.Vogix
 
 Singleton {
@@ -33,19 +34,17 @@ Singleton {
     // views from this.
     property list<real> values: []
 
-    // VU BALLISTICS, taken verbatim from Peaks: instant attack, bar release
-    // 3.0 FS/s, cap holds 0.53 s then falls 0.75 FS/s (the 4:1 bar/cap ratio).
-    // The spectrum falls at the VU rail's rate because the two read as one
-    // instrument family — a second set of constants here would make the bars
-    // and the meters disagree on screen for the same sound.
-    readonly property real barReleasePerSec: 3.0
-    readonly property real capFallPerSec: 0.75
-    readonly property real capHoldSec: 0.53
-
-    // `values` is the instantaneous frame; these carry the ballistics.
+    // The ballistic view of `values`, what the widgets draw: the curve the
+    // VU meters fall on (qs.Components Ballistics), because the spectrum
+    // and the rail read as one instrument family.
     property list<real> heldValues: []
     property list<real> capValues: []
-    property var _capHoldLeft: []
+
+    // Ballistics state, advanced in place every tick; the published lists
+    // above are written only when a bar or cap moved by a visible step.
+    property var _level: []
+    property var _cap: []
+    property var _hold: []
 
     // Driven by a TIMER, not by the frame callback. Frames are deduped
     // against `_last`, so a steady (or silent) stream stops emitting — and a
@@ -63,35 +62,14 @@ Singleton {
         const n = src.length;
         if (n === 0)
             return;
-        const held = root.heldValues.length === n ? root.heldValues.slice() : Array(n).fill(0);
-        const caps = root.capValues.length === n ? root.capValues.slice() : Array(n).fill(0);
-        const hold = root._capHoldLeft.length === n ? root._capHoldLeft.slice() : Array(n).fill(0);
-        let moved = false;
-        for (let i = 0; i < n; i++) {
-            const v = src[i];
-            // Instant attack, timed release.
-            const h = v >= held[i] ? v : Math.max(v, held[i] - root.barReleasePerSec * dt);
-            if (Math.round(h * 40) !== Math.round(held[i] * 40))
-                moved = true;
-            held[i] = h;
-            if (h >= caps[i]) {
-                caps[i] = h;
-                hold[i] = root.capHoldSec;
-            } else if (hold[i] > 0) {
-                hold[i] -= dt;
-            } else {
-                const c = Math.max(h, caps[i] - root.capFallPerSec * dt);
-                if (Math.round(c * 40) !== Math.round(caps[i] * 40))
-                    moved = true;
-                caps[i] = c;
-            }
+        if (root._level.length !== n) {
+            root._level = Array(n).fill(0);
+            root._cap = Array(n).fill(0);
+            root._hold = Array(n).fill(0);
         }
-        root._capHoldLeft = hold;
-        // Quantized to 1/40 like Peaks: once everything has settled the writes
-        // stop, so silence still costs no repaints.
-        if (moved) {
-            root.heldValues = held;
-            root.capValues = caps;
+        if (Ballistics.advance(src, root._level, root._cap, root._hold, dt)) {
+            root.heldValues = root._level;
+            root.capValues = root._cap;
         }
     }
 
@@ -102,7 +80,9 @@ Singleton {
             values = Array(bars * 2).fill(0);
             heldValues = [];
             capValues = [];
-            _capHoldLeft = [];
+            _level = [];
+            _cap = [];
+            _hold = [];
             _last = "";
         }
     }

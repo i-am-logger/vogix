@@ -3,14 +3,14 @@ pragma Singleton
 // PwNodePeakMonitor — no external tap. Monitor peaks arrive
 // cbrt-compressed (peak.cpp: visualPeak = cbrt(peak)), so true
 // dB = 20·log10(raw³) = 60·log10(raw). Levels are positions in the
-// [floorDb, 0] window with cava-peaks ballistics: instant attack, bar
-// release 3.0 FS/s, cap holds 0.53 s then falls 0.75 FS/s (the 4:1
-// bar/cap ratio). Values quantize to 1/40 and skip unchanged writes, so
-// a silent stream costs zero repaints; monitors are ref-counted and
-// capture only while a VU widget is on screen.
+// [floorDb, 0] window, moved by the meter ballistics the spectrum
+// shares (qs.Components Ballistics); published values quantize and skip
+// unchanged writes, so a silent stream costs zero repaints. Monitors are
+// ref-counted and capture only while a VU widget is on screen.
 import QtQuick
 import Quickshell
 import Quickshell.Services.Pipewire
+import qs.Components
 import qs.Vogix
 
 Singleton {
@@ -35,7 +35,7 @@ Singleton {
 
     readonly property real floorDb: ((Config.doc.meters ?? {}).vu ?? {}).floorDb ?? -40
 
-    // Public state, 0..1 in the dB window, quantized 1/40. The output is
+    // Public state, 0..1 in the dB window, quantized. The output is
     // STEREO (L/R per channel); outLevel/outCap are the max of the two
     // for mono consumers. Mic is mono.
     property real outL: 0
@@ -104,48 +104,38 @@ Singleton {
                 || outMon.peak > 0 || micMon.peak > 0)
 
         onTriggered: {
-            const dt = 0.033;
+            // Channels in one order throughout: out L, out R, mic.
+            const target = [
+                root._norm(outMon.peaks[0] ?? 0),
+                root._norm(outMon.peaks[1] ?? (outMon.peaks[0] ?? 0)),
+                root._norm(micMon.peak)
+            ];
+            const level = [root._outL, root._outR, root._micLevel];
+            const cap = [root._outCapL, root._outCapR, root._micCap];
+            const hold = [root._outHoldL, root._outHoldR, root._micHold];
+            Ballistics.advance(target, level, cap, hold, interval / 1000);
+            root._outL = level[0];
+            root._outR = level[1];
+            root._micLevel = level[2];
+            root._outCapL = cap[0];
+            root._outCapR = cap[1];
+            root._micCap = cap[2];
+            root._outHoldL = hold[0];
+            root._outHoldR = hold[1];
+            root._micHold = hold[2];
 
-            const tl = root._norm(outMon.peaks[0] ?? 0);
-            const tr = root._norm(outMon.peaks[1] ?? (outMon.peaks[0] ?? 0));
-
-            root._outL = Math.max(tl, root._outL - 3.0 * dt);
-            if (root._outL >= root._outCapL) {
-                root._outCapL = root._outL;
-                root._outHoldL = 0.53;
-            } else if ((root._outHoldL -= dt) <= 0) {
-                root._outCapL = Math.max(root._outL, root._outCapL - 0.75 * dt);
-            }
-
-            root._outR = Math.max(tr, root._outR - 3.0 * dt);
-            if (root._outR >= root._outCapR) {
-                root._outCapR = root._outR;
-                root._outHoldR = 0.53;
-            } else if ((root._outHoldR -= dt) <= 0) {
-                root._outCapR = Math.max(root._outR, root._outCapR - 0.75 * dt);
-            }
-
-            root._micLevel = Math.max(root._norm(micMon.peak), root._micLevel - 3.0 * dt);
-            if (root._micLevel >= root._micCap) {
-                root._micCap = root._micLevel;
-                root._micHold = 0.53;
-            } else if ((root._micHold -= dt) <= 0) {
-                root._micCap = Math.max(root._micLevel, root._micCap - 0.75 * dt);
-            }
-
-            const q = v => Math.round(v * 40) / 40;
             const write = (name, v) => {
                 if (v !== root[name])
                     root[name] = v;
             };
-            write("outL", q(root._outL));
-            write("outR", q(root._outR));
-            write("outCapL", q(root._outCapL));
-            write("outCapR", q(root._outCapR));
+            write("outL", Ballistics.quantize(root._outL));
+            write("outR", Ballistics.quantize(root._outR));
+            write("outCapL", Ballistics.quantize(root._outCapL));
+            write("outCapR", Ballistics.quantize(root._outCapR));
             write("outLevel", Math.max(root.outL, root.outR));
             write("outCap", Math.max(root.outCapL, root.outCapR));
-            write("micLevel", q(root._micLevel));
-            write("micCap", q(root._micCap));
+            write("micLevel", Ballistics.quantize(root._micLevel));
+            write("micCap", Ballistics.quantize(root._micCap));
         }
 
         onRunningChanged: {
