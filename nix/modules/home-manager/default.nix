@@ -355,8 +355,8 @@ in
         '';
       in
       {
-        # Some widgets read horizontally (a window title, scrolling media
-        # text): fail the build rather than render them sideways. A
+        # Some widgets read horizontally (a window title, the media
+        # transport row): fail the build rather than render them sideways. A
         # `custom/<name>` placement must name a defined custom cell, and a
         # cell's name must stay one path segment of that placement.
         assertions =

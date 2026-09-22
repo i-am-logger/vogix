@@ -16,9 +16,9 @@ GridLayout {
     property BarAxis axis: null
 
     readonly property bool vertical: axis?.vertical ?? false
-    // These read horizontally (window titles, scrolling media text); the
-    // Nix side asserts them off vertical bars, and the shell backstops
-    // with the loud unknown tile.
+    // These read horizontally (window titles, the media transport row,
+    // weather text, the theme stepper); the Nix side asserts them off
+    // vertical bars, and the shell backstops with the loud unknown tile.
     readonly property list<string> horizontalOnly: ["window", "media", "weather", "theme"]
 
     flow: vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight

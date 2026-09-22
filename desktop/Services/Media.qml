@@ -14,15 +14,6 @@ Singleton {
         return playing ?? players.find(p => p.canControl) ?? null;
     }
 
-    readonly property string title: {
-        const p = root.active;
-        if (!p)
-            return "";
-        const artist = p.trackArtist ?? "";
-        const track = p.trackTitle ?? "";
-        return artist !== "" && track !== "" ? artist + " — " + track : (track || artist);
-    }
-
     function playPause(): void {
         if (root.active?.canTogglePlaying)
             root.active.togglePlaying();

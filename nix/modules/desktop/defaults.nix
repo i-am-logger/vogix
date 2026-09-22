@@ -33,8 +33,9 @@ _:
       size = 96;
       layout = {
         # Stereo spectrum split to the far corners: left channel at the
-        # left edge, right at the right, bass at the outer edges.
-        start = [ "spectrum-left" ];
+        # left edge, right at the right, bass at the outer edges. The
+        # media transport (no track text) follows the left channel.
+        start = [ "spectrum-left" "media" ];
         center = [ "oscilloscope" ];
         # The stat/graph run lives on the RIGHT RAIL; the bottom keeps
         # the oscilloscope, status, and `spectrum-right` ending the

@@ -19,7 +19,8 @@
           "spectrum-right"
         ],
         "start": [
-          "spectrum-left"
+          "spectrum-left",
+          "media"
         ]
       },
       "size": 96
