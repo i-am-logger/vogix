@@ -64,6 +64,11 @@ Singleton {
     // the configured table and still reads it.
     readonly property real disk: root.mountUsage["/"] ?? 0  // 0..1
 
+    // "/" is RAM-backed (tmpfs/ramfs): the impermanence layout, where the
+    // root is per-boot scratch and the storage lives on the mounts listed
+    // beside it. The root GAUGE is omitted then; `disk` still reads it.
+    property bool rootInMemory: false
+
     // gaugePoints minus what this host does not have. This tests hasSwap
     // directly instead of calling gaugeUsed, because the swap FRACTION
     // moves on the fast tick and a model rebuilt ten times a second would
@@ -72,7 +77,10 @@ Singleton {
         const out = [];
         for (let i = 0; i < root.gaugePoints.length; i++) {
             const p = root.gaugePoints[i];
-            if (p === "swap" ? root.hasSwap : root.mountUsage[p] !== undefined)
+            const present = p === "swap" ? root.hasSwap
+                : p === "/" ? root.mountUsage[p] !== undefined && !root.rootInMemory
+                : root.mountUsage[p] !== undefined;
+            if (present)
                 out.push(p);
         }
         return out;
@@ -235,13 +243,14 @@ Singleton {
     // does not exist, and answers with the containing filesystem for one
     // that exists but is not a mount point (a plain /persist directory
     // reports "/"), so a row counts only when it names the path that was
-    // asked for. The paths go in as ARGUMENTS rather than interpolated
-    // into the script, and stderr is dropped because a mount this host
-    // lacks is the expected case, not a fault.
+    // asked for. FSTYPE tells a RAM-backed root apart. The paths go in as
+    // ARGUMENTS rather than interpolated into the script, and stderr is
+    // dropped because a mount this host lacks is the expected case, not a
+    // fault.
     Process {
         id: diskProc
         command: {
-            const argv = ["sh", "-c", "df --output=pcent,target \"$@\" 2>/dev/null", "df"];
+            const argv = ["sh", "-c", "df --output=pcent,fstype,target \"$@\" 2>/dev/null", "df"];
             for (let i = 0; i < root.mountPoints.length; i++)
                 argv.push(root.mountPoints[i]);
             return argv;
@@ -250,17 +259,23 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 const seen = {};
+                let rootFsType = "";
                 for (const line of text.split("\n")) {
-                    const m = line.match(/^\s*(\d+)%\s+(\S.*)$/);
-                    if (m && root.mountPoints.includes(m[2]))
-                        seen[m[2]] = Math.max(0, Math.min(1, Number(m[1]) / 100));
+                    const m = line.match(/^\s*(\d+)%\s+(\S+)\s+(\S.*)$/);
+                    if (!m || !root.mountPoints.includes(m[3]))
+                        continue;
+                    seen[m[3]] = Math.max(0, Math.min(1, Number(m[1]) / 100));
+                    if (m[3] === "/")
+                        rootFsType = m[2];
                 }
                 // Not one row means df itself failed, since "/" is always
                 // asked for and always answers. Keep the last reading
                 // rather than publish an empty table, which would read as
                 // every mount at 0% instead of as no measurement.
-                if (Object.keys(seen).length > 0)
+                if (Object.keys(seen).length > 0) {
+                    root.rootInMemory = rootFsType === "tmpfs" || rootFsType === "ramfs";
                     root.mountUsage = seen;
+                }
             }
         }
     }

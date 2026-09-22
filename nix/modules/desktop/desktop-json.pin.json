@@ -225,6 +225,7 @@
   "meters": {
     "history": 64,
     "mounts": [
+      "/",
       "/nix",
       "/persist",
       "/boot",

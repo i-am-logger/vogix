@@ -189,7 +189,9 @@ in
               Capacity gauges for the stat-mounts cell, in order: absolute
               mount points (measured by a 30 s df) plus the literal `swap`,
               which reads the meminfo figures. A path this host does not
-              mount is omitted from the bar, never rendered as 0%.
+              mount is omitted from the bar, never rendered as 0%. `/` is
+              also omitted while the root is RAM-backed (tmpfs or ramfs, the
+              impermanence layout), whose storage is on the other mounts.
             '';
           };
           thresholds = {

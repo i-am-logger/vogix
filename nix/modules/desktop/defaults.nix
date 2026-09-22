@@ -96,11 +96,14 @@ _:
     # cpu/mem/net sample period — 10 Hz, so the graphs and readouts feel
     # ALIVE. Temperature stays on a slow tick, disk on 30 s.
     sampleMs = 100;
-    # The stat-mounts gauges, in the order they read along the bar. /nix
-    # and /persist are their own filesystems only on some hosts (the
-    # latter only under impermanence), and a mount this host does not
-    # have is DROPPED from the bar rather than drawn as an empty 0%.
-    mounts = [ "/nix" "/persist" "/boot" "swap" "/tmp" ];
+    # The stat-mounts gauges, in the order they read along the bar. "/"
+    # leads: on a host with one root filesystem it is the disk. /nix and
+    # /persist are their own filesystems only on some hosts (the latter
+    # only under impermanence), and a mount this host does not have is
+    # DROPPED from the bar rather than drawn as an empty 0%. An in-memory
+    # (tmpfs) root is dropped the same way: under impermanence the storage
+    # is /nix and /persist.
+    mounts = [ "/" "/nix" "/persist" "/boot" "swap" "/tmp" ];
     thresholds = {
       cpu = { warn = 50; danger = 90; };
       cpuTemp = { warn = 60; danger = 85; };
