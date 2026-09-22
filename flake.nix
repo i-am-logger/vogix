@@ -382,6 +382,92 @@
               touch $out
             '';
 
+          # The shell's runtime is declared, not assumed. Every program the
+          # QML spawns by name (the argv[0] of a Process command or an
+          # execDetached call) must resolve through the vogix-desktop
+          # unit's own PATH wrapper with nothing else on PATH, unless it is
+          # a base-system tool or a client of a host daemon that must match
+          # that daemon. And the NixOS module turns on the D-Bus services
+          # the shell reads while a user runs it — power-profiles-daemon
+          # only where no other power manager owns the role.
+          desktop-runtime =
+            let
+              inherit (pkgs) lib;
+              hmUser = desktop: {
+                imports = [ self.homeManagerModules.default ];
+                home = {
+                  username = "t";
+                  homeDirectory = "/home/t";
+                  stateVersion = "24.11";
+                };
+                programs.vogix = {
+                  enable = true;
+                  appearance = {
+                    theme = "yoga";
+                    variant = "night";
+                    prebuiltThemes = [ "yoga" ];
+                  };
+                  desktop.enable = desktop;
+                  enableDaemon = false;
+                };
+              };
+              hmConf = home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [ (hmUser true) ];
+              };
+              execStart = builtins.head (lib.toList hmConf.config.systemd.user.services.vogix-desktop.Service.ExecStart);
+              desktopEnv = builtins.head (lib.splitString " " execStart);
+              host = { desktop, extra ? { } }:
+                (nixpkgs.lib.nixosSystem {
+                  modules = [
+                    self.nixosModules.default
+                    home-manager.nixosModules.home-manager
+                    extra
+                    {
+                      nixpkgs.hostPlatform = system;
+                      vogix.enable = true;
+                      users.users.t.isNormalUser = true;
+                      home-manager.users.t = hmUser desktop;
+                      system.stateVersion = "24.11";
+                    }
+                  ];
+                }).config.services;
+              withShell = host { desktop = true; };
+              withShellAndTlp = host { desktop = true; extra.services.tlp.enable = true; };
+              withoutShell = host { desktop = false; };
+              servicesOk =
+                withShell.upower.enable && withShell.power-profiles-daemon.enable
+                && withShellAndTlp.upower.enable && !withShellAndTlp.power-profiles-daemon.enable
+                && !withoutShell.upower.enable && !withoutShell.power-profiles-daemon.enable;
+            in
+            assert servicesOk || throw "the NixOS module does not enable UPower/power-profiles-daemon exactly while a user runs the desktop shell";
+            pkgs.runCommand "vogix-desktop-runtime"
+              { qml = self.packages.${system}.vogix-desktop-qml; } ''
+              # Base-system tools, and clients of host daemons (Hyprland,
+              # Tailscale, systemd) that must match the running daemon.
+              hostProvided=" sh readlink uname pkill systemctl hyprctl tailscale "
+              # Tools the argv[0] scan below cannot see: run inside `sh -c`
+              # lines, or from an argv computed at runtime (wttrbar). Each
+              # must still occur in the QML, so this list cannot outlive
+              # its use.
+              embedded="cava wl-copy hyprsunset wttrbar"
+              for name in $embedded; do
+                grep -rqw -- "$name" "$qml" || { echo "'$name' no longer occurs in the QML; drop it here"; exit 1; }
+              done
+              names=$(grep -rhoE '(command *[:=] *|execDetached\()\["[A-Za-z0-9_.+-]+"' "$qml" \
+                | sed -E 's/.*\["//; s/"$//' | sort -u)
+              test -n "$names"
+              for name in $names $embedded; do
+                case "$hostProvided" in *" $name "*) continue ;; esac
+                if ! PATH=/var/empty ${desktopEnv} ${pkgs.runtimeShell} -c "command -v $name" >/dev/null; then
+                  echo "the shell spawns '$name', which the vogix-desktop unit's PATH does not provide"
+                  exit 1
+                fi
+                echo "$name: provided"
+              done
+              touch $out
+            '';
+
           # Lint the desktop shell's QML against the pinned quickshell's
           # modules. Two categories are disabled because quickshell's
           # published qmltypes cannot express them (PanelWindow is creatable

@@ -317,6 +317,38 @@ in
           surfaces = mergedSurfaces;
         };
         desktopJsonFile = pkgs.writeText "vogix-desktop.json" desktopJson;
+
+        # The programs the shell spawns BY NAME, each gated on the surface
+        # that uses it. They ride the unit's PATH rather than the user's
+        # profile. Clients of the host's own daemons (hyprctl, pw-record,
+        # tailscale, systemctl) come with those daemons and must match
+        # them, so the host provides those.
+        desktopRuntime =
+          let
+            d = cfg.desktop;
+            launcherMode = mode: d.launcher.enable && d.launcher.modes.${mode}.enable;
+          in
+          [
+            cfg.package # vogix: theme steppers, idle and power verbs, pickers
+            pkgs.libnotify # notify-send: battery alerts, reminders, reboot notice
+            pkgs.brightnessctl # the brightness slider and OSD
+            pkgs.hyprsunset # night light
+            pkgs.power-profiles-daemon # powerprofilesctl: the power panel's profile row
+          ]
+          ++ lib.optional d.meters.spectrum.enable pkgs.cava
+          ++ lib.optional d.weather.enable pkgs.wttrbar
+          ++ lib.optional d.launcher.enable pkgs.wl-clipboard # wl-copy: every mode's copy action
+          ++ lib.optionals (launcherMode "files") [ pkgs.fd pkgs.xdg-utils ]
+          ++ lib.optional (launcherMode "calc") pkgs.libqalculate # qalc
+          ++ lib.optional (launcherMode "clipboard") pkgs.cliphist;
+
+        # Runs its arguments with the shell's runtime appended to PATH —
+        # after the session's own entries, so a host's copy of a tool wins.
+        desktopEnv = pkgs.writeShellScript "vogix-desktop-env" ''
+          PATH="''${PATH:+$PATH:}${lib.makeBinPath desktopRuntime}"
+          export PATH
+          exec "$@"
+        '';
       in
       {
         # Some widgets read horizontally (a window title, scrolling media
@@ -335,9 +367,6 @@ in
           [ "left" "right" ];
 
         home.file.".local/state/vogix/desktop.json".source = desktopJsonFile;
-
-        # Subprocess dependencies the shell's services spawn by name.
-        home.packages = [ pkgs.cava ];
 
         # Registers the QML tree as the `vogix` quickshell config
         # (~/.config/quickshell/vogix → the package), so `qs -c vogix`
@@ -371,7 +400,7 @@ in
 
           Service = {
             Type = "simple";
-            ExecStart = "${config.programs.quickshell.package}/bin/qs -n -c vogix";
+            ExecStart = "${desktopEnv} ${config.programs.quickshell.package}/bin/qs -n -c vogix";
             ExecReload = "${cfg.package}/bin/vogix desktop reload";
             Restart = "on-failure";
             RestartSec = 2;

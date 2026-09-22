@@ -1,9 +1,10 @@
 pragma ComponentBehavior: Bound
 // Battery detail, power profile switching (powerprofilesctl) and a line of
-// system info.
+// system info. Each row reports only what its daemon confirmed: no UPower
+// means battery state unknown, and the profile row appears once
+// power-profiles-daemon has answered, highlighting the profile it reports.
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
 import Quickshell.Io
 import qs.Panels
 import qs.Services
@@ -12,7 +13,15 @@ import qs.Vogix
 ColumnLayout {
     id: root
 
+    readonly property list<string> profiles: ["power-saver", "balanced", "performance"]
+
+    // The daemon's own answer: what `powerprofilesctl get` printed. It
+    // prints a profile name only when the daemon answered (a failure goes
+    // to stderr, a missing binary prints nothing), so a known name IS the
+    // availability signal.
     property string profile: ""
+    readonly property bool profilesAvailable: profiles.includes(profile)
+
     property string uname: ""
 
     Component.onCompleted: {
@@ -21,8 +30,8 @@ ColumnLayout {
     }
 
     function setProfile(p: string): void {
-        Quickshell.execDetached(["powerprofilesctl", "set", p]);
-        root.profile = p;
+        setProc.command = ["powerprofilesctl", "set", p];
+        setProc.running = true;
     }
 
     spacing: 10
@@ -34,7 +43,7 @@ ColumnLayout {
     }
 
     PanelLabel {
-        visible: Battery.present
+        visible: Battery.available && Battery.present
         text: {
             const pct = Math.round(Battery.percentage * 100);
             const dev = Battery.device;
@@ -48,17 +57,26 @@ ColumnLayout {
     }
 
     PanelLabel {
-        visible: !Battery.present
+        visible: Battery.available && !Battery.present
         text: "On mains power"
         color: Tokens.color("popup", "muted")
     }
 
+    PanelLabel {
+        Layout.fillWidth: true
+        visible: !Battery.available
+        text: "Battery status unknown: UPower is not running"
+        color: Tokens.color("popup", "muted")
+        wrapMode: Text.Wrap
+    }
+
     RowLayout {
         Layout.fillWidth: true
+        visible: root.profilesAvailable
         spacing: 10
 
         Repeater {
-            model: ["power-saver", "balanced", "performance"]
+            model: root.profiles
 
             PanelLabel {
                 id: profRow
@@ -72,10 +90,19 @@ ColumnLayout {
 
                 MouseArea {
                     anchors.fill: parent
+                    enabled: !setProc.running
                     onClicked: root.setProfile(profRow.modelData)
                 }
             }
         }
+    }
+
+    PanelLabel {
+        Layout.fillWidth: true
+        visible: !root.profilesAvailable
+        text: "Power profiles unavailable: power-profiles-daemon is not running"
+        color: Tokens.color("popup", "muted")
+        wrapMode: Text.Wrap
     }
 
     PanelLabel {
@@ -90,6 +117,16 @@ ColumnLayout {
         command: ["powerprofilesctl", "get"]
         stdout: StdioCollector {
             onStreamFinished: root.profile = text.trim()
+        }
+    }
+
+    // The highlight follows the daemon, never the click: whatever the set
+    // did (a refused profile included), the row re-reads the result.
+    Process {
+        id: setProc
+        onRunningChanged: {
+            if (!running)
+                profileProc.running = true;
         }
     }
 

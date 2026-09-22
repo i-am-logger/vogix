@@ -4,6 +4,8 @@
 # - Console colors (TTY) from vogix theme
 # - Security wrappers for console theme switching (chvt, setvtrgb)
 # - Hardware modules (Kraken Elite, Keychron, OpenRGB)
+# - The desktop shell's system side (lock PAM service, lock handler, and
+#   the UPower / power-profiles D-Bus services while a user runs the shell)
 #
 # NOTE: User configuration (config.toml, app configs) is handled by
 # the home-manager module at ~/.local/state/vogix/
@@ -50,6 +52,11 @@ let
       [ ];
 
   firstVogixUser = if homeManagerUsers != [ ] then builtins.head homeManagerUsers else null;
+
+  # Whether any of those users runs the vogix desktop shell.
+  desktopInUse = builtins.any
+    (user: config.home-manager.users.${user}.programs.vogix.desktop.enable or false)
+    homeManagerUsers;
 
   # Get vogix config from first user for console colors auto-detection
   hmVogixCfg =
@@ -175,6 +182,22 @@ in
         };
       };
     }
+
+    # The system D-Bus services the desktop shell reads: UPower (battery
+    # cells, low-battery alerts, the power panel) and power-profiles-daemon
+    # (the power panel's profile row). Both travel with the program that
+    # needs them, as the lock's PAM service does; mkDefault, so a host keeps
+    # the last word. power-profiles-daemon stays off where another power
+    # manager already owns that role, since it conflicts with each of them.
+    (mkIf desktopInUse {
+      services.upower.enable = lib.mkDefault true;
+      services.power-profiles-daemon.enable = lib.mkDefault (
+        !(config.services.tlp.enable
+          || config.services.auto-cpufreq.enable
+          || config.services.tuned.enable
+          || config.hardware.system76.power-daemon.enable)
+      );
+    })
 
     # Auto-detect console colors from home-manager if enabled
     (

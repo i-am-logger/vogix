@@ -10,6 +10,10 @@ Singleton {
     id: root
 
     readonly property var device: UPower.displayDevice
+    // UPower answered: the display device only turns ready once the
+    // daemon's properties arrive, so false means no UPower on the bus —
+    // battery state is UNKNOWN then, not "on mains".
+    readonly property bool available: device?.ready ?? false
     readonly property bool present: device !== null && (device.isLaptopBattery ?? false)
     readonly property real percentage: device ? device.percentage : 0
     readonly property bool charging: device
