@@ -323,9 +323,9 @@ in
 
         # The programs the shell spawns BY NAME, each gated on the surface
         # that uses it. They ride the unit's PATH rather than the user's
-        # profile. Clients of the host's own daemons (hyprctl, pw-record,
-        # tailscale, systemctl) come with those daemons and must match
-        # them, so the host provides those.
+        # profile. Clients of the host's own daemons and drivers (hyprctl,
+        # pw-record, tailscale, systemctl, nvidia-smi) come with them and
+        # must match them, so the host provides those.
         desktopRuntime =
           let
             d = cfg.desktop;

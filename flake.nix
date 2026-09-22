@@ -497,8 +497,9 @@
             pkgs.runCommand "vogix-desktop-runtime"
               { qml = self.packages.${system}.vogix-desktop-qml; } ''
               # Base-system tools, and clients of host daemons (Hyprland,
-              # Tailscale, systemd) that must match the running daemon.
-              hostProvided=" sh readlink uname pkill systemctl hyprctl tailscale "
+              # Tailscale, systemd, the NVIDIA driver) that must match the
+              # running daemon or driver.
+              hostProvided=" sh bash readlink uname pkill systemctl hyprctl tailscale nvidia-smi "
               # Tools the argv[0] scan below cannot see: run inside `sh -c`
               # lines, or from an argv computed at runtime (wttrbar). Each
               # must still occur in the QML, so this list cannot outlive
