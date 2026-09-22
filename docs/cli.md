@@ -164,6 +164,7 @@ transport behind them is an implementation detail):
 
 ```bash
 vogix desktop status                     # is a shell instance running (and the bar state)
+vogix desktop meters                     # what the HUD samples right now: spectrum/scope taps (off|waiting|running|retrying|parked)
 vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
 vogix desktop check                      # validate desktop.json: schema 2; slots ∈ the 16 praxis keys, resolvable in the live palette;
                                          # known bar widgets and custom cells; menu and custom commands parse

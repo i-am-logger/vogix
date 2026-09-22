@@ -407,7 +407,11 @@ in
         systemd.user.services.vogix-desktop = {
           Unit = {
             Description = "Vogix Desktop Shell (bar, notifications, lock surfaces)";
-            After = [ "graphical-session.target" ];
+            # When PipeWire starts in the same transaction, the shell starts
+            # after it and its first connection finds the daemon instead of
+            # racing it. Ordering only: a PipeWire that comes later is still
+            # picked up (QS_PIPEWIRE_IMMEDIATE_RECONNECT below).
+            After = [ "graphical-session.target" "pipewire.service" ];
             PartOf = [ "graphical-session.target" ];
             # Qt exits via _exit() on a lost Wayland connection (GPU reset);
             # cap the restart loop like vogix-input does.
@@ -438,6 +442,11 @@ in
             Environment = [
               "QS_DISABLE_FILE_WATCHER=1"
               "QS_NO_RELOAD_POPUP=1"
+              # A PipeWire that is not up yet when the shell starts is waited
+              # for (quickshell watches the runtime dir for its socket)
+              # instead of leaving the VU meters, audio panels and taps
+              # without PipeWire for the whole session.
+              "QS_PIPEWIRE_IMMEDIATE_RECONNECT=1"
               "RUST_LOG=vogix=${cfg.logLevel}"
               # Video backgrounds import QtMultimedia, which quickshell's own
               # Qt env doesn't carry; same-nixpkgs module dir, loaded lazily

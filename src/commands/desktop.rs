@@ -22,6 +22,7 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::Reload => reload(),
         DesktopCommands::Check { config } => check(config.as_deref()),
         DesktopCommands::Status => status(),
+        DesktopCommands::Meters => meters(),
         DesktopCommands::Bar { command } => bar(command),
         DesktopCommands::Notify { command } => notify(command),
         DesktopCommands::Lock {
@@ -878,6 +879,15 @@ fn status() -> Result<()> {
     match qs_ipc(&["bar", "status"]) {
         Some(bar_state) => println!("shell: running\nbar: {bar_state}"),
         None => println!("shell: not running"),
+    }
+    Ok(())
+}
+
+/// What the HUD samples right now, as the shell reports it.
+fn meters() -> Result<()> {
+    match qs_ipc(&["meters", "status"]) {
+        Some(state) => println!("{state}"),
+        None => println!("no responsive shell instance"),
     }
     Ok(())
 }

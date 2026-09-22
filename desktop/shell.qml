@@ -238,6 +238,16 @@ ShellRoot {
     }
 
     IpcHandler {
+        target: "meters"
+
+        // What the HUD samples right now, one word per source (see
+        // AudioTap.status for the tap states).
+        function status(): string {
+            return "spectrum:" + Cava.status() + " scope:" + Waveform.status();
+        }
+    }
+
+    IpcHandler {
         target: "osd"
 
         // value: 0..100 (percent), -1 = no gauge. Named flash, not show —

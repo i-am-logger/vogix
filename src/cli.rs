@@ -192,6 +192,11 @@ pub enum DesktopCommands {
     },
     /// Report whether a shell instance is running (and the bar state)
     Status,
+    /// What the HUD samples right now, one word per source, e.g.
+    /// "spectrum:running scope:waiting" (a tap is off, waiting for PipeWire
+    /// or a default sink, running, retrying after an exit, or parked after
+    /// repeated failures)
+    Meters,
     /// Control the bar surface
     Bar {
         #[command(subcommand)]
@@ -853,6 +858,18 @@ mod tests {
                 args
             );
         }
+    }
+
+    #[test]
+    fn test_parse_desktop_meters() {
+        let cli = Cli::try_parse_from(["vogix", "desktop", "meters"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Desktop {
+                command: DesktopCommands::Meters
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "desktop", "meters", "extra"]).is_err());
     }
 
     // ── Property: invalid subcommands fail gracefully ──

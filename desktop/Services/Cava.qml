@@ -1,12 +1,13 @@
 pragma Singleton
-// The audio spectrum: a cava subprocess in raw-ascii mode, ref-counted so
-// it runs ONLY while a spectrum widget is on screen, killed (and the bars
-// zero-filled) the moment the last one goes. Config is inlined over
-// stdin — no file to manage. Frame writes skip when nothing changed, so
-// silence costs no repaints.
+// The audio spectrum: cava in raw-ascii mode on the default sink's
+// monitor, ref-counted so it runs ONLY while a spectrum widget is on
+// screen, stopped (and the bars zero-filled) the moment the last one goes.
+// The process is supervised by AudioTap: it waits for PipeWire and a
+// default sink, and comes back after an exit nobody asked for. Config is
+// inlined over stdin — no file to manage. Frame writes skip when nothing
+// changed, so silence costs no repaints.
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Components
 import qs.Vogix
 
@@ -87,29 +88,41 @@ Singleton {
         }
     }
 
-    Process {
-        id: proc
+    // Inline cava config, fed to `-p /dev/stdin` through a heredoc so the
+    // shell can exec into cava: the tap is then cava itself.
+    readonly property string _config: [
+        "[general]", "framerate=25", "bars=" + (root.bars * 2),
+        "[input]", "method=pipewire", "source=auto",
+        "[output]", "method=raw", "data_format=ascii", "ascii_max_range=100", "channels=stereo",
+        "[smoothing]", "noise_reduction=35", "monstercat=1.5", ""
+    ].join("\n")
 
-        running: root.active
-        command: ["sh", "-c",
-            "printf '[general]\\nframerate=25\\nbars=%d\\n[output]\\nmethod=raw\\ndata_format=ascii\\nascii_max_range=100\\nchannels=stereo\\n[smoothing]\\nnoise_reduction=35\\nmonstercat=1.5\\n' "
-            + (root.bars * 2) + " | cava -p /dev/stdin"]
+    AudioTap {
+        id: tap
 
-        stdout: SplitParser {
-            onRead: line => {
-                if (line === root._last)
-                    return;
-                root._last = line;
-                root.values = line.split(";").filter(s => s !== "")
-                    .map(s => Math.max(0, Math.min(1, Number(s) / 100)));
+        name: "cava"
+        wanted: root.active
+        command: ["sh", "-c", "exec cava -p /dev/stdin <<'EOF'\n" + root._config + "EOF\n"]
+
+        // A dead tap must not leave its last frame standing: zero it and
+        // let the ballistics fall.
+        onRunningChanged: {
+            if (!running) {
+                root.values = Array(root.bars * 2).fill(0);
+                root._last = "";
             }
         }
 
-        // running flips false when the subprocess dies on its own too — an
-        // EOF'd cava while a spectrum widget still wants it is worth a line.
-        onRunningChanged: {
-            if (!running && root.active)
-                console.warn("vogix: cava exited while a spectrum widget is visible");
+        onLine: data => {
+            if (data === root._last)
+                return;
+            root._last = data;
+            root.values = data.split(";").filter(s => s !== "")
+                .map(s => Math.max(0, Math.min(1, Number(s) / 100)));
         }
+    }
+
+    function status(): string {
+        return tap.status();
     }
 }

@@ -4,10 +4,11 @@ pragma Singleton
 // shell can parse. The stream is tagged node.name=vogix-scope so the
 // privacy indicator can tell it from a real recording. Ref-counted —
 // capture runs only while a scope widget is on screen; UI writes are
-// throttled to ~30 fps regardless of sample rate.
+// throttled to ~30 fps regardless of sample rate. AudioTap supervises
+// the process: it waits for PipeWire and a default sink, and comes back
+// after an exit nobody asked for.
 import QtQuick
 import Quickshell
-import Quickshell.Io
 
 Singleton {
     id: root
@@ -28,35 +29,46 @@ Singleton {
     property list<real> waveform: []
     property var _buf: []
 
+    function _clear(): void {
+        root._buf = [];
+        root.waveform = [];
+    }
+
     onActiveChanged: {
-        if (!active) {
-            _buf = [];
-            waveform = [];
+        if (!active)
+            _clear();
+    }
+
+    AudioTap {
+        id: tap
+
+        name: "pw-record"
+        wanted: root.active
+        // bash execs into pw-record, so the process quickshell holds is the
+        // capture itself; od runs in a process substitution and ends on
+        // pw-record's EOF.
+        command: ["bash", "-c",
+            "exec pw-record -P '{ stream.capture.sink=true node.name=vogix-scope }' --format=s16 --rate=8000 --channels=1 - > >(exec od -An -td2 -v -w64)"]
+
+        onRunningChanged: {
+            if (!running)
+                root._clear();
+        }
+
+        onLine: data => {
+            const parts = data.trim().split(/\s+/);
+            for (const p of parts) {
+                const n = Number(p);
+                if (!Number.isNaN(n))
+                    root._buf.push(n / 32768);
+            }
+            if (root._buf.length > 2048)
+                root._buf = root._buf.slice(-1024);
         }
     }
 
-    Process {
-        running: root.active
-        command: ["sh", "-c",
-            "pw-record -P '{ stream.capture.sink=true node.name=vogix-scope }' --format=s16 --rate=8000 --channels=1 - | od -An -td2 -v -w64"]
-
-        stdout: SplitParser {
-            onRead: line => {
-                const parts = line.trim().split(/\s+/);
-                for (const p of parts) {
-                    const n = Number(p);
-                    if (!Number.isNaN(n))
-                        root._buf.push(n / 32768);
-                }
-                if (root._buf.length > 2048)
-                    root._buf = root._buf.slice(-1024);
-            }
-        }
-
-        onRunningChanged: {
-            if (!running && root.active)
-                console.warn("vogix: pw-record exited while a scope widget is visible");
-        }
+    function status(): string {
+        return tap.status();
     }
 
     Timer {

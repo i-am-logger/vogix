@@ -402,15 +402,20 @@
               customGuarded =
                 customRejected { bars.top.layout.end = [ "custom/nope" ]; }
                 && customRejected { custom."a/b".command = "date"; };
+              unit = hmConf.config.systemd.user.services.vogix-desktop;
               # Exit status 75 is the shell's fresh-start request
               # (desktop/Services/NetworkBackend.qml); the unit must answer
               # it with a restart, and not log it as a failure.
-              unit = hmConf.config.systemd.user.services.vogix-desktop.Service;
-              restartsOn75 = unit.RestartForceExitStatus == 75 && unit.SuccessExitStatus == 75;
+              restartsOn75 = unit.Service.RestartForceExitStatus == 75 && unit.Service.SuccessExitStatus == 75;
+              # The shell unit waits for a PipeWire that is not up yet
+              # instead of losing it for the whole session.
+              waitsForPipewire = builtins.elem "QS_PIPEWIRE_IMMEDIATE_RECONNECT=1" unit.Service.Environment
+                && builtins.elem "pipewire.service" unit.Unit.After;
             in
             assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
             assert customGuarded || throw "an undefined custom/<name> placement or a bad custom cell name did not trip its assertion";
             assert restartsOn75 || throw "vogix-desktop.service does not restart the shell on exit status 75";
+            assert waitsForPipewire || throw "vogix-desktop.service lost its PipeWire ordering or QS_PIPEWIRE_IMMEDIATE_RECONNECT";
             pkgs.runCommand "vogix-desktop-options" { nativeBuildInputs = [ pkgs.jq ]; } ''
               jq -S . ${rendered} > got.json
               jq -S . ${./nix/modules/desktop/desktop-json.pin.json} > want.json
@@ -584,6 +589,18 @@
               done
               touch $out
             '';
+
+          # The audio taps against a real PipeWire daemon: waiting for it,
+          # relaunch after an exit, stop and return across a PipeWire
+          # restart (nix/checks/desktop-taps.nix).
+          desktop-taps = import ./nix/checks/desktop-taps.nix {
+            inherit pkgs;
+            qsPkgs = import nixpkgs {
+              inherit system;
+              overlays = [ self.overlays.default ];
+              config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) unfreePackageNames;
+            };
+          };
 
           # The shell actually RUNS: a headless cage compositor hosts the real
           # quickshell loading the real QML against fixture contract files,
