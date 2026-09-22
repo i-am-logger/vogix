@@ -106,4 +106,40 @@ ln -s "$(command -v sh)" "$nots/sh"
 expect "tailscale absent" '
 absent' "$(PATH=$nots "$nots/sh" "$data/tailscale-status.sh")"
 
+# block-devices.sh on a LUKS+LVM host: the root and /nix are dm devices
+# reached through /dev/mapper links, /boot is a plain partition, /home a
+# bind mount of a subtree, /tmp is tmpfs; swap is zram; the disks are an
+# NVMe (with a hidden multipath leg), an SD card, and stacked dm/loop
+# devices that must not count.
+blk=$TMPDIR/sys-block
+dev=$TMPDIR/dev
+mkdir -p "$dev/mapper"
+for n in dm-0 dm-1 nvme0n1p1 nvme0n1p2 zram0; do : >"$dev/$n"; done
+ln -s ../dm-0 "$dev/mapper/cryptroot"
+ln -s ../dm-1 "$dev/mapper/vg-nix"
+for d in nvme0n1 nvme0c0n1 mmcblk0 dm-0 loop0; do mkdir -p "$blk/block/$d"; done
+for d in nvme0n1 nvme0c0n1 mmcblk0; do mkdir -p "$blk/block/$d/device"; done
+echo 1 >"$blk/block/nvme0c0n1/hidden"
+echo 0 >"$blk/block/nvme0n1/hidden"
+printf 'Filename\tType\tSize\tUsed\tPriority\n%s/zram0                              partition\t14463740\t0\t5\n' "$dev" >"$TMPDIR/swaps"
+fm=$TMPDIR/findmnt-bin
+mkdir -p "$fm"
+cat >"$fm/findmnt" <<EOF
+#!/bin/sh
+printf '%s\n' '/ $dev/mapper/cryptroot' '/nix $dev/mapper/vg-nix' \
+  '/boot $dev/nvme0n1p1' '/home $dev/nvme0n1p2[/persist/home]' \
+  '/tmp tmpfs' '/mnt/My\x20Disk $dev/nvme0n1p2'
+EOF
+chmod +x "$fm/findmnt"
+expect "block devices" \
+  "mount${tab}/${tab}dm-0
+mount${tab}/nix${tab}dm-1
+mount${tab}/boot${tab}nvme0n1p1
+mount${tab}/home${tab}nvme0n1p2
+mount${tab}/mnt/My\\x20Disk${tab}nvme0n1p2
+swap${tab}zram0
+disk${tab}mmcblk0
+disk${tab}nvme0n1" \
+  "$(PATH=$fm:$PATH sh "$data/block-devices.sh" "$blk" "$TMPDIR/swaps" "$dev")"
+
 exit $fail

@@ -11,6 +11,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Vogix
+import "lib/blockdev.js" as BlockDev
 import "lib/fans.js" as Fans
 import "lib/gpu.js" as Gpu
 
@@ -62,11 +63,16 @@ Singleton {
     property real gpuBusy: 0    // 0..1
     property real diskIoRate: 0 // bytes/s, reads+writes
     property real uptimeSec: 0
-    // gauge name → device basename, and gauge name → live bytes/s; a
-    // gauge with no block device is simply absent from both.
+    // gauge name → kernel device name (as /proc/diskstats names it), and
+    // gauge name → live bytes/s; a gauge with no block device is simply
+    // absent from both.
     property var gaugeDevice: ({})
     property var gaugeIo: ({})
     property var _lastDevSectors: ({})
+    // The whole physical disks the total I/O sums, and whether the
+    // one-shot device probe has answered yet.
+    property list<string> _physicalDisks: []
+    property bool _blockProbed: false
 
     // The capacity gauges the bar may show, in the order meters.mounts
     // names them: absolute mount points, measured by df, plus the literal
@@ -362,79 +368,59 @@ Singleton {
     }
 
     // Disk THROUGHPUT (the usage fraction is `disk`): whole physical
-    // devices only — the partition rows would double-count every byte.
+    // disks only for the total — partition and dm rows would count every
+    // byte again. Nothing is measured until block-devices.sh has named the
+    // disks, so the first reading after it is a baseline, not a spike.
     FileView {
         id: diskstatsFile
         path: "/proc/diskstats"
         watchChanges: false
         preload: true
         onLoaded: {
-            // Whole physical devices feed the TOTAL I/O instrument; the
-            // per-gauge devices (partitions, zram) each get their own rate
-            // so a mount cell can show what ITS filesystem is doing.
-            const wanted = Object.values(root.gaugeDevice);
-            const perDev = {};
-            let sectors = 0;
-            for (const line of text().split("\n")) {
-                const f = line.trim().split(/\s+/);
-                if (f.length < 11)
-                    continue;
-                const s = Number(f[5]) + Number(f[9]);
-                if (/^(nvme\d+n\d+|sd[a-z]+|vd[a-z]+)$/.test(f[2]))
-                    sectors += s;
-                if (wanted.includes(f[2]))
-                    perDev[f[2]] = s;
-            }
+            if (!root._blockProbed)
+                return;
+            // Whole physical disks feed the TOTAL I/O instrument; the
+            // per-gauge devices (partitions, dm-N, zram) each get their
+            // own rate so a mount cell can show what ITS filesystem is
+            // doing.
             const now = Date.now();
+            const read = BlockDev.sectors(text(), root._physicalDisks, Object.values(root.gaugeDevice));
             const dt = (now - root.lastDiskAt) / 1000;
-            if (root.lastDiskAt > 0 && dt > 0 && sectors >= root.lastDiskSectors) {
-                root.diskIoRate = (sectors - root.lastDiskSectors) * 512 / dt;
+            if (root.lastDiskAt > 0 && dt > 0 && read.total >= root.lastDiskSectors) {
+                root.diskIoRate = (read.total - root.lastDiskSectors) * 512 / dt;
                 root.diskIoHistory = root._push(root.diskIoHistory, root.diskIoRate);
 
                 const io = {};
                 for (const [name, dev] of Object.entries(root.gaugeDevice)) {
-                    const cur = perDev[dev];
+                    const cur = read.perDev[dev];
                     const prev = root._lastDevSectors[dev];
                     if (cur !== undefined && prev !== undefined && cur >= prev)
                         io[name] = (cur - prev) * 512 / dt;
                 }
                 root.gaugeIo = io;
             }
-            root._lastDevSectors = perDev;
-            root.lastDiskSectors = sectors;
+            root._lastDevSectors = read.perDev;
+            root.lastDiskSectors = read.total;
             root.lastDiskAt = now;
         }
     }
 
-    // One-shot mount→device map for the per-gauge I/O rates. Only rows
-    // backed by a real block device count: tmpfs mounts have no I/O and
-    // must read ABSENT, and a btrfs subvolume source keeps its device
-    // once the [subvol] suffix is stripped.
+    // One-shot block-device map (data/block-devices.sh): the kernel device
+    // behind each mount and swap, resolved through its device-node
+    // symlinks so a LUKS or LVM mapping reports the dm-N that diskstats
+    // counts, and the whole physical disks. Mounts without a block device
+    // (tmpfs) have no entry and their I/O reads ABSENT.
     Process {
         id: mountDevProc
         running: true
-        command: ["sh", "-c", "findmnt -rn -o TARGET,SOURCE; echo '--swaps--'; tail -n +2 /proc/swaps 2>/dev/null | cut -d' ' -f1"]
+        command: ["sh", Quickshell.shellDir + "/data/block-devices.sh"]
 
         stdout: StdioCollector {
             onStreamFinished: {
-                const map = {};
-                let inSwaps = false;
-                for (const line of text.trim().split("\n")) {
-                    if (line === "--swaps--") {
-                        inSwaps = true;
-                        continue;
-                    }
-                    if (inSwaps) {
-                        const dev = line.trim();
-                        if (dev.startsWith("/dev/"))
-                            map["swap"] = dev.slice(5);
-                        continue;
-                    }
-                    const parts = line.split(" ");
-                    if (parts.length >= 2 && parts[1].startsWith("/dev/"))
-                        map[parts[0]] = parts[1].slice(5).replace(/\[.*$/, "");
-                }
-                root.gaugeDevice = map;
+                const found = BlockDev.parse(text);
+                root.gaugeDevice = found.devices;
+                root._physicalDisks = found.disks;
+                root._blockProbed = true;
             }
         }
     }
