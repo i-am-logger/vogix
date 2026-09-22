@@ -296,6 +296,9 @@ in
             inherit (cfg.desktop.bars.${edge}) enable size;
             layout = { inherit (cfg.desktop.bars.${edge}.layout) start center end; };
           });
+          custom = lib.mapAttrs
+            (_: c: { inherit (c) title command output interval watch stream onClick widest; })
+            cfg.desktop.custom;
           meters = {
             spectrum = { inherit (cfg.desktop.meters.spectrum) enable bars; };
             vu = { inherit (cfg.desktop.meters.vu) floorDb; };
@@ -352,19 +355,41 @@ in
       in
       {
         # Some widgets read horizontally (a window title, scrolling media
-        # text): fail the build rather than render them sideways.
-        assertions = map
-          (edge:
-            let
-              horizontalOnly = [ "window" "media" "weather" "theme" ];
-              l = cfg.desktop.bars.${edge}.layout;
-              bad = lib.intersectLists horizontalOnly (l.start ++ l.center ++ l.end);
-            in
+        # text): fail the build rather than render them sideways. A
+        # `custom/<name>` placement must name a defined custom cell, and a
+        # cell's name must stay one path segment of that placement.
+        assertions =
+          let
+            barWidgets = edge:
+              let l = cfg.desktop.bars.${edge}.layout; in l.start ++ l.center ++ l.end;
+            placedCustom = lib.unique (map (lib.removePrefix "custom/")
+              (builtins.filter (lib.hasPrefix "custom/")
+                (lib.concatMap barWidgets [ "top" "bottom" "left" "right" ])));
+            undefinedCustom = builtins.filter (n: !(cfg.desktop.custom ? ${n})) placedCustom;
+            badCustomNames = builtins.filter (n: builtins.match "[A-Za-z0-9_-]+" n == null)
+              (builtins.attrNames cfg.desktop.custom);
+          in
+          (map
+            (edge:
+              let
+                horizontalOnly = [ "window" "media" "weather" "theme" ];
+                bad = lib.intersectLists horizontalOnly (barWidgets edge);
+              in
+              {
+                assertion = bad == [ ];
+                message = "programs.vogix.desktop.bars.${edge}: ${lib.concatStringsSep ", " bad} cannot render on a vertical bar (horizontal-only widgets).";
+              })
+            [ "left" "right" ])
+          ++ [
             {
-              assertion = bad == [ ];
-              message = "programs.vogix.desktop.bars.${edge}: ${lib.concatStringsSep ", " bad} cannot render on a vertical bar (horizontal-only widgets).";
-            })
-          [ "left" "right" ];
+              assertion = undefinedCustom == [ ];
+              message = "programs.vogix.desktop.bars: ${lib.concatMapStringsSep ", " (n: "custom/${n}") undefinedCustom} placed, but programs.vogix.desktop.custom defines no such cell.";
+            }
+            {
+              assertion = badCustomNames == [ ];
+              message = "programs.vogix.desktop.custom: ${lib.concatStringsSep ", " badCustomNames}: a custom cell name may hold only letters, digits, '-' and '_'.";
+            }
+          ];
 
         home.file.".local/state/vogix/desktop.json".source = desktopJsonFile;
 

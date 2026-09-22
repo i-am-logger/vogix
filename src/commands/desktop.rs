@@ -8,8 +8,8 @@
 //! a caller.
 
 use crate::cli::{
-    BarCommands, DesktopCommands, DndCommands, LockCommands, NotifyCommands, PowerCommands,
-    RemindCommands, SwitchCommands,
+    BarCommands, CustomCommands, DesktopCommands, DndCommands, LockCommands, NotifyCommands,
+    PowerCommands, RemindCommands, SwitchCommands,
 };
 use crate::errors::{Result, VogixError};
 use log::debug;
@@ -51,6 +51,7 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::Nightlight { state } => switch("nightlight", state),
         DesktopCommands::StayAwake { state } => switch("stayawake", state),
         DesktopCommands::Remind { command } => remind(command),
+        DesktopCommands::Custom { command } => custom(command),
         DesktopCommands::Gallery { close } => {
             match qs_ipc(&["gallery", if *close { "close" } else { "open" }]) {
                 Some(r) => println!("{r}"),
@@ -111,6 +112,25 @@ fn remind(command: &RemindCommands) -> Result<()> {
     Ok(())
 }
 
+fn custom(command: &CustomCommands) -> Result<()> {
+    let reply = match command {
+        CustomCommands::Refresh { name } => qs_ipc(&["custom", "refresh", name]),
+        CustomCommands::Status { name } => qs_ipc(&["custom", "status", name]),
+    };
+    match reply {
+        // A name desktop.json does not define is the caller's error.
+        Some(r) if r.starts_with("unknown custom cell") => Err(VogixError::Config(r)),
+        Some(r) => {
+            println!("{r}");
+            Ok(())
+        }
+        None => {
+            println!("no responsive shell instance");
+            Ok(())
+        }
+    }
+}
+
 /// Validate desktop.json; see [`validate`] for what is checked. Hard
 /// failure on any violation — the file is Nix-generated, so an error here
 /// is a generator bug, not user error.
@@ -134,10 +154,11 @@ fn check(config: Option<&str>) -> Result<()> {
     let report = validate(&doc, semantic.as_ref());
     if report.errors.is_empty() {
         println!(
-            "desktop.json OK — {} surfaces, {} tokens, {} bar widgets, {} menu commands, every slot {}",
+            "desktop.json OK — {} surfaces, {} tokens, {} bar widgets, {} custom cells, {} menu commands, every slot {}",
             report.surfaces,
             report.tokens,
             report.widgets,
+            report.custom_cells,
             report.menu_commands,
             if semantic.is_some() {
                 "resolves in the current theme"
@@ -164,6 +185,7 @@ struct CheckReport {
     surfaces: usize,
     tokens: usize,
     widgets: usize,
+    custom_cells: usize,
     menu_commands: usize,
 }
 
@@ -171,9 +193,9 @@ struct CheckReport {
 const DESKTOP_SCHEMA: u64 = 2;
 
 /// The whole desktop.json contract, checked without touching the
-/// filesystem: the schema, surface tokens, the four-bar widget table, and
-/// the launcher menu's commands. `semantic` is the live theme's semantic
-/// map, when one is active.
+/// filesystem: the schema, surface tokens, the four-bar widget table, the
+/// custom cells, and the launcher menu's commands. `semantic` is the live
+/// theme's semantic map, when one is active.
 fn validate(doc: &Value, semantic: Option<&Value>) -> CheckReport {
     let mut report = CheckReport::default();
     match doc.get("schema") {
@@ -185,6 +207,7 @@ fn validate(doc: &Value, semantic: Option<&Value>) -> CheckReport {
     }
     check_surfaces(doc, semantic, &mut report);
     check_bar_widgets(doc, &mut report);
+    check_custom_cells(doc, &mut report);
     check_menu_commands(doc, &mut report);
     report
 }
@@ -299,13 +322,102 @@ const KNOWN_WIDGETS: &[&str] = &[
 /// Widgets that read horizontally and so never render on a vertical bar.
 const HORIZONTAL_ONLY: &[&str] = &["window", "media", "weather", "theme"];
 
+/// A bar places the custom cell `<name>` as `custom/<name>`.
+const CUSTOM_PREFIX: &str = "custom/";
+
+/// The custom cells (`custom.<name>`): a name one path segment of letters,
+/// digits, `-` and `_`; a command the shell can run; and every field in
+/// the shape the shell reads.
+fn check_custom_cells(doc: &Value, report: &mut CheckReport) {
+    let Some(cells) = doc.get("custom") else {
+        return;
+    };
+    let Some(cells) = cells.as_object() else {
+        report.errors.push("custom: not an object".to_string());
+        return;
+    };
+    for (name, cell) in cells {
+        let at = format!("custom.{name}");
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            report.errors.push(format!(
+                "{at}: a cell name may hold only letters, digits, '-' and '_'"
+            ));
+        }
+        let Some(cell) = cell.as_object() else {
+            report.errors.push(format!("{at}: not an object"));
+            continue;
+        };
+        report.custom_cells += 1;
+        let mut problem = |field: &str, why: String| {
+            report.errors.push(format!("{at}.{field}: {why}"));
+        };
+        match cell.get("command") {
+            Some(Value::String(command)) => {
+                if let Some(why) = shell_command_problem(command) {
+                    problem("command", why);
+                }
+            }
+            _ => problem("command", "a command string is required".to_string()),
+        }
+        match cell.get("onClick") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(command)) => {
+                if let Some(why) = shell_command_problem(command) {
+                    problem("onClick", why);
+                }
+            }
+            Some(_) => problem("onClick", "not a string".to_string()),
+        }
+        match cell.get("output") {
+            None => {}
+            Some(Value::String(o)) if o == "text" || o == "json" => {}
+            Some(other) => problem("output", format!("{other} is not \"text\" or \"json\"")),
+        }
+        match cell.get("interval") {
+            None | Some(Value::Null) => {}
+            Some(v) if v.as_u64().is_some_and(|s| s > 0) => {}
+            Some(other) => problem(
+                "interval",
+                format!("{other} is not a positive number of seconds"),
+            ),
+        }
+        match cell.get("watch") {
+            None => {}
+            Some(Value::Array(paths)) => {
+                for p in paths {
+                    if !p.as_str().is_some_and(|p| p.starts_with('/')) {
+                        problem("watch", format!("{p} is not an absolute path"));
+                    }
+                }
+            }
+            Some(_) => problem("watch", "not a list of paths".to_string()),
+        }
+        if cell.get("stream").is_some_and(|v| !v.is_boolean()) {
+            problem("stream", "not a boolean".to_string());
+        }
+        for field in ["title", "widest"] {
+            if cell
+                .get(field)
+                .is_some_and(|v| !v.is_string() && !v.is_null())
+            {
+                problem(field, "not a string".to_string());
+            }
+        }
+    }
+}
+
 /// The four-bar table: every named widget must be one the shell's
-/// registry knows, and horizontal-only widgets may not appear on a
-/// vertical bar.
+/// registry knows or a `custom/<name>` cell desktop.json defines, and
+/// horizontal-only widgets may not appear on a vertical bar.
 fn check_bar_widgets(doc: &Value, report: &mut CheckReport) {
     let Some(bars) = doc.get("bars").and_then(|b| b.as_object()) else {
         return;
     };
+    let custom = doc.get("custom").and_then(|c| c.as_object());
     for (edge, bar) in bars {
         let vertical = edge == "left" || edge == "right";
         let layout = bar.get("layout").and_then(|l| l.as_object());
@@ -316,7 +428,13 @@ fn check_bar_widgets(doc: &Value, report: &mut CheckReport) {
             for w in names.into_iter().flatten() {
                 report.widgets += 1;
                 let name = w.as_str().unwrap_or("");
-                if !KNOWN_WIDGETS.contains(&name) {
+                if let Some(cell) = name.strip_prefix(CUSTOM_PREFIX) {
+                    if !custom.is_some_and(|c| c.contains_key(cell)) {
+                        report.errors.push(format!(
+                            "bars.{edge}.layout.{section}: '{name}' names no cell under `custom`"
+                        ));
+                    }
+                } else if !KNOWN_WIDGETS.contains(&name) {
                     report.errors.push(format!(
                         "bars.{edge}.layout.{section}: unknown widget '{name}'"
                     ));
@@ -850,6 +968,97 @@ mod tests {
         let report = validate(&default_doc(), None);
         assert!(report.errors.is_empty(), "{:#?}", report.errors);
         assert!(report.widgets > 0 && report.tokens > 0);
+    }
+
+    fn custom_doc(cell: Value, placed: &str) -> Value {
+        serde_json::json!({
+            "schema": 2,
+            "bars": { "top": { "enable": true, "size": 32,
+                "layout": { "start": [placed], "center": [], "end": [] } } },
+            "custom": { "probe": cell }
+        })
+    }
+
+    #[test]
+    fn a_defined_custom_cell_validates_on_any_bar() {
+        let cell = serde_json::json!({
+            "title": "UPD", "command": "checkupdates | wc -l", "output": "text",
+            "interval": 3600, "watch": ["/run/user/1000/state"], "stream": false,
+            "onClick": "vogix desktop custom refresh probe", "widest": "999"
+        });
+        let report = validate(&custom_doc(cell.clone(), "custom/probe"), None);
+        assert!(report.errors.is_empty(), "{:#?}", report.errors);
+        assert_eq!(report.custom_cells, 1);
+
+        let mut doc = custom_doc(cell, "custom/probe");
+        doc["bars"]["left"] = doc["bars"]["top"].clone();
+        assert!(validate(&doc, None).errors.is_empty());
+    }
+
+    #[test]
+    fn a_custom_placement_must_name_a_defined_cell() {
+        let cell = serde_json::json!({ "command": "date" });
+        let report = validate(&custom_doc(cell, "custom/nope"), None);
+        assert_eq!(report.errors.len(), 1, "{:#?}", report.errors);
+        assert!(report.errors[0].contains("'custom/nope' names no cell"));
+    }
+
+    #[test]
+    fn malformed_custom_cells_fail_the_check() {
+        for (cell, field) in [
+            (serde_json::json!({}), "command"),
+            (serde_json::json!({ "command": "echo 'open" }), "command"),
+            (
+                serde_json::json!({ "command": "vogix desktop custom poke x" }),
+                "command",
+            ),
+            (
+                serde_json::json!({ "command": "date", "output": "yaml" }),
+                "output",
+            ),
+            (
+                serde_json::json!({ "command": "date", "interval": 0 }),
+                "interval",
+            ),
+            (
+                serde_json::json!({ "command": "date", "watch": ["relative/file"] }),
+                "watch",
+            ),
+            (
+                serde_json::json!({ "command": "date", "stream": "yes" }),
+                "stream",
+            ),
+            (
+                serde_json::json!({ "command": "date", "onClick": 7 }),
+                "onClick",
+            ),
+            (
+                serde_json::json!({ "command": "date", "widest": 3 }),
+                "widest",
+            ),
+        ] {
+            let report = validate(&custom_doc(cell.clone(), "custom/probe"), None);
+            assert_eq!(report.errors.len(), 1, "{cell}: {:#?}", report.errors);
+            assert!(
+                report.errors[0].starts_with(&format!("custom.probe.{field}:")),
+                "{cell}: {:#?}",
+                report.errors
+            );
+        }
+
+        let doc = serde_json::json!({ "schema": 2, "custom": { "a/b": { "command": "date" } } });
+        let report = validate(&doc, None);
+        assert_eq!(report.errors.len(), 1, "{:#?}", report.errors);
+        assert!(report.errors[0].starts_with("custom.a/b:"));
+    }
+
+    /// The shell's registry (Section.qml) routes the same prefix this check
+    /// accepts to the custom cell.
+    #[test]
+    fn the_section_registry_places_custom_cells() {
+        const SECTION_QML: &str = include_str!("../../desktop/Bar/Section.qml");
+        assert!(SECTION_QML.contains(&format!("modelData.startsWith(\"{CUSTOM_PREFIX}\")")));
+        assert!(SECTION_QML.contains("widgets/CustomCell.qml"));
     }
 
     #[test]

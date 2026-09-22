@@ -11,7 +11,7 @@
 { lib }:
 
 let
-  inherit (lib) mkOption mkEnableOption types;
+  inherit (lib) mkOption mkEnableOption types literalExpression;
   defaults = import ./defaults.nix { };
   v16 = import ../lib/vogix16.nix { inherit lib; };
 
@@ -72,6 +72,81 @@ let
     };
   };
 
+  # A custom cell: a command's output in the Flight Deck stat-cell shape,
+  # placed in a bar layout as `custom/<name>`.
+  customCellType = types.submodule ({ name, ... }: {
+    options = {
+      title = mkOption {
+        type = types.str;
+        default = name;
+        description = "The cell's break-title (drawn uppercase; cut to four characters on a vertical bar).";
+      };
+      command = mkOption {
+        type = types.nonEmptyStr;
+        example = "checkupdates | wc -l";
+        description = ''
+          Shell command, run with `sh -c`, whose standard output the cell
+          shows. A non-zero exit shows ERR in the danger color until a run
+          succeeds.
+        '';
+      };
+      output = mkOption {
+        type = types.enum [ "text" "json" ];
+        default = "text";
+        description = ''
+          How the command's output reads. `text`: the first non-empty line
+          (every line, with `stream`). `json`: one object
+          `{ "text": "…", "state": "normal" | "warning" | "danger", "meter": 0.0–1.0 }`
+          (one per line with `stream`); `state` colors the value the way
+          the stat cells' thresholds do and `meter` puts a gauge before
+          it — both optional.
+        '';
+      };
+      interval = mkOption {
+        type = types.nullOr types.ints.positive;
+        default = null;
+        description = ''
+          Seconds between runs. Null runs the command only when the cell
+          appears, when a `watch` file changes, after a click, and on
+          `vogix desktop custom refresh <name>`.
+        '';
+      };
+      watch = mkOption {
+        type = types.listOf (types.strMatching "/.*");
+        default = [ ];
+        example = [ "/run/user/1000/vpn-state" ];
+        description = ''
+          Absolute paths of files whose change (a write, a replacement, a
+          creation) re-runs the command. A path's parent directory must
+          exist, and the command must not write the file itself.
+        '';
+      };
+      stream = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          The command keeps running and every line it prints replaces the
+          value (a `--follow` style producer). A refresh relaunches it only
+          once it has exited.
+        '';
+      };
+      onClick = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Shell command run on click; the cell re-runs its own command
+          once it finishes. With none, a click re-runs the command.
+        '';
+      };
+      widest = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "999";
+        description = "A sample of the widest value: the cell reserves its width, so changing output never reflows the bar.";
+      };
+    };
+  });
+
   launcherModeNames = [ "apps" "files" "calc" "emoji" "ssh" "clipboard" "theme" "background" ];
 
   barEdges = [ "top" "bottom" "left" "right" ];
@@ -118,7 +193,8 @@ in
         # are start/center/end along the bar's axis (start = left on a
         # horizontal bar, top on a vertical one). Some widgets are
         # horizontal-only (window, media, weather, theme) — an assertion in
-        # the home-manager module rejects them on left/right.
+        # the home-manager module rejects them on left/right. `custom/<name>`
+        # places a `custom` cell.
         bars = lib.genAttrs barEdges (edge: {
           enable = mkOption {
             type = types.bool;
@@ -148,6 +224,23 @@ in
             };
           };
         });
+
+        custom = mkOption {
+          type = types.attrsOf customCellType;
+          default = { };
+          example = literalExpression ''
+            {
+              updates = { command = "checkupdates | wc -l"; interval = 3600; widest = "999"; };
+              vpn = { command = "cat /run/user/1000/vpn-state"; watch = [ "/run/user/1000/vpn-state" ]; };
+            }
+          '';
+          description = ''
+            Custom cells, each showing the output of a command. A bar
+            places one by naming `custom/<name>` in a layout section
+            (names: letters, digits, `-`, `_`); the command runs only while
+            a bar shows its cell, once however many bars and screens do.
+          '';
+        };
 
         # The HUD's data-density knobs: the audio meters, the history ring
         # buffers behind the graphs, and the stat thresholds that drive

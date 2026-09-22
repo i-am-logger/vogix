@@ -165,7 +165,8 @@ transport behind them is an implementation detail):
 ```bash
 vogix desktop status                     # is a shell instance running (and the bar state)
 vogix desktop reload                     # re-read theme.json + desktop.json (runs on every theme switch)
-vogix desktop check                      # validate desktop.json: slots ∈ the 16 praxis keys, resolvable in the live palette
+vogix desktop check                      # validate desktop.json: schema 2; slots ∈ the 16 praxis keys, resolvable in the live palette;
+                                         # known bar widgets and custom cells; menu and custom commands parse
 vogix desktop restart                    # restart the shell (REFUSED while the session is locked)
 vogix desktop bar show|hide|toggle       # the bar surface
 vogix desktop notify dismiss [--all]     # the notification surface
@@ -182,6 +183,7 @@ vogix desktop panel [NAME|--close]      # bar panels: audio network bluetooth po
 vogix desktop nightlight on|off|toggle|status   # hyprsunset night light
 vogix desktop stay-awake on|off|toggle|status   # hold every idle stage open
 vogix desktop remind add "text" --in 10m        # timed reminder (list|clear too)
+vogix desktop custom refresh|status NAME        # a custom cell (desktop.custom.NAME, placed as custom/NAME)
 vogix desktop gallery [--close]          # the token/surface dev gallery
 vogix desktop select [-p PROMPT]         # dmenu mode: items on stdin, choice on stdout (exit 1 on cancel)
 vogix desktop input [-p PROMPT]          # dmenu mode: free-text entry

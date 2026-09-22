@@ -215,6 +215,13 @@ ShellRoot {
     }
 
     IpcHandler {
+        target: "custom"
+
+        function refresh(name: string): string { return Custom.refresh(name); }
+        function status(name: string): string { return Custom.status(name); }
+    }
+
+    IpcHandler {
         target: "gallery"
 
         function open(): string {

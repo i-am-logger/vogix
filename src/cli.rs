@@ -180,10 +180,11 @@ pub enum DesktopCommands {
     Reload,
     /// Validate desktop.json: every surface token's slot is one of the 16
     /// praxis semantic keys (resolving in the palette when a theme is
-    /// active) with alpha in [0,1], every bar widget is one the shell knows,
-    /// and every launcher menu command is valid shell quoting — parsing as a
-    /// vogix command when it runs vogix. To desktop.json what `vogix input
-    /// check` is to input.json
+    /// active) with alpha in [0,1], every bar widget is one the shell knows
+    /// or a defined custom cell, every custom cell is well-formed, and every
+    /// launcher menu and custom cell command is valid shell quoting —
+    /// parsing as a vogix command when it runs vogix. To desktop.json what
+    /// `vogix input check` is to input.json
     Check {
         /// Path to desktop.json (defaults to ~/.local/state/vogix/desktop.json)
         #[arg(long)]
@@ -279,6 +280,12 @@ pub enum DesktopCommands {
         #[command(subcommand)]
         command: RemindCommands,
     },
+    /// Custom cells: the commands desktop.json `custom` defines, shown on a
+    /// bar as `custom/<NAME>`
+    Custom {
+        #[command(subcommand)]
+        command: CustomCommands,
+    },
     /// The dev gallery: every surface's tokens rendered as swatches
     Gallery {
         /// Close it instead of opening
@@ -372,6 +379,22 @@ pub enum RemindCommands {
     List,
     /// Drop every pending reminder
     Clear,
+}
+
+#[derive(Subcommand)]
+pub enum CustomCommands {
+    /// Run the cell's command now — the event-driven refresh, for whatever
+    /// just changed the state the cell shows
+    Refresh {
+        /// The cell's name (its key under desktop.json `custom`)
+        name: String,
+    },
+    /// Print what the cell shows: its value, "failed: …", "pending", or
+    /// "inactive" while no bar shows it
+    Status {
+        /// The cell's name (its key under desktop.json `custom`)
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -839,6 +862,24 @@ mod tests {
         assert!(Cli::try_parse_from(["vogix", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "theme", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["vogix", "session", "invalid"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_desktop_custom() {
+        for verb in ["refresh", "status"] {
+            let cli = Cli::try_parse_from(["vogix", "desktop", "custom", verb, "updates"]).unwrap();
+            let Commands::Desktop {
+                command: DesktopCommands::Custom { command },
+            } = cli.command
+            else {
+                panic!("expected desktop custom");
+            };
+            let name = match command {
+                CustomCommands::Refresh { name } | CustomCommands::Status { name } => name,
+            };
+            assert_eq!(name, "updates");
+        }
+        assert!(Cli::try_parse_from(["vogix", "desktop", "custom", "refresh"]).is_err());
     }
 
     // ── Reminder delays ──

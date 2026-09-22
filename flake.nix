@@ -369,8 +369,42 @@
               # negative case is observed as eval failure — the good config
               # above evaluating cleanly is what rules out unrelated breakage.
               verticalRejected = !(builtins.tryEval badConf.config.home.username).success;
+              # Custom cells: a defined one renders whole into desktop.json;
+              # placing an undefined one, or naming one with a `/`, fails.
+              customConf = desktop: home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs.vogix = {
+                      enable = true;
+                      appearance = {
+                        theme = "yoga";
+                        variant = "night";
+                        prebuiltThemes = [ "yoga" ];
+                      };
+                      desktop = { enable = true; } // desktop;
+                      enableDaemon = false;
+                    };
+                  }
+                ];
+              };
+              customRendered = (customConf {
+                custom.updates = { command = "checkupdates | wc -l"; interval = 3600; };
+                bars.right.layout.end = [ "custom/updates" ];
+              }).config.home.file.".local/state/vogix/desktop.json".source;
+              customRejected = desktop: !(builtins.tryEval (customConf desktop).config.home.username).success;
+              customGuarded =
+                customRejected { bars.top.layout.end = [ "custom/nope" ]; }
+                && customRejected { custom."a/b".command = "date"; };
             in
             assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
+            assert customGuarded || throw "an undefined custom/<name> placement or a bad custom cell name did not trip its assertion";
             pkgs.runCommand "vogix-desktop-options" { nativeBuildInputs = [ pkgs.jq ]; } ''
               jq -S . ${rendered} > got.json
               jq -S . ${./nix/modules/desktop/desktop-json.pin.json} > want.json
@@ -379,6 +413,10 @@
                 echo "if the schema change is intended, update the pin in the same commit."
                 exit 1
               fi
+              jq -e '.custom.updates == {
+                  title: "updates", command: "checkupdates | wc -l", output: "text",
+                  interval: 3600, watch: [], stream: false, onClick: null, widest: null
+                } and .bars.right.layout.end == ["custom/updates"]' ${customRendered}
               touch $out
             '';
 
@@ -555,7 +593,7 @@
                     layout = {
                       start = [ "workspaces" "mode" ];
                       center = [ "window" ];
-                      end = [ "spectrum-mini" "kbd" "privacy" "dnd" "indicators" "theme" "clock" ];
+                      end = [ "spectrum-mini" "kbd" "privacy" "dnd" "indicators" "theme" "clock" "custom/smoke" "custom/gauge" ];
                     };
                   };
                   bottom = {
@@ -577,7 +615,7 @@
                     size = 48;
                     layout = {
                       start = [ "vu-rail" "audio-out-picker" "audio-in-picker" "spectrum-rail" ];
-                      center = [ "graph-cpu" "graph-mem" "graph-net" ];
+                      center = [ "graph-cpu" "graph-mem" "graph-net" "custom/watched" "custom/counter" "custom/stream" ];
                       end = [ "batteries" "battery" "audio" "mic" "network" "bluetooth" ];
                     };
                   };
@@ -586,6 +624,22 @@
                 # cell must come up for the first and simply not exist for
                 # the second.
                 meters.mounts = [ "/" "/vogix-smoke-absent" ];
+                # Custom cells over every trigger but the timer: first show
+                # (text, json, a stream), a watched file's creation and
+                # change, and the IPC refresh. @RT@ becomes the runtime
+                # dir once the file is in place.
+                custom = {
+                  smoke = { title = "SMK"; command = "echo SMOKE-42"; };
+                  gauge = {
+                    command = "printf '%s' '{\"text\":\"J-7\",\"state\":\"danger\",\"meter\":0.5}'";
+                    output = "json";
+                  };
+                  stream = { command = "echo S-1; echo S-2"; stream = true; };
+                  watched = { command = "cat @RT@/smoke-watch"; watch = [ "@RT@/smoke-watch" ]; };
+                  counter = {
+                    command = "n=$(cat @RT@/smoke-count 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-count; echo RUN-$n";
+                  };
+                };
                 surfaces.bar = {
                   background = { slot = "background"; alpha = 0.92; };
                   foreground = { slot = "foreground_text"; alpha = 1.0; };
@@ -632,6 +686,7 @@
               chmod 700 $XDG_RUNTIME_DIR
               cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
               cp $desktopJsonPath $XDG_STATE_HOME/vogix/desktop.json
+              sed -i "s|@RT@|$XDG_RUNTIME_DIR|g" $XDG_STATE_HOME/vogix/desktop.json
 
               cat > inner.sh <<INNER
               #!${pkgs.runtimeShell}
@@ -666,6 +721,18 @@
               qs -p $qml ipc call gallery status >> $TMPDIR/result
               qs -p $qml ipc call gallery close >> $TMPDIR/result 2>&1
               qs -p $qml ipc call reminders list >> $TMPDIR/result
+              for cell in smoke gauge stream watched undefined; do
+                qs -p $qml ipc call custom status \$cell | sed "s/^/custom-\$cell /" >> $TMPDIR/result
+              done
+              echo W-1 > $XDG_RUNTIME_DIR/smoke-watch
+              sleep 1
+              qs -p $qml ipc call custom status watched | sed 's/^/custom-watched-created /' >> $TMPDIR/result
+              echo W-2 > $XDG_RUNTIME_DIR/smoke-watch
+              sleep 1
+              qs -p $qml ipc call custom status watched | sed 's/^/custom-watched-changed /' >> $TMPDIR/result
+              qs -p $qml ipc call custom refresh counter | sed 's/^/custom-counter-refresh /' >> $TMPDIR/result
+              sleep 1
+              qs -p $qml ipc call custom status counter | sed 's/^/custom-counter /' >> $TMPDIR/result
               kill \$QSPID 2>/dev/null || true
               sleep 1
 
@@ -700,6 +767,15 @@
               grep -q '^on$' $TMPDIR/result
               grep -q '^off$' $TMPDIR/result
               grep -q '^no reminders$' $TMPDIR/result
+              grep -q '^custom-smoke SMOKE-42$' $TMPDIR/result
+              grep -q '^custom-gauge J-7$' $TMPDIR/result
+              grep -q '^custom-stream S-2$' $TMPDIR/result
+              grep -q '^custom-watched failed: exited 1$' $TMPDIR/result
+              grep -q '^custom-watched-created W-1$' $TMPDIR/result
+              grep -q '^custom-watched-changed W-2$' $TMPDIR/result
+              grep -q '^custom-counter-refresh refreshing$' $TMPDIR/result
+              grep -q '^custom-counter RUN-2$' $TMPDIR/result
+              grep -q '^custom-undefined unknown custom cell: undefined$' $TMPDIR/result
               ! grep -iq 'is not a type\|module .* is not installed\|Failed to load configuration' $TMPDIR/qs.log
               touch $out
             '';

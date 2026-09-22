@@ -35,6 +35,12 @@ GridLayout {
             source: {
                 if (root.vertical && root.horizontalOnly.includes(modelData))
                     return "widgets/Unknown.qml";
+                // A user-defined cell, placed by name; one desktop.json
+                // does not define is loud like any unknown widget.
+                if (modelData.startsWith("custom/"))
+                    return (Config.doc.custom ?? {})[modelData.slice(7)] !== undefined
+                        ? "widgets/CustomCell.qml"
+                        : "widgets/Unknown.qml";
                 switch (modelData) {
                 case "workspaces": return "widgets/Workspaces.qml";
                 case "window": return "widgets/WindowTitle.qml";
