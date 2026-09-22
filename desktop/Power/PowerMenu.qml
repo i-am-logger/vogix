@@ -31,7 +31,6 @@ PanelWindow {
         anchors.centerIn: parent
         width: parent.width - 24
         implicitHeight: col.implicitHeight + 28
-        radius: 10
         color: Tokens.color("power", "background")
         border.width: 1
         border.color: Tokens.color("power", "border")
@@ -67,7 +66,6 @@ PanelWindow {
 
                     Layout.fillWidth: true
                     height: 40
-                    radius: 6
                     color: row.index === Power.cursor
                         ? Tokens.color("power", "selection")
                         : "transparent"

@@ -49,7 +49,6 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        radius: 10
         color: Tokens.color("popup", "background")
         border.width: 1
         border.color: Tokens.color("popup", "border")

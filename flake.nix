@@ -553,6 +553,11 @@
               if grep -E 'Warning|Error' lint.out | grep -v 'grouped property scope margins'; then
                 echo "qmllint found real issues"; exit 1
               fi
+              # Flight Deck: square corners on every surface. A radius only
+              # ever makes a circle (width / 2), never a rounded corner.
+              if grep -rnE --include='*.qml' '^\s*radius:' "$qml" | grep -vE 'radius: *(width|height) / 2$'; then
+                echo "rounded corners in the shell QML: the Flight Deck rule is radius 0"; exit 1
+              fi
               touch $out
             '';
 

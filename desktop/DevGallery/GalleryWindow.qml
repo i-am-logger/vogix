@@ -28,7 +28,6 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        radius: 10
         color: Tokens.color("popup", "background")
         border.width: 1
         border.color: Tokens.color("popup", "border")
@@ -97,7 +96,6 @@ PanelWindow {
                                         Rectangle {
                                             implicitWidth: 56
                                             implicitHeight: 24
-                                            radius: 4
                                             color: Tokens.color(surfaceRow.modelData, tokenCol.modelData)
                                             border.width: 1
                                             border.color: Tokens.color("popup", "border")

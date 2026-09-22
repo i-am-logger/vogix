@@ -32,7 +32,6 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        radius: 10
         color: Tokens.color("launcher", "background")
         border.width: 1
         border.color: Tokens.color("launcher", "border")
@@ -65,7 +64,6 @@ PanelWindow {
                     font.family: Config.fontFamily
                     font.pixelSize: Metrics.body
                     background: Rectangle {
-                        radius: 6
                         color: Tokens.color("launcher", "selection")
                     }
                     onTextEdited: Launcher.setQuery(text)
@@ -93,7 +91,6 @@ PanelWindow {
 
                     width: list.width
                     height: 36
-                    radius: 6
                     color: row.index === Launcher.cursor
                         ? Tokens.color("launcher", "selection")
                         : "transparent"

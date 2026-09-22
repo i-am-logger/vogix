@@ -38,7 +38,6 @@ Scope {
             anchors.centerIn: parent
             width: parent.width - 32
             implicitHeight: col.implicitHeight + 40
-            radius: 10
             color: Tokens.color("polkit", "background")
             border.width: 1
             border.color: Tokens.color("polkit", "border")

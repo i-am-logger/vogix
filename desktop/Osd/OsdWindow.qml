@@ -26,7 +26,6 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        radius: 10
         color: Tokens.color("osd", "background")
 
         Column {
@@ -51,13 +50,11 @@ PanelWindow {
                 visible: Osd.value >= 0
                 width: parent.width
                 height: 6
-                radius: 3
                 color: Tokens.color("osd", "muted")
 
                 Rectangle {
                     width: parent.width * Math.min(1, Math.max(0, Osd.value))
                     height: parent.height
-                    radius: 3
                     color: Osd.muted
                         ? Tokens.color("osd", "muted")
                         : Tokens.color("osd", "accent")

@@ -45,7 +45,6 @@ WlSessionLockSurface {
             Layout.alignment: Qt.AlignHCenter
             implicitWidth: 320
             implicitHeight: 48
-            radius: 10
             color: Tokens.color("lock", "surface")
             border.width: 1
             border.color: Lock.authError

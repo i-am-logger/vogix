@@ -138,7 +138,6 @@ ColumnLayout {
                 font.family: Config.fontFamily
                 font.pixelSize: Metrics.body
                 background: Rectangle {
-                    radius: 4
                     color: Tokens.color("popup", "muted")
                     opacity: 0.2
                 }
