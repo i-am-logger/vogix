@@ -2,9 +2,10 @@ pragma Singleton
 // The keyboard layout indicator's source of truth. The device that
 // matters is `vogix-input` — the input engine's uinput re-emit device;
 // its xkb state is what applications actually see — with the compositor's
-// main keyboard as the fallback when the engine is off. Seeded from
-// `hyprctl -j devices`, kept live by Hyprland's `activelayout` raw event
-// filtered to that device, switched with `hyprctl switchxkblayout`.
+// main keyboard as the fallback when the engine is off. That keyboard's
+// layout list and the index of its active layout come from
+// `hyprctl -j devices`, re-read on Hyprland's `activelayout` raw event;
+// switched with `hyprctl switchxkblayout`.
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
@@ -14,26 +15,20 @@ Singleton {
     id: root
 
     property string device: ""
-    property string layoutFull: ""
-    // The configured layout codes, in order ("us", "il", …) — the LANG
-    // cell shows all of them with the active one lit.
+    // The device's configured layout codes in xkb group order ("us", "il",
+    // …) — the LANG cell shows all of them with the active one lit.
     property list<string> layouts: []
+    // Index into `layouts` of the active layout, as Hyprland reports it;
+    // -1 while unknown.
+    property int activeIndex: -1
     // CapsLock, which matters here because Alt+CapsLock is the layout switch:
     // a latched caps and a switched layout look the same from the keyboard.
     property bool capsOn: false
 
+    // Display alias for a layout code; codes without one show uppercased.
     function codeLabel(code: string): string {
         const map = { us: "EN", gb: "EN", il: "HE" };
         return map[code] ?? code.toUpperCase();
-    }
-
-    readonly property string label: {
-        const l = layoutFull;
-        if (l.startsWith("English"))
-            return "EN";
-        if (l.startsWith("Hebrew"))
-            return "HE";
-        return l === "" ? "??" : l.slice(0, 2).toUpperCase();
     }
 
     function next(): void {
@@ -41,30 +36,23 @@ Singleton {
             switchProc.running = true;
     }
 
+    function status(): string {
+        const known = root.activeIndex >= 0 && root.activeIndex < root.layouts.length;
+        return "device:" + (root.device !== "" ? root.device : "-")
+            + " layouts:" + (root.layouts.length > 0 ? root.layouts.join(",") : "-")
+            + " active:" + (known ? root.layouts[root.activeIndex] : "-");
+    }
+
     Process {
         id: switchProc
         command: ["hyprctl", "switchxkblayout", root.device, "next"]
     }
 
+    // Setting `running` while a query is in flight re-runs it once that one
+    // exits (Process keeps the requested state), so a burst of events costs
+    // at most one extra query and never reads a pre-switch state last.
     Process {
-        id: layoutsProc
-        running: true
-        command: ["hyprctl", "-j", "getoption", "input:kb_layout"]
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const str = JSON.parse(text).str ?? "";
-                    root.layouts = str.split(",").map(s => s.trim()).filter(s => s !== "");
-                } catch (e) {
-                    root.layouts = [];
-                }
-            }
-        }
-    }
-
-    Process {
-        id: seedProc
+        id: devicesProc
         running: true
         command: ["hyprctl", "-j", "devices"]
 
@@ -75,16 +63,25 @@ Singleton {
                     doc = JSON.parse(text);
                 } catch (e) {
                     console.warn("vogix: cannot parse hyprctl devices:", e.message);
-                    return;
+                    doc = {};
                 }
                 const kbs = doc.keyboards ?? [];
                 const kb = kbs.find(k => k.name === "vogix-input")
                     ?? kbs.find(k => k.main)
                     ?? kbs[0];
-                if (!kb)
+                if (!kb) {
+                    root.device = "";
+                    root.layouts = [];
+                    root.activeIndex = -1;
                     return;
+                }
+                // Split without dropping empty entries: positions must stay
+                // aligned with xkb's group indices.
+                const codes = (kb.layout ?? "").split(",").map(s => s.trim());
                 root.device = kb.name;
-                root.layoutFull = kb.active_keymap ?? "";
+                root.layouts = codes.length === 1 && codes[0] === "" ? [] : codes;
+                root.activeIndex = Number.isInteger(kb.active_layout_index)
+                    ? kb.active_layout_index : -1;
             }
         }
     }
@@ -93,17 +90,16 @@ Singleton {
         target: Hyprland
 
         function onRawEvent(event: HyprlandEvent): void {
-            if (event.name !== "activelayout")
-                return;
-            // "device,layout name" — the layout name may itself contain
-            // commas, so split only on the first.
-            const data = event.data;
-            const cut = data.indexOf(",");
-            if (cut < 0)
-                return;
-            const dev = data.slice(0, cut);
-            if (dev === root.device)
-                root.layoutFull = data.slice(cut + 1);
+            switch (event.name) {
+            // Posted whenever Hyprland applies a keymap to a keyboard: a
+            // layout switch, `vogix-input` appearing after the shell, and a
+            // config reload that changes kb_layout (on the Lua config provider
+            // that lands after `configreloaded`, so this is the event to
+            // follow). It names the layout, not its index: re-read both.
+            case "activelayout":
+                devicesProc.running = true;
+                break;
+            }
         }
     }
 

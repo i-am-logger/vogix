@@ -53,6 +53,13 @@ pub fn handle_desktop(command: &DesktopCommands) -> Result<()> {
         DesktopCommands::StayAwake { state } => switch("stayawake", state),
         DesktopCommands::Remind { command } => remind(command),
         DesktopCommands::Custom { command } => custom(command),
+        DesktopCommands::Keyboard => {
+            match qs_ipc(&["keyboard", "status"]) {
+                Some(r) => println!("{r}"),
+                None => println!("no responsive shell instance"),
+            }
+            Ok(())
+        }
         DesktopCommands::Gallery { close } => {
             match qs_ipc(&["gallery", if *close { "close" } else { "open" }]) {
                 Some(r) => println!("{r}"),

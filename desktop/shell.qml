@@ -222,6 +222,12 @@ ShellRoot {
     }
 
     IpcHandler {
+        target: "keyboard"
+
+        function status(): string { return KbLayout.status(); }
+    }
+
+    IpcHandler {
         target: "gallery"
 
         function open(): string {

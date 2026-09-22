@@ -1,5 +1,5 @@
-// The LANG cell: every configured layout, the active one lit bright and
-// bold, the rest dim. Click cycles.
+// The LANG cell: every configured layout, the active one — by the index
+// Hyprland reports — lit bright and bold, the rest dim. Click cycles.
 //
 // CAPS sits alongside because Alt+CapsLock is what cycles the layout: pressing
 // it with caps already latched looks identical to pressing it without, and the
@@ -24,9 +24,11 @@ FrameCell {
 
             BarText {
                 required property string modelData
-                readonly property bool active: KbLayout.codeLabel(modelData) === KbLayout.label
+                required property int index
+                readonly property bool active: KbLayout.layouts.length > 0
+                    && index === KbLayout.activeIndex
 
-                text: modelData === "" ? KbLayout.label : KbLayout.codeLabel(modelData)
+                text: modelData === "" ? "??" : KbLayout.codeLabel(modelData)
                 font.pixelSize: active ? Metrics.bodySmall : Metrics.caption
                 font.bold: active
                 color: active

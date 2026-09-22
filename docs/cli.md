@@ -185,6 +185,7 @@ vogix desktop nightlight on|off|toggle|status   # hyprsunset night light
 vogix desktop stay-awake on|off|toggle|status   # hold every idle stage open
 vogix desktop remind add "text" --in 10m        # timed reminder (list|clear too)
 vogix desktop custom refresh|status NAME        # a custom cell (desktop.custom.NAME, placed as custom/NAME)
+vogix desktop keyboard                   # the LANG cell's view: keyboard, layouts, active layout
 vogix desktop gallery [--close]          # the token/surface dev gallery
 vogix desktop select [-p PROMPT]         # dmenu mode: items on stdin, choice on stdout (exit 1 on cancel)
 vogix desktop input [-p PROMPT]          # dmenu mode: free-text entry

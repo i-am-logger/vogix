@@ -293,6 +293,9 @@ pub enum DesktopCommands {
         #[command(subcommand)]
         command: CustomCommands,
     },
+    /// What the LANG cell shows: the keyboard it follows, that keyboard's
+    /// layouts and the active one
+    Keyboard,
     /// The dev gallery: every surface's tokens rendered as swatches
     Gallery {
         /// Close it instead of opening

@@ -714,6 +714,58 @@
                   urgent = { slot = "danger"; alpha = 1.0; };
                 };
               };
+              # `hyprctl -j devices` as Hyprland answers it (HyprCtl.cpp's
+              # keyboards shape); every other call fails as it does with no
+              # compositor. The keyboard the LANG cell follows is neither first
+              # nor main, and its active layout's name ("German") does not
+              # abbreviate to its code, so only the right device plus the
+              # reported index yield "active:de".
+              hyprctlFixture =
+                let
+                  devices = pkgs.writeText "hyprctl-devices.json" (builtins.toJSON {
+                    mice = [ ];
+                    keyboards = [
+                      {
+                        address = "0x1";
+                        name = "at-translated-set-2-keyboard";
+                        rules = "";
+                        model = "";
+                        layout = "us";
+                        variant = "";
+                        options = "";
+                        active_layout_index = 0;
+                        active_keymap = "English (US)";
+                        capsLock = false;
+                        numLock = false;
+                        main = true;
+                      }
+                      {
+                        address = "0x2";
+                        name = "vogix-input";
+                        rules = "";
+                        model = "";
+                        layout = "de,us";
+                        variant = "";
+                        options = "grp:alt_caps_toggle";
+                        active_layout_index = 0;
+                        active_keymap = "German";
+                        capsLock = false;
+                        numLock = false;
+                        main = false;
+                      }
+                    ];
+                    tablets = [ ];
+                    touch = [ ];
+                    switches = [ ];
+                  });
+                in
+                pkgs.writeShellScriptBin "hyprctl" ''
+                  if [ "$*" = "-j devices" ]; then
+                    cat ${devices}
+                  else
+                    exit 1
+                  fi
+                '';
               # A schema-1 desktop.json (the single-bar shape, no `bars`).
               # The shell reads schema 2 only: it must stay up, render no
               # bar, and say why in its log.
@@ -738,7 +790,7 @@
             in
             pkgs.runCommand "vogix-desktop-smoke"
               {
-                nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell ];
+                nativeBuildInputs = [ pkgs.cage qsPkgs.quickshell hyprctlFixture ];
                 qml = qsPkgs.vogix-desktop-qml;
                 inherit themeJson desktopJson schema1Json;
                 passAsFile = [ "themeJson" "desktopJson" "schema1Json" ];
@@ -798,6 +850,7 @@
               qs -p $qml ipc call custom refresh counter | sed 's/^/custom-counter-refresh /' >> $TMPDIR/result
               sleep 1
               qs -p $qml ipc call custom status counter | sed 's/^/custom-counter /' >> $TMPDIR/result
+              qs -p $qml ipc call keyboard status >> $TMPDIR/result
               kill \$QSPID 2>/dev/null || true
               sleep 1
 
@@ -841,6 +894,7 @@
               grep -q '^custom-counter-refresh refreshing$' $TMPDIR/result
               grep -q '^custom-counter RUN-2$' $TMPDIR/result
               grep -q '^custom-undefined unknown custom cell: undefined$' $TMPDIR/result
+              grep -q '^device:vogix-input layouts:de,us active:de$' $TMPDIR/result
               ! grep -iq 'is not a type\|module .* is not installed\|Failed to load configuration' $TMPDIR/qs.log
               touch $out
             '';
