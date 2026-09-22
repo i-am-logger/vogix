@@ -48,9 +48,9 @@ rec {
     leftHanded = false;
     floatSwitchOverrideFocus = 2;
     numlockByDefault = false;
-    # Two layouts, so `hyprctl switchxkblayout current next` has somewhere to
-    # go: with a single entry the cycle is a no-op and the binding below looks
-    # broken rather than unconfigured.
+    # Two layouts, so the Alt+CapsLock group toggle (kbOptions below) and the
+    # LANG cell's click have somewhere to go: with a single entry the cycle
+    # is a no-op and the switch looks broken rather than unconfigured.
     kbLayout = "us,il";
     # Layout switching belongs to xkb, not to a compositor bind. A bind on a
     # CapsLock chord does not stop xkb ALSO toggling capitals, so

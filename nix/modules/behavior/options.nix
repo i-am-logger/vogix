@@ -312,21 +312,20 @@ in
                 description = ''
                   XKB options rendered as Hyprland's input:kb_options
                   (comma-separated, e.g. "caps:none,grp:win_space_toggle").
+                  Set it to "" for xkb's own defaults.
 
-                  Empty by default: xkb's own defaults are the right baseline,
-                  and anything here is a deliberate choice by the consumer.
+                  The default, `grp:alt_caps_toggle`, makes Alt+CapsLock cycle
+                  the layouts in `kbLayout` while CapsLock alone still toggles
+                  capitals. Layout switching lives in xkb because a compositor
+                  bind on a CapsLock chord cannot stop xkb ALSO toggling
+                  capitals: `super + capslock` bound to cycle the layout leaves
+                  caps latched, and the next keystrokes arrive shifted. The
+                  other xkb shapes cost the key: `caps:none` removes CapsLock's
+                  function entirely, and `grp:caps_toggle` turns CapsLock alone
+                  into the layout switch.
 
-                  The case worth knowing about is CapsLock. A compositor bind on
-                  a CapsLock chord does not stop xkb ALSO toggling capitals, so
-                  `super + capslock` to cycle layout leaves caps latched and the
-                  next keystrokes arrive shifted. `caps:none` cures that by
-                  removing CapsLock's xkb function entirely -- which is a real
-                  cost if the key is otherwise wanted. `grp:caps_toggle` is the
-                  other shape: CapsLock alone cycles the layout, at the xkb
-                  layer, needing no bind at all.
-
-                  The engine reads keys through evdev, below xkb, so neither
-                  option hides the key from vogix itself.
+                  The engine reads keys through evdev, below xkb, so no option
+                  here hides a key from vogix itself.
                 '';
               };
             };
