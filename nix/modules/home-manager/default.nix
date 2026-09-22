@@ -430,7 +430,10 @@ in
 
           Service = {
             Type = "simple";
-            ExecStart = "${desktopEnv} ${config.programs.quickshell.package}/bin/qs -n -c vogix";
+            # Without --no-detailed-logs quickshell formats and writes every
+            # internal DEBUG record for the whole session (desktop.detailedLogs).
+            ExecStart = "${desktopEnv} ${config.programs.quickshell.package}/bin/qs -n -c vogix"
+              + lib.optionalString (!cfg.desktop.detailedLogs) " --no-detailed-logs";
             ExecReload = "${cfg.package}/bin/vogix desktop reload";
             Restart = "on-failure";
             RestartSec = 2;

@@ -411,11 +411,15 @@
               # instead of losing it for the whole session.
               waitsForPipewire = builtins.elem "QS_PIPEWIRE_IMMEDIATE_RECONNECT=1" unit.Service.Environment
                 && builtins.elem "pipewire.service" unit.Unit.After;
+              # By default quickshell produces no DEBUG records at all
+              # (desktop.detailedLogs = false).
+              sparseLogs = builtins.any (pkgs.lib.hasSuffix " --no-detailed-logs") (pkgs.lib.toList unit.Service.ExecStart);
             in
             assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
             assert customGuarded || throw "an undefined custom/<name> placement or a bad custom cell name did not trip its assertion";
             assert restartsOn75 || throw "vogix-desktop.service does not restart the shell on exit status 75";
             assert waitsForPipewire || throw "vogix-desktop.service lost its PipeWire ordering or QS_PIPEWIRE_IMMEDIATE_RECONNECT";
+            assert sparseLogs || throw "vogix-desktop.service runs quickshell with detailed logs by default";
             pkgs.runCommand "vogix-desktop-options" { nativeBuildInputs = [ pkgs.jq ]; } ''
               jq -S . ${rendered} > got.json
               jq -S . ${./nix/modules/desktop/desktop-json.pin.json} > want.json

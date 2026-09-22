@@ -176,6 +176,21 @@ in
       options = {
         enable = mkEnableOption "the vogix desktop shell (bar, notifications, lock, launcher)";
 
+        detailedLogs = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Keep quickshell's detailed log for the shell
+            (`$XDG_RUNTIME_DIR/quickshell/by-id/<id>/log.qslog`): every
+            internal DEBUG record, among them a pair per PipeWire loop
+            iteration and one per file read — hundreds a second while the
+            meters run, each formatted and written as it happens, for the
+            whole session. Off, the shell runs with `--no-detailed-logs`
+            and those records are never produced; warnings and errors
+            still reach the journal and `qs log`.
+          '';
+        };
+
         font = {
           family = mkOption {
             type = types.str;

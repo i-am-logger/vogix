@@ -9,7 +9,8 @@
 # - a tap that dies is relaunched;
 # - a PipeWire restart stops the taps and brings them back;
 # - a hidden bar's taps, VU monitors and stat samplers stop, per edge, and
-#   come back when it is shown.
+#   come back when it is shown;
+# - launched as the unit launches it, quickshell writes no DEBUG records.
 #
 # No session manager runs, so nothing links the taps: they sit connected
 # and idle, which is all a lifecycle test needs.
@@ -153,7 +154,8 @@ let
       PWPID=$!
     }
 
-    qs -p "$qml" > "$TMPDIR/qs.log" 2>&1 &
+    # Launched as the unit launches it (desktop.detailedLogs = false).
+    qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs.log" 2>&1 &
     QSPID=$!
     sleep 3
 
@@ -250,6 +252,12 @@ pkgs.runCommand "vogix-desktop-taps"
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── qs.log (vogix lines):"; grep 'vogix' $TMPDIR/qs.log || true
+  # --no-detailed-logs is accepted and keeps quickshell's DEBUG records
+  # out of the log: about 3 KB of warnings for this run, against ~64 KB
+  # with detailed logs on.
+  qslog=$(find $XDG_RUNTIME_DIR/quickshell -name log.qslog | head -n 1)
+  echo "── detailed log: $(stat -c %s "$qslog") bytes"
+  test "$(stat -c %s "$qslog")" -lt 16384
   # The QML behind the taps and the leases must run clean.
   if grep -E 'TypeError|ReferenceError|Binding loop|Unable to assign' $TMPDIR/qs.log; then
     echo "script errors in qs.log"
