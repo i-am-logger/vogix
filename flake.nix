@@ -558,6 +558,13 @@
               if grep -rnE --include='*.qml' '^\s*radius:' "$qml" | grep -vE 'radius: *(width|height) / 2$'; then
                 echo "rounded corners in the shell QML: the Flight Deck rule is radius 0"; exit 1
               fi
+              # A raw dispatch string speaks one config dialect: hyprlang's
+              # `workspace 2` is a Lua syntax error under the Lua engine.
+              # Compositor writes go through quickshell's typed methods
+              # (HyprlandWorkspace.activate()), which pick the dialect.
+              if grep -rn --include='*.qml' 'Hyprland\.dispatch(' $qml; then
+                echo "raw Hyprland.dispatch() in the shell: use the typed, dialect-aware method"; exit 1
+              fi
               touch $out
             '';
 

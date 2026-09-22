@@ -2,7 +2,9 @@ pragma ComponentBehavior: Bound
 // Hyprland workspaces as square HUD blocks: focused fills with the
 // accent, urgent frames in the urgent token. Horizontal bars get the
 // framed WS cell; the vertical rail gets the bare stacked column, like
-// the Flight Deck board. Clicks dispatch through Quickshell.Hyprland.
+// the Flight Deck board. A click focuses the workspace through
+// HyprlandWorkspace.activate(), which writes the dispatch in the dialect
+// of the compositor's config engine (hyprlang or Lua).
 import QtQuick
 import Quickshell.Hyprland
 import qs.Bar.widgets
@@ -17,7 +19,7 @@ Loader {
     component WsBox: Rectangle {
         id: ws
 
-        required property var modelData
+        required property HyprlandWorkspace modelData
 
         implicitWidth: Math.max(Metrics.body + 6, label.implicitWidth + 10)
         implicitHeight: Metrics.body + 6
@@ -40,7 +42,7 @@ Loader {
 
         MouseArea {
             anchors.fill: parent
-            onClicked: Hyprland.dispatch("workspace " + ws.modelData.id)
+            onClicked: ws.modelData.activate()
         }
     }
 
