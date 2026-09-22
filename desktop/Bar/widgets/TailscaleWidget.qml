@@ -1,6 +1,7 @@
-// The TS cell: peers online/total and how long the link has been up
-// ("4/7 12d"). Title lights success while connected. Click opens the
-// peers panel.
+// The TS cell: peers online/total and how long the current tailnet
+// connection has lasted ("4/7 12D"; "≥" marks a connection the shell found
+// already up, so its true start is earlier). Title lights success while
+// connected. Click opens the tailnet panel.
 import QtQuick
 import Quickshell
 import qs.Bar.widgets

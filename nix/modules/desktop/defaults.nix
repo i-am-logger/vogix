@@ -81,7 +81,10 @@ _:
           "graph-net"
         ];
         center = [ ];
-        end = [ "batteries" "battery" "audio" "network" "bluetooth" ];
+        # Status glyphs. tailscale-glyph is the tailnet link beside the
+        # network one (absent on hosts without tailscale); its panel
+        # carries the connection time and peers.
+        end = [ "batteries" "battery" "audio" "network" "tailscale-glyph" "bluetooth" ];
       };
     };
   };

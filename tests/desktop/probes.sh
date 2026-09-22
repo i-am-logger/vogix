@@ -1,6 +1,7 @@
 #!/bin/sh
-# The shell's sysfs probes, run against fixture trees shaped like the real
-# kernel layout. $1 is the packaged desktop/data directory.
+# The shell's probe scripts (desktop/data/*.sh), run against fixture sysfs
+# trees shaped like the kernel's and stub tools. $1 is the desktop/data
+# directory.
 set -eu
 data=$1
 fail=0
@@ -84,5 +85,25 @@ $hw/class/hwmon/hwmon1/fan1_input${tab}dell_smm${tab}1${tab}Processor Fan${tab}4
 
 # No tachometer anywhere: no output at all.
 expect "no fans" "" "$(sh "$data/fan-probe.sh" "$amd")"
+
+# tailscale-status.sh: the daemon start line, then the CLI's answer.
+ts=$TMPDIR/ts-bin
+mkdir -p "$ts"
+printf '#!/bin/sh\necho @1790100514\n' >"$ts/systemctl"
+printf '#!/bin/sh\necho "{\\"BackendState\\":\\"Running\\"}"\n' >"$ts/tailscale"
+chmod +x "$ts/systemctl" "$ts/tailscale"
+expect "tailscale running" '@1790100514
+{"BackendState":"Running"}' "$(PATH=$ts:$PATH sh "$data/tailscale-status.sh")"
+
+printf '#!/bin/sh\necho "failed to connect to local tailscaled" >&2\nexit 1\n' >"$ts/tailscale"
+expect "tailscaled down" '@1790100514
+down' "$(PATH=$ts:$PATH sh "$data/tailscale-status.sh")"
+
+# No tailscale CLI and no systemd: an empty start line, then absent.
+nots=$TMPDIR/nots-bin
+mkdir -p "$nots"
+ln -s "$(command -v sh)" "$nots/sh"
+expect "tailscale absent" '
+absent' "$(PATH=$nots "$nots/sh" "$data/tailscale-status.sh")"
 
 exit $fail

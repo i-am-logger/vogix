@@ -55,6 +55,7 @@
           "battery",
           "audio",
           "network",
+          "tailscale-glyph",
           "bluetooth"
         ],
         "start": [

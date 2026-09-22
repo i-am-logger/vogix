@@ -62,6 +62,7 @@ GridLayout {
                 case "dnd": return "widgets/DndWidget.qml";
                 case "indicators": return "widgets/IndicatorsWidget.qml";
                 case "tailscale": return "widgets/TailscaleWidget.qml";
+                case "tailscale-glyph": return "widgets/TailscaleGlyph.qml";
                 case "uptime": return "widgets/UptimeWidget.qml";
                 case "update": return "widgets/UpdateWidget.qml";
                 case "spectrum-mini": return "widgets/SpectrumWidget.qml";

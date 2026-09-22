@@ -1,8 +1,10 @@
 pragma ComponentBehavior: Bound
-// Tailnet state from `tailscale status --json`: self + peers, online first.
+// Tailnet state from the Tailscale service: link state and connection
+// time, this node, then peers, online first. Opening the panel takes a
+// fresh sample.
 import QtQuick
 import QtQuick.Layouts
-import Quickshell.Io
+import Quickshell
 import qs.Panels
 import qs.Services
 import qs.Vogix
@@ -10,12 +12,14 @@ import qs.Vogix
 ColumnLayout {
     id: root
 
-    property string self: ""
-    property var peers: []
-
-    Component.onCompleted: proc.running = true
+    Component.onCompleted: Tailscale.refresh()
 
     spacing: 10
+
+    SystemClock {
+        id: clock
+        precision: SystemClock.Minutes
+    }
 
     PanelLabel {
         text: "Tailscale"
@@ -23,11 +27,21 @@ ColumnLayout {
         color: Tokens.color("popup", "accent")
     }
 
+    // "connected 3h12m · 4/7 peers online"; "≥" marks a connection the
+    // shell found already up.
     PanelLabel {
-        text: root.self === "" ? "not running" : root.self
-        color: root.self === ""
-            ? Tokens.color("popup", "muted")
-            : Tokens.color("popup", "foreground")
+        Layout.fillWidth: true
+        text: Tailscale.online
+            ? "connected " + Tailscale.sinceText(clock.date.getTime())
+                + " · " + Tailscale.peersOnline + "/" + Tailscale.peersTotal + " peers online"
+            : Tailscale.stateText()
+        color: Tailscale.online ? Tokens.color("popup", "foreground") : Tokens.color("popup", "muted")
+    }
+
+    PanelLabel {
+        visible: Tailscale.selfName !== ""
+        Layout.fillWidth: true
+        text: Tailscale.selfName + "  " + Tailscale.selfIp
     }
 
     ListView {
@@ -36,7 +50,7 @@ ColumnLayout {
         Layout.minimumHeight: 180
         clip: true
         spacing: 2
-        model: root.peers
+        model: Tailscale.peers
 
         delegate: RowLayout {
             id: row
@@ -53,27 +67,6 @@ ColumnLayout {
             PanelLabel {
                 text: row.modelData.ip
                 color: Tokens.color("popup", "muted")
-            }
-        }
-    }
-
-    Process {
-        id: proc
-        command: ["tailscale", "status", "--json"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const doc = JSON.parse(text);
-                    const name = h => (h ?? "").replace(/\.$/, "");
-                    root.self = doc.Self
-                        ? name(doc.Self.DNSName) + "  " + ((doc.Self.TailscaleIPs ?? [])[0] ?? "")
-                        : "";
-                    root.peers = Object.values(doc.Peer ?? {}).map(p => ({
-                        name: name(p.DNSName).split(".")[0],
-                        ip: (p.TailscaleIPs ?? [])[0] ?? "",
-                        online: p.Online ?? false,
-                    })).sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name));
-                } catch (e) {}
             }
         }
     }

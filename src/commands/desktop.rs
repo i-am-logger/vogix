@@ -285,6 +285,7 @@ const KNOWN_WIDGETS: &[&str] = &[
     "dnd",
     "indicators",
     "tailscale",
+    "tailscale-glyph",
     "uptime",
     "update",
     "spectrum-mini",
