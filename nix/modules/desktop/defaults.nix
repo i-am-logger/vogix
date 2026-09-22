@@ -218,7 +218,7 @@ _:
   };
 
   surfaces = {
-    # Every SegmentedMeter/VuMeter/Sparkline resolves through this one
+    # Every FrameCell/SegmentedMeter/Sparkline resolves through this one
     # surface: positional segment colors, the unlit trough, the peak cap,
     # the hairline frame, the label/value text.
     meter = {
@@ -251,8 +251,8 @@ _:
       foreground = "foreground_text";
       muted = "foreground_comment";
       accent = "active";
-      # Flight Deck hairline — the resting frame is faint; dashed danger
-      # (drawn by the card, full strength) marks critical.
+      # Flight Deck hairline — the resting frame is faint; a critical card
+      # swaps it for a solid `urgent` frame at full strength.
       border = { slot = "foreground_border"; alpha = 0.35; };
       urgent = "danger";
     };

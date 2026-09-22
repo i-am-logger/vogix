@@ -5,7 +5,9 @@ pragma ComponentBehavior: Bound
 // danger frame when critical (critical never auto-expires). The 3px
 // drain bar along the bottom runs on a track and shows the card's real
 // remaining lifetime (it resets exactly when the expiry timer does).
-// Overflow past maxVisible queues, announced by the +N QUEUED line.
+// With background.scanlines the card's ground carries the same scanline
+// texture as the bars. Overflow past maxVisible queues, announced by the
+// +N QUEUED line.
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
@@ -86,6 +88,8 @@ PanelWindow {
                     anchors.fill: frame
                     anchors.topMargin: frame.frameTop
                     color: Tokens.color("notification", "background")
+
+                    ScanlineOverlay {}
                 }
 
                 FrameCell {

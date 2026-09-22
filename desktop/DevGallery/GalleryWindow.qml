@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
+import qs.Bar.widgets
 import qs.Components
 import qs.Services
 import qs.Vogix
@@ -121,9 +122,10 @@ PanelWindow {
                         font.bold: true
                     }
 
-                    // Live instances of every qs.Components primitive, in
-                    // semantic colors — rendering here without warnings is
-                    // the components' smoke test.
+                    // Live instances of the HUD's building blocks — the
+                    // FrameCell (resting and critical) and every
+                    // qs.Components primitive — in semantic colors;
+                    // rendering here without warnings is their smoke test.
                     RowLayout {
                         id: demo
 
@@ -138,50 +140,61 @@ PanelWindow {
                         Layout.fillWidth: true
                         spacing: 12
 
-                        HudPanel {
+                        FrameCell {
                             title: "VU"
-                            borderColor: demo.hairline
+                            frameColor: demo.hairline
                             titleColor: demo.dim
-                            chipColor: Tokens.color("popup", "background")
 
                             Column {
                                 spacing: 4
 
-                                VuMeter {
-                                    label: "OUT"
-                                    value: 0.62
-                                    peak: 0.8
-                                    db: -9.5
-                                    low: demo.ok
-                                    mid: demo.warn
-                                    high: demo.bad
-                                    unlit: demo.faint
-                                    capColor: demo.dim
-                                    labelColor: demo.dim
-                                    valueColor: demo.text
-                                }
+                                Repeater {
+                                    model: [
+                                        { label: "OUT", value: 0.62, peak: 0.8, db: -9.5 },
+                                        { label: "MIC", value: 0.3, peak: 0.45, db: -21.0 },
+                                    ]
 
-                                VuMeter {
-                                    label: "MIC"
-                                    value: 0.3
-                                    peak: 0.45
-                                    db: -21.0
-                                    low: demo.ok
-                                    mid: demo.warn
-                                    high: demo.bad
-                                    unlit: demo.faint
-                                    capColor: demo.dim
-                                    labelColor: demo.dim
-                                    valueColor: demo.text
+                                    Row {
+                                        id: vuRow
+
+                                        required property var modelData
+
+                                        spacing: 6
+
+                                        HudLabel {
+                                            text: vuRow.modelData.label
+                                            color: demo.dim
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                        SegmentedMeter {
+                                            width: 96
+                                            height: 10
+                                            value: vuRow.modelData.value
+                                            peak: vuRow.modelData.peak
+                                            low: demo.ok
+                                            mid: demo.warn
+                                            high: demo.bad
+                                            unlit: demo.faint
+                                            capColor: demo.dim
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                        NumericText {
+                                            text: vuRow.modelData.db.toFixed(1)
+                                            widestText: "-40.0"
+                                            color: demo.text
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        HudPanel {
+                        FrameCell {
                             title: "SYS"
-                            borderColor: demo.hairline
+                            frameColor: demo.hairline
                             titleColor: demo.dim
-                            chipColor: Tokens.color("popup", "background")
 
                             Column {
                                 spacing: 4
@@ -227,19 +240,34 @@ PanelWindow {
                             }
                         }
 
+                        // A critical notification card's chrome: the solid
+                        // danger frame over the card ground, scanlines
+                        // included when background.scanlines is on.
                         Item {
-                            implicitWidth: alertLabel.width + 24
-                            implicitHeight: 40
+                            implicitWidth: alert.implicitWidth
+                            implicitHeight: alert.implicitHeight
 
-                            DashedBorder {
-                                color: demo.bad
+                            Rectangle {
+                                anchors.fill: alert
+                                anchors.topMargin: alert.frameTop
+                                color: Tokens.color("notification", "background")
+
+                                ScanlineOverlay {}
                             }
 
-                            HudLabel {
-                                id: alertLabel
-                                anchors.centerIn: parent
-                                text: "ALERT"
-                                color: demo.bad
+                            FrameCell {
+                                id: alert
+
+                                title: "ALERT :: DEMO"
+                                frameColor: demo.bad
+                                titleColor: demo.bad
+                                padH: 12
+                                padV: 8
+
+                                HudLabel {
+                                    text: "CRITICAL"
+                                    color: demo.text
+                                }
                             }
                         }
                     }
