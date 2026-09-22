@@ -8,8 +8,9 @@
 # The layout is the shipped default (desktop-json.pin.json) plus every
 # registry widget that default leaves out, so each widget the shell ships
 # instantiates here, and custom cells covering each of their triggers.
-# The compositor query the shell makes (hyprctl) is a fixture answering
-# the way the real one does. Every log the runs write passes a
+# Host tools the shell reads (hyprctl, systemctl, tailscale) are fixtures
+# answering the way the real tools do, and a real MPRIS player (mpv)
+# plays on the session bus. Every log the runs write passes a
 # gate: no script error, binding problem, failed component, failed spawn
 # or warning of the shell's own beyond the exact lines a fixture provokes.
 #
@@ -88,6 +89,9 @@ let
     };
   };
   desktopJson = builtins.toJSON fixture;
+  # The same layout with the scanline texture on, notification cards
+  # included.
+  scanlinesJson = builtins.toJSON (lib.recursiveUpdate fixture { background.scanlines = true; });
   # A schema-1 desktop.json (the single-bar shape, no `bars`). The shell
   # reads schema 2 only: it must stay up, render no bar, and say why.
   schema1Json = builtins.toJSON {
@@ -130,8 +134,13 @@ let
     };
   };
 
-  # `hyprctl -j devices` as Hyprland answers it (HyprCtl.cpp's keyboards
-  # shape); every other call fails as it does with no
+  # The input engine's mode table for the mode cell, and its current mode.
+  inputJson = builtins.toJSON {
+    modeColors.normal = { slot = "active"; label = "NRM-SMOKE"; };
+  };
+
+  # `hyprctl -j devices` and `-j activewindow` as Hyprland answers them
+  # (HyprCtl.cpp's shapes); every other call fails as it does with no
   # compositor. The keyboard the LANG cell follows is neither first nor
   # main, and its active layout's name ("German") does not abbreviate to
   # its code, so only the right device plus the reported index yield
@@ -174,12 +183,46 @@ let
         touch = [ ];
         switches = [ ];
       });
+      activewindow = pkgs.writeText "hyprctl-activewindow.json" (builtins.toJSON {
+        address = "0x3";
+        mapped = true;
+        hidden = false;
+        at = [ 140 110 ];
+        size = [ 800 600 ];
+        workspace = { id = 1; name = "1"; };
+        floating = false;
+        monitor = 0;
+        class = "smoke-class";
+        title = "smoke window title";
+        fullscreen = 0;
+      });
     in
     pkgs.writeShellScriptBin "hyprctl" ''
       case "$*" in
         "-j devices") cat ${devices} ;;
+        "-j activewindow") cat ${activewindow} ;;
         *) exit 1 ;;
       esac
+    '';
+  # tailscaled's start time as systemd reports it, and a connected tailnet.
+  systemctlFixture = pkgs.writeShellScriptBin "systemctl" ''
+    case "$*" in
+      "show tailscaled --property=ActiveEnterTimestamp --value --timestamp=unix") echo @1790100514 ;;
+      *) exit 1 ;;
+    esac
+  '';
+  tailscaleFixture =
+    let
+      status = pkgs.writeText "tailscale-status.json" (builtins.toJSON {
+        BackendState = "Running";
+        TailscaleIPs = [ "100.64.0.1" ];
+        Self = { DNSName = "smoke.tail0.ts.net."; Online = true; };
+        CurrentTailnet = { Name = "smoke.example"; };
+        Peer = { };
+      });
+    in
+    pkgs.writeShellScriptBin "tailscale" ''
+      if [ "$*" = "status --json" ]; then cat ${status}; else exit 1; fi
     '';
 in
 pkgs.runCommand "vogix-desktop-smoke"
@@ -188,15 +231,21 @@ pkgs.runCommand "vogix-desktop-smoke"
     pkgs.cage
     pkgs.dbus
     pkgs.jq
+    pkgs.libnotify
+    pkgs.mpv
+    pkgs.playerctl
     qsPkgs.quickshell
     qsPkgs.vogix
     hyprctlFixture
+    systemctlFixture
+    tailscaleFixture
   ];
   qml = qsPkgs.vogix-desktop-qml;
   geometryProbe = ./desktop-geometry-probe.qml;
   pinJson = ../modules/desktop/desktop-json.pin.json;
-  inherit themeJson desktopJson schema1Json;
-  passAsFile = [ "themeJson" "desktopJson" "schema1Json" ];
+  stateProbe = ./desktop-state-probe.qml;
+  inherit themeJson desktopJson scanlinesJson schema1Json inputJson;
+  passAsFile = [ "themeJson" "desktopJson" "scanlinesJson" "schema1Json" "inputJson" ];
 } ''
   export HOME=$TMPDIR/home
   export XDG_CONFIG_HOME=$HOME/.config
@@ -207,16 +256,22 @@ pkgs.runCommand "vogix-desktop-smoke"
   # The `vogix` quickshell config, as home-manager registers it.
   ln -s $qml $XDG_CONFIG_HOME/quickshell/vogix
   cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
-  sed "s|@RT@|$XDG_RUNTIME_DIR|g" $desktopJsonPath > $TMPDIR/desktop.json
+  for f in desktop scanlines; do
+    eval src=\$''${f}JsonPath
+    sed "s|@RT@|$XDG_RUNTIME_DIR|g" $src > $TMPDIR/$f.json
+  done
   cp $TMPDIR/desktop.json $XDG_STATE_HOME/vogix/desktop.json
   # The fixture is a document the check passes, as a generated one is.
   vogix desktop check --config $TMPDIR/desktop.json
 
-  # The geometry probe replaces shell.qml in a copy of the tree, so
-  # `qs.` resolves to the shipped modules around it.
-  cp -r $qml $TMPDIR/geometry
-  chmod -R u+w $TMPDIR/geometry
+  # Each probe replaces shell.qml in a copy of the tree, so `qs.`
+  # resolves to the shipped modules around it.
+  for probe in geometry state; do
+    cp -r $qml $TMPDIR/$probe
+    chmod -R u+w $TMPDIR/$probe
+  done
   cp $geometryProbe $TMPDIR/geometry/shell.qml
+  cp $stateProbe $TMPDIR/state/shell.qml
 
   cat > inner.sh <<'INNER'
   ${unitEnv}
@@ -245,14 +300,33 @@ pkgs.runCommand "vogix-desktop-smoke"
     qs -c vogix ipc call "$@" 2>&1 | sed "s|^|$label |" >> $R
   }
 
+  # An MPRIS player on the session bus before the shell starts: the
+  # media cell comes up with a player to show and control.
+  mpv --no-config --really-quiet --idle=no --loop=inf --ao=null --vo=null \
+    --script=${pkgs.mpvScripts.mpris}/share/mpv/scripts/mpris.so \
+    av://lavfi:sine=frequency=440 > $TMPDIR/mpv.log 2>&1 &
+  MPVPID=$!
   launch qs.log
   sleep 5
   kill -0 $QSPID 2>/dev/null && echo ALIVE >> $R
+  # The player changes state under the shell.
+  playerctl pause
+  sleep 1
+  playerctl play
+  sleep 1
+  echo "media $(playerctl status 2>&1)" >> $R
   v status status
   v bar-hide-left bar hide left
   v bar-show bar show
   v bar-toggle bar toggle
   v bar-toggle-back bar toggle
+  # A bar nobody can see samples nothing; shown again, it samples.
+  v bars-hidden bar hide
+  sleep 1
+  v meters-hidden meters
+  v bars-shown bar show
+  sleep 2
+  v meters-shown meters
   v reload reload
   ipc launcher launcher status
   v power power
@@ -262,6 +336,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   v panel-status panel
   v panel-out panel audio-out
   v panel-in panel audio-in
+  v panel-tailscale panel tailscale
   v panel-close panel --close
   v stayawake stay-awake toggle
   v stayawake-status stay-awake status
@@ -311,8 +386,32 @@ pkgs.runCommand "vogix-desktop-smoke"
   caps_until on locks-back
   rm $XDG_STATE_HOME/vogix/input-locks.json
   caps_until unknown locks-gone
+  # Two notifications, a critical one whose body wraps: cards in the
+  # popup column, and the live set mirrored to the state file.
+  notify-send -u critical -a smoke-critical "Critical summary" \
+    "a body long enough to wrap across more than one line of the card, which exercises the wrapped text height path"
+  notify-send -a smoke-normal -t 60000 "Normal summary" "short body"
+  sleep 3
+  ipc notify-count notify count
+  cp $XDG_STATE_HOME/vogix/desktop/notifications.json $TMPDIR/notifications-1.json
+  stop
+  kill $MPVPID 2>/dev/null
+
+  # Restart run: the live notifications come back, each with the time it
+  # arrived.
+  launch qs-restart.log
+  sleep 4
+  ipc restart-notify-count notify count
+  cp $XDG_STATE_HOME/vogix/desktop/notifications.json $TMPDIR/notifications-2.json
   stop
 
+  # Scanlines run: the texture on the bars and the restored cards.
+  cp $TMPDIR/scanlines.json $XDG_STATE_HOME/vogix/desktop.json
+  launch qs-scanlines.log
+  sleep 4
+  kill -0 $QSPID 2>/dev/null && echo SCANLINES-ALIVE >> $R
+  ipc scanlines-notify-count notify count
+  stop
   # Geometry run, on the shipped default desktop.json: the probe exits on
   # its own with its verdict; the timeout only bounds a probe that never
   # completes.
@@ -320,6 +419,14 @@ pkgs.runCommand "vogix-desktop-smoke"
   timeout 60 ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
   echo "GEOMETRY-EXIT $?" >> $R
   cp $TMPDIR/desktop.json $XDG_STATE_HOME/vogix/desktop.json
+
+  # State run, with the scanline texture on: the window title, the mode
+  # cell's table and then its loss, and the restored cards' texture.
+  cp $TMPDIR/scanlines.json $XDG_STATE_HOME/vogix/desktop.json
+  cp $inputJsonPath $XDG_STATE_HOME/vogix/input.json
+  echo normal > $XDG_STATE_HOME/vogix/current-mode
+  timeout 60 ${desktopEnv} qs -p $TMPDIR/state > $TMPDIR/qs-state.log 2>&1
+  echo "STATE-EXIT $?" >> $R
 
   # Rejection run: a schema-1 desktop.json is refused, loudly, without
   # taking the shell down.
@@ -337,6 +444,9 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo "── result:"; cat $TMPDIR/result || true
   echo "── stats:"; cat $TMPDIR/stats.json || true
   echo "── geometry:"; grep -hE "GEOMETRY|FOOTPRINT|FIT" $TMPDIR/qs-geometry.log || true
+  echo "── state:"; grep -h 'STATE' $TMPDIR/qs-state.log || true
+  echo "── notification arrival times:"
+  jq -c '[.[].at]' $TMPDIR/notifications-1.json $TMPDIR/notifications-2.json || true
 
   # The log gate. A failure is a script error, a binding problem, a
   # component that did not load, a program the shell could not start, or
@@ -363,18 +473,24 @@ pkgs.runCommand "vogix-desktop-smoke"
   }
   clean=0
   gate qs.log "$watched" || clean=1
+  gate qs-restart.log || clean=1
+  gate qs-scanlines.log || clean=1
   gate qs-geometry.log || clean=1
+  gate qs-state.log || clean=1
   gate qs-schema1.log 'WARN qml: vogix: desktop.json schema 1 is not supported (this shell reads schema 2); rebuild to regenerate it' || clean=1
   test $clean = 0
 
   r() { grep -qxF -- "$1" $TMPDIR/result || { echo "missing result line: $1"; exit 1; }; }
   r ALIVE
+  r 'media Playing'
   r 'status shell: running'
   r 'status bar: top:shown bottom:shown left:shown right:shown'
   r 'bar-hide-left top:shown bottom:shown left:hidden right:shown'
   r 'bar-show top:shown bottom:shown left:shown right:shown'
   r 'bar-toggle top:hidden bottom:hidden left:hidden right:hidden'
   r 'bar-toggle-back top:shown bottom:shown left:shown right:shown'
+  r 'meters-hidden spectrum:off scope:off vu-out:off vu-mic:off stats:none'
+  grep -qE '^meters-shown .* stats:[a-z]' $TMPDIR/result
   r 'launcher closed'
   r 'power open'
   r 'power-status open'
@@ -382,6 +498,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   r 'panel-status calendar'
   r 'panel-out audio-out'
   r 'panel-in audio-in'
+  r 'panel-tailscale tailscale'
   r 'stayawake on'
   r 'stayawake-status on'
   r 'nightlight off'
@@ -413,6 +530,19 @@ pkgs.runCommand "vogix-desktop-smoke"
   grep -q '^locks-null .* caps:unknown$' $TMPDIR/result
   grep -q '^locks-back .* caps:on$' $TMPDIR/result
   grep -q '^locks-gone .* caps:unknown$' $TMPDIR/result
+  # The tailnet link's connection record: the shell saw it connected on
+  # its first sample, so the start is inexact and bounded by the daemon's.
+  jq -e '.exact == false and .daemonStartMs == 1790100514000' \
+    $XDG_RUNTIME_DIR/vogix/desktop/tailscale-connection.json
+  # Notifications: both cards up and mirrored with their arrival time, the
+  # same two restored with the same times after a restart, and with the
+  # scanline texture on.
+  r 'notify-count 2'
+  jq -e 'length == 2 and all(.[]; (.at | type) == "number")' $TMPDIR/notifications-1.json
+  r 'restart-notify-count 2'
+  test "$(jq -c '[.[].at]' $TMPDIR/notifications-1.json)" = "$(jq -c '[.[].at]' $TMPDIR/notifications-2.json)"
+  r SCANLINES-ALIVE
+  r 'scanlines-notify-count 2'
   # A canvas instrument never lays out collapsed nor resizes when audio
   # arrives, and the default layout fits its bars: the probe's verdict
   # over every registry widget on both bar axes and every default cell,
@@ -423,6 +553,14 @@ pkgs.runCommand "vogix-desktop-smoke"
     grep -q "FIT $edge " $TMPDIR/qs-geometry.log
   done
   grep -q 'FIT bottom oscilloscope ' $TMPDIR/qs-geometry.log
+  # The window title from hyprctl; the mode label from input.json, then
+  # the bare mode once input.json cannot be read; the texture on both
+  # restored cards.
+  r 'STATE-EXIT 0'
+  grep -q 'STATE window-title smoke window title$' $TMPDIR/qs-state.log
+  grep -q 'STATE mode-label NRM-SMOKE$' $TMPDIR/qs-state.log
+  grep -q 'STATE mode-label-after-failure normal$' $TMPDIR/qs-state.log
+  grep -q 'STATE card-scanlines 2/2$' $TMPDIR/qs-state.log
   r SCHEMA1-ALIVE
   r 'schema1 top:off bottom:off left:off right:off'
   grep -q 'desktop.json schema 1 is not supported' $TMPDIR/qs-schema1.log
