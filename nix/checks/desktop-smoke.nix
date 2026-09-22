@@ -548,7 +548,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   jq -e '.memory > 0 and .cpu != null' $TMPDIR/stats.json
   jq -e '.gauges == (if .rootInMemory then [] else ["/"] end)
     and (.mounts | has("/vogix-smoke-absent") | not)' $TMPDIR/stats.json
-  r 'privacy mic:off screen:off'
+  r 'privacy mic:off screencast:off'
   r 'custom-smoke SMOKE-42'
   r 'custom-gauge J-7'
   r 'custom-stream S-2'

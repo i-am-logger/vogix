@@ -206,8 +206,9 @@ pub enum DesktopCommands {
     /// gauges the mounts cell shows, whether the root is RAM-backed, and
     /// the kernel device behind each gauge
     Stats,
-    /// What the privacy cell reports: "mic:on|off screen:on|off" — another
-    /// program capturing a microphone, and a live screen capture
+    /// What the PRIVACY cell shows, e.g. "mic:off screencast:on": whether an
+    /// application is capturing the microphone, and whether a screen capture
+    /// session is running
     Privacy,
     /// Control the bar surface
     Bar {
@@ -886,6 +887,18 @@ mod tests {
             }
         ));
         assert!(Cli::try_parse_from(["vogix", "desktop", "meters", "extra"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_desktop_privacy() {
+        let cli = Cli::try_parse_from(["vogix", "desktop", "privacy"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Desktop {
+                command: DesktopCommands::Privacy
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "desktop", "privacy", "extra"]).is_err());
     }
 
     // ── Property: invalid subcommands fail gracefully ──

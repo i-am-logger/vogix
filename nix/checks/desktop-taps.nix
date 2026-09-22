@@ -208,13 +208,13 @@ let
     # capture the output monitor, not a microphone: with all of them
     # running the privacy cell's microphone flag stays off. Another
     # program's capture stream turns it on, and its end turns it off.
-    await_privacy "mic:off screen:off" 5
+    await_privacy "mic:off screencast:off" 5
     pw-cat --record --raw --format=s16 --rate=48000 --channels=2 /dev/null >> "$TMPDIR/pipewire.log" 2>&1 &
     CAPPID=$!
-    await_privacy "mic:on screen:off" 10
+    await_privacy "mic:on screencast:off" 10
     kill $CAPPID
     wait $CAPPID
-    await_privacy "mic:off screen:off" 10
+    await_privacy "mic:off screencast:off" 10
     cava1=$(pgrep -x cava) pw1=$(pgrep -x pw-record)
 
     # 3. A tap that dies comes back as a new process.

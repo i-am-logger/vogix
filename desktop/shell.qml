@@ -228,6 +228,17 @@ ShellRoot {
     }
 
     IpcHandler {
+        target: "privacy"
+
+        // What the PRIVACY cell shows: a microphone capture stream and a
+        // screen capture session, each on or off.
+        function status(): string {
+            return "mic:" + (Privacy.micInUse ? "on" : "off")
+                + " screencast:" + (Privacy.screencast ? "on" : "off");
+        }
+    }
+
+    IpcHandler {
         target: "gallery"
 
         function open(): string {
@@ -262,17 +273,6 @@ ShellRoot {
         // The readings behind the stat cells, one JSON object.
         function status(): string {
             return JSON.stringify(SysStat.readings());
-        }
-    }
-
-    IpcHandler {
-        target: "privacy"
-
-        // What the privacy cell reports: a microphone capture by another
-        // program, and a live screen capture.
-        function status(): string {
-            return "mic:" + (Privacy.micInUse ? "on" : "off")
-                + " screen:" + (Privacy.screencast ? "on" : "off");
         }
     }
 
