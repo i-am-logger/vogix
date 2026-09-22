@@ -273,6 +273,8 @@ instantly and fall at 3.0 full-scale per second; the peak cap holds 0.53 s,
 then falls at 0.75 full-scale per second. The spectrum shares that
 ballistics, so the bars and the meters fall together. The level is shown in
 steps of 1/40 of the window: 1 dB with the default window.
+[TESTING.md](../TESTING.md#vu-meter-calibration) has the procedure that checks
+the meters' reference level against a test tone.
 
 The spectrum is cava at 25 frames a second, `meters.spectrum.bars` bands per
 stereo channel (48 by default); `meters.spectrum.enable = false` removes it.
@@ -560,6 +562,8 @@ Some sources do not depend on a bar:
 
 `vogix desktop meters` shows what is running now, for example
 `spectrum:idle scope:idle vu-out:idle vu-mic:on stats:cpu,memory,net,disk,gpu,uptime,temp,fans,mounts`.
+[TESTING.md](../TESTING.md#desktop-cpu-budget) has the procedure that
+measures the shell's CPU cost.
 
 The shell runs quickshell with `--no-detailed-logs`, so quickshell records
 only the messages it shows (the shell's warnings and errors, which reach

@@ -77,6 +77,200 @@ The **input-engine** suite exercises, among others:
 - **Single-instance guard** - a 2nd engine refuses with the lock message and never double-grabs; the 1st engine stays intact
 - **Lock LEDs** - `input-locks.json` follows the grabbed keyboard's CapsLock/NumLock LEDs
 
+## Live checks on a desktop session
+
+Two properties of the desktop shell depend on real hardware and a real
+session, so no check can settle them: its CPU cost, and the reference level
+of its VU meters. Run these on the machine after switching to the build under
+test. Steps marked *changes the session* hide bars, lock the screen or change
+the volume; each says how to undo it.
+
+### Desktop CPU budget
+
+The shell's budget: **at most 0.5% of one core while nothing plays, and at
+most 3% with music playing** and every meter running. With every bar hidden,
+or the session locked, nothing should be sampled at all.
+
+1. Confirm the shell runs from the build under test, without detailed logs:
+
+   ```bash
+   vogix desktop status
+   systemctl --user show -p ExecStart vogix-desktop | grep -c -- --no-detailed-logs   # prints 1
+   ```
+
+2. Save the measuring script. It reports the unit's whole CPU (quickshell and
+   every process it started, from the unit's cgroup), quickshell's own share,
+   and quickshell's context switches per second, over a window (60 s by
+   default):
+
+   ```bash
+   cat > /tmp/vogix-cpu.sh <<'EOF'
+   #!/usr/bin/env bash
+   set -eu
+   secs=${1:-60}
+   unit=vogix-desktop.service
+   pid=$(systemctl --user show -p MainPID --value "$unit")
+   [ "$pid" -gt 0 ] || { echo "$unit is not running"; exit 1; }
+   hz=$(getconf CLK_TCK)
+   cg() {
+     v=$(systemctl --user show -p CPUUsageNSec --value "$unit")
+     case $v in '' | *[!0-9]*) echo -1 ;; *) echo "$v" ;; esac
+   }
+   ticks() { awk '{ print $14 + $15 }' "/proc/$pid/stat"; }
+   switches() { cat /proc/"$pid"/task/*/status | awk '/ctxt_switches/ { s += $2 } END { print s }'; }
+   c0=$(cg); t0=$(ticks); w0=$(switches)
+   sleep "$secs"
+   c1=$(cg); t1=$(ticks); w1=$(switches)
+   awk -v c0="$c0" -v c1="$c1" -v t="$((t1 - t0))" -v w="$((w1 - w0))" -v s="$secs" -v hz="$hz" 'BEGIN {
+     if (c0 < 0 || c1 < 0) print "unit, all processes:    n/a (CPU accounting is off for user units)"
+     else printf "unit, all processes:    %.2f%% of one core\n", (c1 - c0) / (s * 1e7)
+     printf "quickshell alone:       %.2f%% of one core\n", t / (s * hz) * 100
+     printf "quickshell wakeups:     %.1f context switches/s\n", w / s
+   }'
+   EOF
+   chmod +x /tmp/vogix-cpu.sh
+   ```
+
+   The first line is the budget figure. When it reads `n/a`, CPU accounting
+   is off for user units, and the second line is the figure to use.
+
+3. **Silent.** Close or stop every player (a paused stream an application
+   keeps open counts as playing), then check that nothing plays and the audio
+   taps are idle:
+
+   ```bash
+   pw-dump | grep -c '"media.class": "Stream/Output/Audio"'   # prints 0
+   vogix desktop meters     # spectrum:idle scope:idle vu-out:idle vu-mic:on stats:…
+   pgrep -x cava; pgrep -x pw-record                           # print nothing
+   /tmp/vogix-cpu.sh
+   ```
+
+   Pass: the unit line is at most **0.50%**.
+
+4. **Music.** Play something, then:
+
+   ```bash
+   vogix desktop meters     # spectrum:running scope:running vu-out:on vu-mic:on stats:…
+   /tmp/vogix-cpu.sh
+   ```
+
+   Pass: the unit line is at most **3.00%**.
+
+5. **Hidden** (*changes the session*: hides every bar). Stop the music, then:
+
+   ```bash
+   vogix desktop bar hide
+   vogix desktop meters     # spectrum:off scope:off vu-out:off vu-mic:off stats:none
+   /tmp/vogix-cpu.sh
+   vogix desktop bar show   # undo
+   ```
+
+   Pass: `meters` reads as above, and the unit line is well below the silent
+   figure, with far fewer wakeups than in step 3. What still runs while
+   hidden is listed in [the desktop shell's docs](docs/desktop.md#what-runs-when).
+
+6. **Locked** (*changes the session*: locks the screen). The measurement runs
+   in the background while the lock is up; stay locked for at least 70
+   seconds, then unlock and read the result:
+
+   ```bash
+   (sleep 5; vogix desktop meters; /tmp/vogix-cpu.sh) > /tmp/vogix-cpu-locked.txt 2>&1 &
+   vogix desktop lock
+   # …unlock after 70 s or more, then:
+   cat /tmp/vogix-cpu-locked.txt
+   ```
+
+   Pass: the same as hidden.
+
+7. If a budget fails, find the busy thread: `top -H -p "$(systemctl --user
+   show -p MainPID --value vogix-desktop)"`.
+
+8. The log stays small: note the size of quickshell's log, and again ten
+   minutes later. It grows only by the shell's warnings, not by hundreds of
+   records a second:
+
+   ```bash
+   ls -l "$XDG_RUNTIME_DIR"/quickshell/by-id/*/log.qslog
+   ```
+
+Record the four figures (silent, music, hidden, locked) with the change that
+is being measured.
+
+### VU meter calibration
+
+The VU meters convert quickshell's PipeWire peaks to dBFS
+(`desktop/Services/Peaks.qml`). quickshell reports a cube-rooted peak, and
+for a sink without a hardware route (no `card.profile.device` property) it
+divides that peak by the sink's volume. Whether the meter then shows the
+level applications send (before the sink's volume) or the level the device
+receives (after it) depends on the sink, so it is measured here against a
+tone of known level.
+
+The MIC meters use the same conversion on the default input; this procedure
+calibrates the output meters (the rail's VU cell, and `vu-out` wherever it is
+placed).
+
+1. **Protect your ears** (*changes the session*: the volume goes to 100%).
+   Turn the speakers or amplifier down, or unplug the headphones: a −6 dBFS
+   tone at full volume is loud. The meter reads the digital signal, so it
+   works with nothing listening.
+
+2. Make a 60-second, 1 kHz stereo tone peaking at exactly half of full scale
+   (−6.02 dBFS), and confirm its peak:
+
+   ```bash
+   nix shell nixpkgs#sox -c sox -n -r 48000 -c 2 -b 16 /tmp/tone-6dbfs.wav synth 60 sine 1000 vol 0.5
+   nix shell nixpkgs#sox -c sox /tmp/tone-6dbfs.wav -n stat 2>&1 | grep 'Maximum amplitude'   # 0.500
+   ```
+
+3. Note the current volume (to restore it), and whether the sink has a
+   hardware route (a `card.profile.device` property: quickshell then takes
+   the volume from the device and leaves the peak alone):
+
+   ```bash
+   wpctl get-volume @DEFAULT_AUDIO_SINK@
+   wpctl inspect @DEFAULT_AUDIO_SINK@ | grep -E 'node.name|card.profile.device'
+   ```
+
+4. At 100% volume, play the tone and read the VU cell's dB (the left rail
+   in the default layout) while it plays:
+
+   ```bash
+   wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0
+   pw-play /tmp/tone-6dbfs.wav &
+   sleep 3; vogix desktop meters   # vu-out:on
+   ```
+
+   Pass: the meter reads **−6 dB**, give or take one step (1 dB). Both columns
+   read the same, since both channels carry the tone.
+
+5. At 50% volume (in wpctl's cubic scale, −18 dB), with the tone still
+   playing:
+
+   ```bash
+   wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5
+   ```
+
+   Read the meter again and record which case applies:
+
+   - **−6 dB again**: the meter shows the level applications send, whatever
+     the sink's volume.
+   - **about −24 dB**: the meter follows the sink's volume (it reads what the
+     device receives).
+   - **0 dB, or pegged at the top**: the sink's volume was compensated
+     although the monitor never carried it. This one is a defect: the
+     reference in `Peaks.qml` needs correcting for this kind of sink.
+
+6. Stop the tone and restore the volume noted in step 3:
+
+   ```bash
+   pkill -f 'pw-play /tmp/tone-6dbfs.wav'
+   wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.40   # the value from step 3
+   ```
+
+Record the sink (its `node.name`, and whether it has `card.profile.device`)
+with both readings.
+
 ## Test Architecture
 
 ### NixOS Test Framework
@@ -203,7 +397,8 @@ The automated tests cover:
    lint, pure logic, startup and verbs, audio taps against PipeWire, and its
    behavior under Hyprland
 
-**Checked by hand**:
+**Checked by hand** (see [Live checks](#live-checks-on-a-desktop-session)):
+- The desktop shell's CPU cost, and its VU meters' reference level
 - Colors and layout as they look on a real display
 
 ## Troubleshooting
