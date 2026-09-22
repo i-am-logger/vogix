@@ -10,12 +10,21 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Vogix
+import "lib/gpu.js" as Gpu
 
 Singleton {
     id: root
 
     readonly property int histLen: (Config.doc.meters ?? {}).history ?? 64
     readonly property int sampleMs: (Config.doc.meters ?? {}).sampleMs ?? 100
+
+    // A busy counter is a near-instantaneous reading: at idle, amdgpu's
+    // gpu_busy_percent swings between single digits and 100 from one read
+    // to the next. The published figure is the mean of the last
+    // gpuMeanSamples 1 Hz samples, so readout, threshold color and trace
+    // show the load level instead of the sampling noise.
+    readonly property int gpuMeanSamples: 5
+    property list<real> _gpuSamples: []
 
     property real cpu: 0        // 0..1
     property real memory: 0     // 0..1
@@ -117,6 +126,14 @@ Singleton {
         const out = arr.length >= root.histLen ? arr.slice(arr.length - root.histLen + 1) : arr.slice();
         out.push(v);
         return out;
+    }
+
+    // One raw busy sample, 0..1: folded into the window, published as its
+    // mean.
+    function _gpuSample(v: real): void {
+        root._gpuSamples = Gpu.pushWindow(root._gpuSamples, v, root.gpuMeanSamples);
+        root.gpuBusy = Gpu.mean(root._gpuSamples);
+        root.gpuHistory = root._push(root.gpuHistory, root.gpuBusy);
     }
 
     // The fast tick — cpu/mem/net at meters.sampleMs (default 10 Hz), so
@@ -389,10 +406,7 @@ Singleton {
         path: root.gpuPath
         watchChanges: false
         preload: true
-        onLoaded: {
-            root.gpuBusy = Math.max(0, Math.min(1, Number(text().trim()) / 100));
-            root.gpuHistory = root._push(root.gpuHistory, root.gpuBusy);
-        }
+        onLoaded: root._gpuSample(Math.max(0, Math.min(1, Number(text().trim()) / 100)))
         onLoadFailed: root.hasGpu = false
     }
 

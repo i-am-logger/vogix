@@ -836,6 +836,10 @@
               touch $out
             '';
 
+          # The shell's parsers and policies (desktop/Services/lib), unit
+          # tested under Qt Quick Test.
+          desktop-logic = import ./tests/desktop { inherit pkgs; };
+
           # Quick sanity checks (binary, status, list, systemd)
           smoke = import ./nix/vm/tests/smoke.nix testArgs;
 
