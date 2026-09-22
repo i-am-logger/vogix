@@ -34,5 +34,5 @@ FrameCell {
     }
 
     interactive: true
-    onClicked: Panels.toggle("calendar")
+    onClicked: root.axis?.togglePanel("calendar", root) ?? Panels.toggle("calendar")
 }

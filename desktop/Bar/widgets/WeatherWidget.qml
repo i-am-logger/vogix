@@ -4,11 +4,13 @@ import qs.Bar.widgets
 import qs.Services
 
 BarText {
+    id: root
+
     visible: Weather.enabled && Weather.text !== ""
     text: Weather.text
 
     MouseArea {
         anchors.fill: parent
-        onClicked: Panels.toggle("weather")
+        onClicked: root.axis?.togglePanel("weather", root) ?? Panels.toggle("weather")
     }
 }

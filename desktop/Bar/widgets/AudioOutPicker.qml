@@ -30,7 +30,7 @@ FrameCell {
     padH: 6
     padV: 4
     interactive: true
-    onClicked: Panels.toggle("audio-out")
+    onClicked: root.axis?.togglePanel("audio-out", root) ?? Panels.toggle("audio-out")
 
     Column {
         spacing: Metrics.unit

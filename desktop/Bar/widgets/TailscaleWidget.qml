@@ -9,6 +9,10 @@ import qs.Services
 import qs.Vogix
 
 FrameCell {
+    id: root
+
+    property BarAxis axis: null
+
     title: "TS"
     titleColor: Tailscale.online ? Tokens.color("meter", "low") : Tokens.color("meter", "label")
     padH: 8
@@ -28,5 +32,5 @@ FrameCell {
     }
 
     interactive: true
-    onClicked: Panels.toggle("tailscale")
+    onClicked: root.axis?.togglePanel("tailscale", root) ?? Panels.toggle("tailscale")
 }

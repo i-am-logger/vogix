@@ -25,6 +25,8 @@ BarText {
         onClicked: mouse => {
             if (mouse.button === Qt.MiddleButton && root.audio)
                 root.audio.muted = !root.audio.muted;
+            else if (root.axis)
+                root.axis.togglePanel("audio", root);
             else
                 Panels.toggle("audio");
         }

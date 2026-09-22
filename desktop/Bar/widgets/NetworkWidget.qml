@@ -9,6 +9,8 @@ import qs.Services
 import qs.Vogix
 
 BarText {
+    id: root
+
     readonly property var devices: Networking.devices.values
     readonly property var connectedDev: devices.find(d => d.connected) ?? null
 
@@ -25,6 +27,6 @@ BarText {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: Panels.toggle("network")
+        onClicked: root.axis?.togglePanel("network", root) ?? Panels.toggle("network")
     }
 }

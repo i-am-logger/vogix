@@ -71,6 +71,7 @@ PanelWindow {
             thickness: panel.thickness
             edge: panel.edge
             live: BarState.live(panel.edge)
+            window: panel
         }
 
         Section {

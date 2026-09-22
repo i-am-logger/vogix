@@ -1,24 +1,43 @@
-// The one panel popup window: anchored under the bar's end, hosting
-// whichever panel qs.Services.Panels has open. Escape closes.
+// The one panel popup window, hosting whichever panel qs.Services.Panels
+// has open: beside the bar whose widget summoned it, centred on that
+// widget, on that bar's screen; a panel opened by the verb sits under the
+// top bar's end on the focused monitor. Escape closes.
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
+import qs.Geometry
 import qs.Services
 import qs.Vogix
 
 PanelWindow {
     id: root
 
+    // exclusionMode Ignore places this from the raw screen edge, so the
+    // live bar thicknesses are insets — a parked bar reclaims its space
+    // immediately.
+    readonly property rect area: Placement.freeArea(
+        Qt.size(root.screen?.width ?? 0, root.screen?.height ?? 0),
+        BarState.thickness("top"), BarState.thickness("bottom"),
+        BarState.thickness("left"), BarState.thickness("right"))
+    readonly property point origin: Placement.popupOrigin(
+        Panels.anchorEdge, Panels.anchorRect,
+        Qt.size(root.implicitWidth, root.implicitHeight), root.area)
+
+    screen: {
+        if (Panels.anchorScreen)
+            return Panels.anchorScreen;
+        const name = Hyprland.focusedMonitor?.name ?? "";
+        return Quickshell.screens.find(s => s.name === name) ?? Quickshell.screens[0] ?? null;
+    }
+
     visible: Panels.open !== ""
     anchors {
         top: true
-        right: true
+        left: true
     }
-    // exclusionMode Ignore places this from the raw screen edge, so the
-    // live bar thicknesses are added by hand — a parked bar reclaims the
-    // space immediately.
-    margins.top: BarState.thickness("top") + 8
-    margins.right: BarState.thickness("right") + 8
+    margins.top: origin.y
+    margins.left: origin.x
     implicitWidth: 380
     implicitHeight: Math.min(560, content.implicitHeight + 26)
     color: "transparent"

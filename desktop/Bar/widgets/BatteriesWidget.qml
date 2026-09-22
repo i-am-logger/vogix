@@ -11,6 +11,8 @@ import qs.Vogix
 FrameCell {
     id: root
 
+    property BarAxis axis: null
+
     readonly property var cells:
         [...UPower.devices.values].filter(d => d.isLaptopBattery || d.type === UPowerDeviceType.Battery)
 
@@ -41,5 +43,5 @@ FrameCell {
     }
 
     interactive: true
-    onClicked: Panels.toggle("power")
+    onClicked: root.axis?.togglePanel("power", root) ?? Panels.toggle("power")
 }

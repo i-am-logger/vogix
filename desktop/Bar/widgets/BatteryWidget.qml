@@ -6,6 +6,8 @@ import qs.Services
 import qs.Vogix
 
 BarText {
+    id: root
+
     visible: Battery.present
     readonly property int pct: Math.round(Battery.percentage * 100)
 
@@ -20,6 +22,6 @@ BarText {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: Panels.toggle("power")
+        onClicked: root.axis?.togglePanel("power", root) ?? Panels.toggle("power")
     }
 }

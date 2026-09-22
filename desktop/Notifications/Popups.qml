@@ -12,6 +12,7 @@ import Quickshell
 import Quickshell.Hyprland
 import qs.Bar.widgets
 import qs.Components
+import qs.Geometry
 import qs.Services
 import qs.Vogix
 
@@ -23,6 +24,16 @@ PanelWindow {
         eligible.slice(-((Config.doc.notifications ?? {}).maxVisible ?? 5))
     readonly property int queued: eligible.length - visiblePopups.length
 
+    // exclusionMode Ignore places the column from the raw screen edge, so
+    // every bar's live thickness (0 when off or parked) is an inset: the
+    // column takes the top-right corner of what the bars leave free.
+    readonly property rect area: Placement.freeArea(
+        Qt.size(root.screen?.width ?? 0, root.screen?.height ?? 0),
+        BarState.thickness("top"), BarState.thickness("bottom"),
+        BarState.thickness("left"), BarState.thickness("right"))
+    readonly property point origin: Placement.popupOrigin(
+        "", Qt.rect(0, 0, 0, 0), Qt.size(root.implicitWidth, root.implicitHeight), root.area)
+
     // Follow the focused monitor; fall back to the first screen.
     screen: {
         const name = Hyprland.focusedMonitor?.name ?? "";
@@ -32,18 +43,25 @@ PanelWindow {
     visible: visiblePopups.length > 0
     anchors {
         top: true
-        right: true
+        left: true
     }
-    margins.top: 8
-    margins.right: 8
+    margins.top: origin.y
+    margins.left: origin.x
     implicitWidth: 440
-    implicitHeight: column.implicitHeight
+    // Never taller than the free area. The column hangs from the window's
+    // bottom, so past that height the OLDEST cards run off the top and the
+    // newest card and the queue line stay on screen.
+    implicitHeight: Math.min(column.implicitHeight, area.height)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
 
     ColumnLayout {
         id: column
-        anchors.fill: parent
+        anchors {
+            left: parent.left
+            right: parent.right
+            bottom: parent.bottom
+        }
         spacing: 8
 
         Repeater {

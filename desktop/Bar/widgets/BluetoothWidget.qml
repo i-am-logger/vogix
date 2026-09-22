@@ -7,6 +7,8 @@ import qs.Services
 import qs.Vogix
 
 BarText {
+    id: root
+
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool anyConnected:
         Bluetooth.devices.values.some(d => d.connected)
@@ -19,6 +21,6 @@ BarText {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: Panels.toggle("bluetooth")
+        onClicked: root.axis?.togglePanel("bluetooth", root) ?? Panels.toggle("bluetooth")
     }
 }
