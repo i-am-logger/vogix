@@ -15,9 +15,11 @@ Item {
     property real padV: 4
 
     // Whole-cell click target. Widgets must use THIS, never their own
-    // anchors.fill MouseArea inside the slot — a filling child feeds the
-    // slot's childrenRect back into the cell's implicit size (binding
-    // loop, caught live).
+    // anchors.fill MouseArea inside the slot. Slot content never sizes
+    // itself from the slot (anchors.fill, width: parent.width): the
+    // slot's childrenRect IS the cell's implicit size, so that is a
+    // binding loop. A cell whose width its parent imposes gives the
+    // content that outer width minus 2 × padH instead.
     property bool interactive: false
 
     signal clicked()

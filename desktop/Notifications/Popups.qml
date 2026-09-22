@@ -85,8 +85,10 @@ PanelWindow {
                     padH: 16
                     padV: 12
 
+                    // Sized from the card, whose width the column imposes
+                    // — never from the slot (see FrameCell).
                     ColumnLayout {
-                        width: parent.width
+                        width: card.width - frame.padH * 2
                         spacing: 5
 
                         RowLayout {
