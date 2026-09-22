@@ -178,7 +178,7 @@ vogix session undo                   # undo the last window change (restore from
 
 ### Desktop
 
-These verbs drive the vogix desktop shell.
+These verbs drive the vogix desktop shell (see [the desktop shell](desktop.md)).
 Keybindings, the root menu, custom cells and scripts call them rather than the
 shell's own transport (`qs ipc`). Without a running shell most verbs print
 `no responsive shell instance` (a few stay silent) and exit 0; `lock`,

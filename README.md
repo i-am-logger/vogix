@@ -11,6 +11,7 @@ Vogix is a declarative UX layer for NixOS that unifies desktop configuration - d
 **Currently implemented:**
 - **Appearance** - runtime color theme switching across 4 schemes, no system rebuilds.
 - **Behavior** - an ontology-driven keyboard input engine: modal + chorded keybindings, optional dual-role CapsLock, and selectable interaction *paradigms* (vogix / i3 / cua / emacs / vim / windows / macos / linux).
+- **Desktop shell** - a Hyprland desktop shell themed by the current palette: four instrument bars (the Flight Deck HUD), notifications, lock, idle, launcher, panels, OSD and wallpaper. See [the desktop shell](docs/desktop.md).
 
 **Vision:** Full desktop UX management - see [roadmap](#roadmap).
 
@@ -29,12 +30,12 @@ Vogix is evolving from a color theming tool to a full NixOS UX subsystem. See [#
 - [x] Colors - runtime theme switching
 - [ ] [Typography](https://github.com/i-am-logger/vogix/issues/141) - fonts, sizes, weights
 - [ ] [Transparency](https://github.com/i-am-logger/vogix/issues/142) - opacity, blur
-- [ ] [Backgrounds](https://github.com/i-am-logger/vogix/issues/143) - wallpapers
+- [x] [Backgrounds](https://github.com/i-am-logger/vogix/issues/143) - per-theme wallpaper sets in the desktop shell (a background generated from the palette, a live shader, curated extras)
 - [ ] [Window chrome](https://github.com/i-am-logger/vogix/issues/144) - borders, gaps, radius
 - [ ] [Animations](https://github.com/i-am-logger/vogix/issues/151) - duration, easing
 - [ ] [Cursors](https://github.com/i-am-logger/vogix/issues/146) - theme, size
 - [ ] [Icons](https://github.com/i-am-logger/vogix/issues/152) - icon themes
-- [ ] [Notifications](https://github.com/i-am-logger/vogix/issues/150) - mako, dunst styling
+- [x] [Notifications](https://github.com/i-am-logger/vogix/issues/150) - the desktop shell's own notification server, themed live (mako and dunst are not styled)
 - [ ] [GTK/Qt](https://github.com/i-am-logger/vogix/issues/148) - toolkit theming
 - [ ] [HiDPI](https://github.com/i-am-logger/vogix/issues/153) - scaling
 - [ ] [Shaders](https://github.com/i-am-logger/vogix/issues/145) - *future* CRT / bloom post-processing effects (the monochromatic screen shader already ships — see Features)
@@ -51,7 +52,7 @@ Vogix is evolving from a color theming tool to a full NixOS UX subsystem. See [#
 
 **Reproducible.** Built on Nix. Same inputs = same outputs. Templates are immutable in the Nix store, rendering is deterministic.
 
-**Compositor-agnostic.** Works with Hyprland, Sway, i3, and others. Define your UX, vogix handles the translation.
+**Compositor-aware.** Theme switching works under any compositor. The input engine re-emits keys below the compositor, so typing works everywhere; its window actions, the screen shader, session restore and the desktop shell target Hyprland, under either of its config engines (hyprlang or Lua).
 
 ## Color Schemes
 
@@ -94,6 +95,17 @@ A single ontology-driven input daemon (evdev grab → uinput re-emit + composito
   - `windows` / `macos` / `linux` - desktop chorded navigation (each cited to the platform's keyboard-shortcut docs)
   - `emacs` - Ctrl/Meta motion as a single passthrough `app` mode (multi-key `C-x` prefixes modelled as transient modes are *future work* — not yet in the preset)
 - **Context-aware macOS-Command remap**: Super behaves like ⌘ (Super+C → Ctrl+C), retargeted to Ctrl+Shift in terminals so it can't SIGINT a running job.
+
+### Desktop Shell
+
+A quickshell-rendered shell for Hyprland, enabled with `programs.vogix.desktop.enable` and colored entirely by the current theme, so `vogix theme set` recolors it live. See [the desktop shell](docs/desktop.md).
+
+- **Four bars on every monitor** (the Flight Deck HUD): workspaces, the input engine's mode, clock, keyboard layout with CapsLock, CPU/GPU/memory/temperature/fan/disk cells with history traces, network and disk I/O graphs, stereo VU meters with dB, a spectrum and an oscilloscope, media transport, audio device pickers, and status glyphs. Where each widget sits and the meters' thresholds are configuration, and custom cells show the output of your own commands.
+- **Notifications**: the session's notification server; critical notifications never expire, per-app rules set timeouts, colors and do-not-disturb exemptions.
+- **Lock and idle**: a PAM-backed session lock that refuses to engage without its PAM service, and staged idle (screensaver, dim, lock, screens off, suspend).
+- **Launcher and menus**: apps, files, calc, emoji, ssh, clipboard, theme and background pickers, a root menu from your configuration, a power menu, and dmenu mode for scripts.
+- **Panels, OSD, polkit agent, wallpaper and focus brackets**, all driven by `vogix desktop …` verbs.
+- **Quiet out of sight**: the audio taps run only while something plays and their widget is on screen, and the system samplers stop while their bar is hidden, the session is locked or the screens are off (custom cells and a few slow polls keep running).
 
 ## Quick Start
 
@@ -177,6 +189,8 @@ See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 - [Architecture](docs/architecture.md) - System architecture and integration
 - [CLI Reference](docs/cli.md) - Command-line interface guide
+- [Desktop Shell](docs/desktop.md) - The Flight Deck HUD: bars, widgets, notifications, lock, launcher
+- [Hyprland IPC](docs/hyprland-lua-ipc.md) - Talking to Hyprland under both config engines
 - [Theming Guide](docs/theming.md) - Creating and customizing themes
 - [Reload Mechanisms](docs/reload.md) - Application reload methods
 - [Vogix16 Design System](https://github.com/i-am-logger/vogix16-themes/blob/main/docs/design-system.md) - Default scheme philosophy and formats
@@ -200,7 +214,8 @@ Create custom vogix16 themes by following the [vogix16-themes contribution guide
 
 - NixOS (for full integration) or any Linux distribution (for standalone binary)
 - Rust Edition 2024
-- Hyprland (for the screen shader, input engine, and session restore)
+- Hyprland (for the screen shader, the input engine's window actions, session restore, and the desktop shell)
+- For the desktop shell: PipeWire, NetworkManager, UPower, BlueZ and Tailscale where you want their widgets (a missing service hides or degrades the widgets that need it)
 - App reloads use Unix signals, a command, or a `touch` of the theme file — no DBus/IPC dependency
 
 ## License

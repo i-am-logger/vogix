@@ -29,9 +29,9 @@ devenv shell
 
 This provides:
 - Rust toolchain (rustc, cargo, rustfmt, clippy, rust-analyzer)
-- Nix formatting tools (nixpkgs-fmt)
+- treefmt with nixpkgs-fmt, deadnix, statix, rustfmt, shellcheck and shfmt
 - Required system dependencies (pkg-config, dbus)
-- Pre-configured git hooks (rustfmt, clippy, nixpkgs-fmt)
+- Pre-configured git hooks (treefmt, clippy)
 
 ## Building
 
@@ -73,6 +73,10 @@ cargo test
 cargo test -- --nocapture
 ```
 
+The unit tests include the CLI reference: every `vogix …` example in
+[docs/cli.md](docs/cli.md) must parse, and every command must have one, so a
+CLI change that leaves the reference behind fails `cargo test`.
+
 ### Integration Tests
 
 ```bash
@@ -84,6 +88,12 @@ nix build .#checks.x86_64-linux.smoke           # Quick sanity checks
 nix build .#checks.x86_64-linux.architecture    # Symlinks, runtime dirs
 nix build .#checks.x86_64-linux.theme-switching # Theme/variant switching
 nix build .#checks.x86_64-linux.cli             # CLI flags, error handling
+
+# The desktop shell (no VM; seconds to minutes each)
+nix build .#checks.x86_64-linux.desktop-qmllint -L --no-link   # lint the QML
+nix build .#checks.x86_64-linux.desktop-logic -L --no-link     # Qt Quick Test over the pure logic
+nix build .#checks.x86_64-linux.desktop-smoke -L --no-link     # the real shell under a headless compositor
+nix build .#checks.x86_64-linux.desktop-options -L --no-link   # the desktop.json pin and module assertions
 ```
 
 ### VM Testing
@@ -128,22 +138,13 @@ cargo clippy -- -D warnings
 ### Pre-commit Checks
 
 Git hooks are automatically configured when you enter `devenv shell`. They run:
-- `rustfmt` - Rust code formatting
+- `treefmt` - nixpkgs-fmt, deadnix, statix, rustfmt, shellcheck, shfmt
 - `clippy` - Rust linting
-- `nixpkgs-fmt` - Nix code formatting
 
-Manual checks before committing:
+Before committing, run what CI runs first:
 ```bash
-cargo fmt --check && \
-cargo clippy -- -D warnings && \
-cargo test && \
-nixpkgs-fmt --check . && \
+devenv test               # treefmt --fail-on-change, clippy -D warnings, cargo check, cargo test
 nix flake check --no-build
-```
-
-Or use devenv's test command:
-```bash
-devenv test  # Runs all git hooks
 ```
 
 ## Project Structure
@@ -155,6 +156,9 @@ vogix/
 │   │   ├── cache.rs            # Cache management
 │   │   ├── completions.rs      # Shell completions
 │   │   ├── daemon.rs           # Reload daemon
+│   │   ├── desktop.rs          # `vogix desktop` verbs and `desktop check`
+│   │   ├── greeter.rs          # SDDM greeter theme sync
+│   │   ├── hypr.rs             # Dialect-aware Hyprland IPC
 │   │   ├── input.rs            # Input engine / keybindings
 │   │   ├── list.rs             # List themes
 │   │   ├── modes.rs            # Paradigms and modes
@@ -163,6 +167,7 @@ vogix/
 │   │   ├── shader.rs           # Hyprland screen shader
 │   │   ├── status.rs           # Show status
 │   │   └── theme_change.rs     # Theme/variant switching
+│   ├── input/                  # The input engine (router, evdev/uinput loop, schema, lock LEDs, …)
 │   ├── cache/                  # Theme cache module
 │   │   ├── paths.rs            # Cache path management
 │   │   ├── renderer.rs         # Config rendering
@@ -201,12 +206,19 @@ vogix/
 │   │   ├── applications/       # Application theme generators
 │   │   │   ├── alacritty.nix
 │   │   │   ├── btop.nix
+│   │   │   ├── vogix-desktop.nix # The desktop shell's theme.json
 │   │   │   └── ...
+│   │   ├── desktop/            # programs.vogix.desktop.* options, defaults,
+│   │   │                       #   and the pinned default desktop.json
 │   │   └── nixos.nix           # NixOS module
+│   ├── checks/                 # Desktop checks too large for flake.nix
+│   │   ├── desktop-taps.nix    # The audio taps against a real PipeWire
+│   │   └── desktop-geometry-probe.qml # desktop-smoke's canvas-size probe
 │   ├── packages/
-│   │   └── vogix.nix           # Package definition
+│   │   ├── vogix.nix           # Package definition
+│   │   └── vogix-desktop-qml.nix # The desktop shell's QML tree
 │   └── vm/
-│       ├── tests/              # Integration tests (12 wired flake checks)
+│       ├── tests/              # NixOS VM suites (one flake check each)
 │       │   ├── lib.nix             # Shared test helpers
 │       │   ├── smoke.nix           # Binary, status, list, systemd
 │       │   ├── architecture.nix    # Symlinks, runtime dirs
@@ -219,13 +231,30 @@ vogix/
 │       │   ├── runtime-size.nix    # Runtime size inspection
 │       │   ├── stress.nix          # Rapid switching
 │       │   ├── templates.nix       # Template architecture
-│       │   └── input-engine.nix    # Input engine end-to-end
+│       │   ├── input-engine.nix    # Input engine end-to-end
+│       │   └── desktop-hyprland.nix # The desktop shell under Hyprland
 │       ├── test-vm.nix         # VM configuration
 │       └── home.nix            # Test user config
+│
+├── desktop/                    # The desktop shell (quickshell QML)
+│   ├── shell.qml               # Entry point and the IPC targets behind `vogix desktop`
+│   ├── Vogix/                  # Contract readers (desktop.json, theme.json, current-mode) and design tables
+│   ├── Services/               # One singleton per source (audio, stats, notifications, lock, idle, …)
+│   │   └── lib/                # Pure parsing and policy (JavaScript), unit-tested
+│   ├── Bar/                    # The four bars, the section registry, and every widget
+│   ├── Components/             # Meters, sparklines, readouts, ballistics
+│   ├── Geometry/               # Placement of floating surfaces
+│   ├── Panels/  Notifications/  Launcher/  Lock/  Idle/  Osd/  Power/  Polkit/
+│   ├── Background/  Decorations/  DevGallery/
+│   ├── Greeter/                # The SDDM greeter theme (its own package)
+│   └── data/                   # Shaders and the sysfs probe scripts
+├── tests/desktop/              # desktop-logic: Qt Quick Test cases and probe fixtures
 │
 ├── docs/                       # Documentation
 │   ├── architecture.md         # System architecture
 │   ├── cli.md                  # CLI reference
+│   ├── desktop.md              # The desktop shell
+│   ├── hyprland-lua-ipc.md     # Hyprland IPC under both config engines
 │   ├── theming.md              # Theme format
 │   ├── reload.md               # Reload mechanisms
 │   └── app-module-template.nix # Template for new app modules
@@ -234,9 +263,8 @@ vogix/
 │   └── demo.sh                 # Demo script
 │
 ├── .github/
-│   ├── workflows/              # CI/CD pipelines
-│   │   ├── ci-and-release.yml  # Consolidated CI + release automation
-│   │   └── release.yml         # Binary releases
+│   ├── workflows/              # CI/CD pipeline
+│   │   └── ci-and-release.yml  # CI and release automation
 │   └── ISSUE_TEMPLATE/         # Issue templates
 │
 ├── Cargo.toml                  # Rust dependencies (version source of truth)
@@ -345,12 +373,46 @@ See the [vogix16-themes README](https://github.com/i-am-logger/vogix16-themes) f
 
 See [docs/app-module-template.nix](docs/app-module-template.nix) for a complete template.
 
+### Working on the Desktop Shell
+
+The shell is the QML tree in `desktop/` (see
+[the architecture](docs/architecture.md#8-desktop-shell) and
+[the user docs](docs/desktop.md)). Its options and defaults are in
+`nix/modules/desktop/`, the unit and `desktop.json` rendering in
+`nix/modules/home-manager/default.nix`, and its verbs in
+`src/commands/desktop.rs`.
+
+- **Lint and test without a session**: `desktop-qmllint`, `desktop-logic`,
+  `desktop-smoke` and `desktop-taps` (commands above). Logic that can be a
+  pure function goes in `desktop/Services/lib/*.js` with a `tst_*.qml` case in
+  `tests/desktop/`; a sysfs probe goes in `desktop/data/*.sh` with a fixture
+  case in `tests/desktop/probes.sh`.
+- **A default changed**: `desktop-options` fails until
+  `nix/modules/desktop/desktop-json.pin.json` matches the new rendering, so
+  every change to what the shell receives is a reviewed edit of that file.
+- **A new widget**: add its QML under `desktop/Bar/widgets/` (declare
+  `property BarAxis axis` to receive the bar's context, and hold any data
+  source through a `Lease` on `axis.live`), register its name where
+  `desktop/Bar/Section.qml` maps names to files and in `KNOWN_WIDGETS` in
+  `src/commands/desktop.rs` (what `vogix desktop check` accepts), and list it
+  in `docs/desktop.md`. A widget that reads only horizontally also joins the
+  horizontal-only lists in those two files and in the home-manager module's
+  assertion.
+- **A new verb**: add the subcommand in `src/cli.rs`, its relay in
+  `src/commands/desktop.rs`, the IPC function in `desktop/shell.qml`, and an
+  example in `docs/cli.md` (the unit tests require one).
+- **On a real session**, a home-manager switch that changes the QML package
+  restarts `vogix-desktop.service`; one that changes only `desktop.json`
+  reloads it in place. `vogix desktop check`, `status`, `meters` and
+  `keyboard` show what the running shell sees, and warnings go to
+  `journalctl --user -u vogix-desktop`.
+
 ### Debugging
 
 #### Enable Rust Backtrace
 ```bash
-RUST_BACKTRACE=1 cargo run -- status
-RUST_BACKTRACE=full cargo run -- -t forest
+RUST_BACKTRACE=1 cargo run -- theme status
+RUST_BACKTRACE=full cargo run -- theme set -t forest
 ```
 
 #### Check Generated Configs
@@ -438,12 +500,14 @@ nix flake check --show-trace
 5. Symlinks configs to `~/.local/share/vogix/themes/`
 
 ### Runtime (Rust CLI)
-1. CLI updates `current-theme` symlink (only this!)
+1. CLI updates the `current-theme` symlink
 2. Supports variant navigation (darker/lighter/dark/light)
-3. Triggers application reloads per config
-4. Persists state to `~/.local/state/vogix/`
+3. Renders the Tera templates into its cache (`~/.cache/vogix/`) on `theme set` and `theme refresh`
+4. Triggers application reloads per config (the desktop shell's is `vogix desktop reload`)
+5. Persists state to `~/.local/state/vogix/`
+6. Runs the input engine (`vogix input run`) and relays the desktop shell's verbs (`vogix desktop …`)
 
-**Key Principle**: Nix generates everything at build time. Rust CLI only manages symlinks.
+**Key Principle**: Nix generates the theme packages and every configuration file at build time; at runtime the CLI flips the `current-theme` symlink, renders the templates into its cache, and signals the programs that read them.
 
 ### Directory Locations
 
@@ -454,6 +518,11 @@ nix flake check --show-trace
 | Current symlink | `~/.local/state/vogix/current-theme` | Rust CLI |
 | User state | `~/.local/state/vogix/state.toml` | Rust CLI |
 | App configs | `~/.config/{app}/` | home-manager symlinks |
+| Input engine schema | `~/.local/state/vogix/input.json` | home-manager |
+| Engine state (`current-mode`, `input-locks.json`, `input-health.json`) | `~/.local/state/vogix/` | input engine |
+| Desktop shell configuration | `~/.local/state/vogix/desktop.json` | home-manager |
+| Desktop shell colors | `~/.config/vogix-desktop/theme.json` | home-manager symlink through `current-theme` |
+| Desktop shell state | `~/.local/state/vogix/desktop/` | the desktop shell |
 
 ## Version Management
 
@@ -493,47 +562,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for complete guidelines.
 
 ## CI/CD Pipeline
 
-### Consolidated Workflow (`.github/workflows/ci-and-release.yml`)
+### Workflow (`.github/workflows/ci-and-release.yml`)
 
-A single, efficient workflow handles both CI and releases with smart job dependencies:
+One workflow runs on pull requests and pushes to `master`, in three jobs:
 
-**All CI jobs run in parallel for maximum speed:**
+1. **Lint/UT** (`devenv-checks`): `devenv test`, the same checks as local
+   development — treefmt, clippy, `cargo check`, `cargo test`.
+2. **Integration** (`nix-checks`, after Lint/UT): `nix flake check
+   --print-build-logs` on a runner with KVM, so every flake check runs: the
+   pure-Nix tests, the desktop shell's sandbox checks, and the VM suites.
+3. **Release** (`release-please`, pushes to `master` only, after both pass):
+   creates or updates the release PR from conventional commits, and tags the
+   release when that PR merges.
 
-**Job 1: Fast Checks**
-- `devenv-checks` - Runs `devenv test` which executes all git hooks:
-  - Nix code formatting (nixpkgs-fmt)
-  - Rust formatting (rustfmt)
-  - Rust linting (clippy)
-
-**Job 2: Nix Checks** (parallel with Job 1 & 3)
-- `nix-checks`:
-  - Runs `nix flake check` (includes Rust tests)
-  - Builds Nix package
-
-**Job 3: Integration Tests** (parallel with Job 1 & 2)
-- `integration-tests`:
-  - Runs integration tests
-  - Tests VM-based functionality
-
-**Job 4: Release** (depends on all CI passing)
-- `release-please`:
-  - Creates/updates release PRs from conventional commits
-  - Creates Git tags when release PRs are merged
-  - Only runs on push to master
-  - Blocked if any CI checks fail
-
-**Smart Optimizations:**
-- Skips CI on release-please PRs (version bump only)
-- Uses `devenv test` - same checks as local development
-- Formatting/linting fails fast (10-30 seconds) before expensive builds
-- All three CI jobs run in parallel for maximum speed
-- Release job explicitly depends on all CI jobs passing
-- Total: 4 jobs instead of original 6 (33% reduction)
-
-### Binary Releases (`.github/workflows/release.yml`)
-- Builds for x86_64-linux and aarch64-linux
-- Uploads to GitHub Releases
-- Uses GitHub Actions cache
+CI is skipped for release-please's own PRs and release merges, which only
+bump versions.
 
 ## Resources
 

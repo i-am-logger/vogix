@@ -2,12 +2,13 @@
 
 ## 1. Overview
 
-Vogix is a NixOS UX subsystem with two runtime parts:
+Vogix is a NixOS UX subsystem with three runtime parts:
 
 1. **Theme management** - runtime color-theme switching across 4 schemes (vogix16, base16, base24, ansi16) without a rebuild. Covered by sections 2-6 below.
 2. **Input engine** - an ontology-driven keyboard daemon (typed modes, dual-role CapsLock, selectable interaction paradigms). Covered by section 7.
+3. **Desktop shell** - a quickshell-rendered Hyprland shell (bars, notifications, lock, idle, launcher, panels, wallpaper) that the theme colors and the input engine feeds. Covered by section 8.
 
-This document gives a high-level overview of both.
+This document gives a high-level overview of all three.
 
 ## 2. Key Components
 
@@ -124,7 +125,7 @@ When a user runs `vogix theme set -t catppuccin -v mocha` or `vogix theme set -v
 6. **Application Generators** (`nix/modules/applications/`): Multi-scheme generators
 
 ### Runtime Components (Rust)
-1. **Commands** (`src/commands/`): cache, completions, daemon, input, list, modes, refresh, session, shader, status, theme_change
+1. **Commands** (`src/commands/`): cache, completions, daemon, desktop (the desktop shell's verbs and `desktop check`), greeter, hypr (dialect-aware Hyprland IPC), input, list, modes, refresh, session, shader, status, theme_change
 2. **Theme Management** (`src/theme/`): discovery, loader (per-scheme), query, types
 3. **Template Rendering** (`src/template/`): Tera-based config rendering
 4. **Cache** (`src/cache/`): Theme cache paths and rendering
@@ -204,6 +205,102 @@ a modal state) - but that generalised prefix layer is not yet implemented.
 
 ### Mode-visibility surface
 
-On a mode change the engine paints the active-window border (and publishes the
-mode to a state file a bar can read), so the current mode is always visible - the
-cure for mode error (Norman 1981). Per-mode colours are theme-derived.
+On a mode change the engine paints the active-window border and publishes the
+mode to `current-mode`, which the desktop shell's MODE cell shows, so the
+current mode is always visible - the cure for mode error (Norman 1981).
+Per-mode colours are theme-derived.
+
+## 8. Desktop Shell
+
+The desktop shell is a [quickshell](https://quickshell.org) configuration: a
+tree of QML (`desktop/`) packaged as `vogix-desktop-qml` and run as the user
+unit `vogix-desktop.service`. It is a renderer over data vogix already
+produces: the bar layout and every color come from the contract files below,
+not from the QML. The user-facing reference is [the desktop shell](desktop.md).
+
+### The contract
+
+```
+programs.vogix.desktop.*  ──(home-manager)──▶  ~/.local/state/vogix/desktop.json    layout, meters, surfaces, rules
+theme package             ──(current-theme)─▶  ~/.config/vogix-desktop/theme.json   16 palette slots + 16 semantic colors
+                                               …/current-theme/vogix-desktop/backgrounds.json   the wallpaper set
+input engine              ─────────────────▶  ~/.local/state/vogix/current-mode, input-locks.json
+```
+
+- **theme.json** is an ordinary vogix app target
+  (`nix/modules/applications/vogix-desktop.nix`, and a Tera template per
+  scheme for the on-demand cache). Its `semantic` keys are praxis's
+  `Vogix16Semantic` keys, derived per scheme, so the shell never sees a scheme
+  difference. The Nix and template render layers are pinned to one golden
+  line (`nix/modules/contract-tests.nix`, `src/template/tests.rs`).
+- **backgrounds.json** sits beside theme.json because its entries carry store
+  paths only Nix knows, and theme.json must stay identical between the two
+  render layers.
+- **desktop.json** (schema 2) is rendered from `nix/modules/desktop/`
+  (options and defaults). Its default rendering is pinned byte for byte in
+  `nix/modules/desktop/desktop-json.pin.json` (checked by `desktop-options`).
+  Surface colors are tokens: `{ slot, alpha }`, a slot being one of the 16
+  semantic keys, resolved against the live theme at runtime.
+
+### Reload and restart
+
+A theme switch runs the app's reload command, `vogix desktop reload`, which
+asks the shell to re-read all three contract files; the store-symlink swap
+itself is invisible to Qt's file watcher. A rebuild that changes only
+`desktop.json` reloads the unit the same way (`X-Reload-Triggers`,
+`ExecReload`), and one that changes the QML restarts it
+(`X-Restart-Triggers`).
+
+### Verbs and transport
+
+Keybindings, menus and scripts drive the shell only through
+`vogix desktop …` (`src/commands/desktop.rs`). The CLI relays each verb to
+the running shell over quickshell's IPC (`qs -c vogix ipc call <target>
+<function>`), bounds the wait, and turns quickshell's in-band failures ("No
+running instances", "Target not found") into "no shell". The IPC targets
+live in `desktop/shell.qml`. `vogix desktop check` validates a desktop.json
+without the shell: the schema, token slots against praxis, the widget names
+against the shell's registry, custom cells, and every menu command against
+this CLI's own parser.
+
+### Inside the shell
+
+- `desktop/Vogix/`: the contract readers (`Config`, `Theme`, `Mode`, `Paths`)
+  and the design tables (`Tokens`, `Metrics`).
+- `desktop/Services/`: singletons that own one source each (PipeWire audio
+  and peaks, cava and the scope tap, system stats, keyboard layout, tailnet,
+  privacy, notifications, lock, idle, launcher, …). Pure parsing and policy
+  sits in `desktop/Services/lib/*.js`, and the sysfs probes in
+  `desktop/data/*.sh`, so both are testable without quickshell
+  (`desktop-logic`).
+- `desktop/Bar/`: `Bar` creates the four bars on every screen (horizontal
+  bars first, so the rails fit between their exclusive zones); `Section`
+  maps widget names to `desktop/Bar/widgets/*.qml` and injects each widget's
+  `BarAxis` (orientation, thickness, edge, window, and `live`).
+- `desktop/Components/`: the Flight Deck primitives (segmented meters,
+  sparklines, fixed-width readouts, labels, the scanline overlay) and the
+  meter ballistics; `desktop/Bar/widgets/FrameCell.qml` is the framed cell
+  every instrument sits in. `desktop/Geometry/` holds the placement rule for
+  floating surfaces. The module singletons there (ballistics, placement)
+  import no quickshell types, so Qt Quick Test loads them.
+
+A bar that cannot be seen (parked, or the session locked, the screensaver
+up, the displays off) has `live` false. Widgets hold their data sources
+through a `Lease` on it, and the services count references, so every
+sampler and audio tap runs only while some live widget wants it.
+
+### The system side
+
+vogix's NixOS module carries what the shell needs from the system: the
+`vogix-lock` PAM service (the shell refuses to lock without it),
+systemd-lock-handler (so `loginctl lock-session` and suspend reach
+`vogix-lock.service`), and UPower and power-profiles-daemon while any user
+runs the shell. The home-manager module adds the programs the shell starts to
+the unit's own `PATH`, gated on the surfaces that use them.
+
+### Checks
+
+`desktop-options`, `desktop-runtime`, `desktop-qmllint`, `desktop-logic`,
+`desktop-smoke`, `desktop-taps` and `desktop-backgrounds` run in the build
+sandbox; `desktop-hyprland` runs the shell in a real Hyprland session in a
+VM. [TESTING.md](../TESTING.md) describes each.
