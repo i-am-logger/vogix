@@ -194,6 +194,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   ];
   qml = qsPkgs.vogix-desktop-qml;
   geometryProbe = ./desktop-geometry-probe.qml;
+  pinJson = ../modules/desktop/desktop-json.pin.json;
   inherit themeJson desktopJson schema1Json;
   passAsFile = [ "themeJson" "desktopJson" "schema1Json" ];
 } ''
@@ -312,10 +313,13 @@ pkgs.runCommand "vogix-desktop-smoke"
   caps_until unknown locks-gone
   stop
 
-  # Geometry run: the probe exits on its own with its verdict; the
-  # timeout only bounds a probe that never completes.
+  # Geometry run, on the shipped default desktop.json: the probe exits on
+  # its own with its verdict; the timeout only bounds a probe that never
+  # completes.
+  install -m 644 $pinJson $XDG_STATE_HOME/vogix/desktop.json
   timeout 60 ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
   echo "GEOMETRY-EXIT $?" >> $R
+  cp $TMPDIR/desktop.json $XDG_STATE_HOME/vogix/desktop.json
 
   # Rejection run: a schema-1 desktop.json is refused, loudly, without
   # taking the shell down.
@@ -332,7 +336,7 @@ pkgs.runCommand "vogix-desktop-smoke"
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── stats:"; cat $TMPDIR/stats.json || true
-  echo "── geometry:"; grep -h GEOMETRY $TMPDIR/qs-geometry.log || true
+  echo "── geometry:"; grep -hE "GEOMETRY|FIT" $TMPDIR/qs-geometry.log || true
 
   # The log gate. A failure is a script error, a binding problem, a
   # component that did not load, a program the shell could not start, or
@@ -409,10 +413,16 @@ pkgs.runCommand "vogix-desktop-smoke"
   grep -q '^locks-null .* caps:unknown$' $TMPDIR/result
   grep -q '^locks-back .* caps:on$' $TMPDIR/result
   grep -q '^locks-gone .* caps:unknown$' $TMPDIR/result
-  # A canvas instrument must never lay out collapsed: the probe's
-  # verdict, and the oscilloscope's own measured size.
+  # A canvas instrument never lays out collapsed, and the default layout
+  # fits its bars: the probe's verdict over every registry widget on
+  # both bar axes and every default cell, with the oscilloscope measured
+  # and each bar's cells fitted.
   r 'GEOMETRY-EXIT 0'
-  grep -q 'GEOMETRY oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
+  grep -q 'GEOMETRY bottom oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
+  for edge in top bottom left right; do
+    grep -q "FIT $edge " $TMPDIR/qs-geometry.log
+  done
+  grep -q 'FIT bottom oscilloscope ' $TMPDIR/qs-geometry.log
   r SCHEMA1-ALIVE
   r 'schema1 top:off bottom:off left:off right:off'
   grep -q 'desktop.json schema 1 is not supported' $TMPDIR/qs-schema1.log
