@@ -1,7 +1,7 @@
 // Tailnet link glyph for the status column: success-colored while
 // connected, warning while connecting or offline, muted while stopped,
 // logged out or without its daemon; absent on hosts without tailscale.
-// Click opens the tailnet panel (connection time, peers).
+// Click opens the tailnet panel (connection time, peers) beside the bar.
 import QtQuick
 import qs.Bar.widgets
 import qs.Services
@@ -9,6 +9,8 @@ import qs.Vogix
 import "../../Services/lib/tailnet.js" as Tailnet
 
 BarText {
+    id: root
+
     visible: Tailscale.link !== Tailnet.Link.Absent
     text: "󰖂"
     color: {
@@ -25,6 +27,6 @@ BarText {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: Panels.toggle("tailscale")
+        onClicked: root.axis?.togglePanel("tailscale", root) ?? Panels.toggle("tailscale")
     }
 }

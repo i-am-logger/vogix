@@ -566,6 +566,13 @@
               if grep -rn --include='*.qml' 'Hyprland\.dispatch(' $qml; then
                 echo "raw Hyprland.dispatch() in the shell: use the typed, dialect-aware method"; exit 1
               fi
+              # A bar widget opens its panel beside its own bar through its
+              # BarAxis (togglePanel); Panels.toggle alone places the panel
+              # as a verb-opened one, away from the widget.
+              unrouted=$(grep -rl --include='*.qml' 'Panels\.toggle(' "$qml/Bar" | xargs -r grep -L 'togglePanel' || true)
+              if [ -n "$unrouted" ]; then
+                echo "bar widgets opening a panel without their BarAxis:"; echo "$unrouted"; exit 1
+              fi
               # A platform menu's display(window, x, y) takes raw window
               # coordinates; menus open through QsMenuAnchor, which maps its
               # anchor item into window space and hands the compositor's
