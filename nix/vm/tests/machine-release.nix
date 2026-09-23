@@ -55,9 +55,11 @@
 # - a switch to maxProtocol 5 restarts both owners with the new
 #   machine.json; vogix-openrgb speaks protocol 5 to the protocol 6 server;
 # - after a reboot: vogix-machine is ready before systemd-user-sessions, so
-#   before any login, with the published palette on the VT, the LEDs
-#   and the command device follow it again, and the absent device is warned
-#   about once, after OpenRGB's detection completes.
+#   before any login, with the published palette on the VT (that the owner
+#   writes the VT palette before READY=1 is the unit test
+#   machine::local::tests::startup_reports_the_console_reconcile_before_ready),
+#   the LEDs and the command device follow it again, and the absent device is
+#   warned about once, after OpenRGB's detection completes.
 { pkgs
 , vogix16Themes
 , home-manager

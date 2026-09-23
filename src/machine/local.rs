@@ -99,11 +99,12 @@ pub fn serve(config_path: &Path) -> OwnerExit {
     };
 
     let mut owner = LocalOwner::new(config, PathBuf::from(console::CONSOLE_DEVICE));
-    owner.accept(MachinePalette::load_from_zone(&zone_path));
-    owner.reconcile_console();
     let mut reporter = Reporter::new(status_dir, notifier);
-    reporter.report(&owner.status());
-    reporter.notify(&[Notification::Ready]);
+    start(
+        &mut owner,
+        &mut reporter,
+        MachinePalette::load_from_zone(&zone_path),
+    );
     owner.reconcile_devices(Force::None);
     reporter.report(&owner.status());
 
@@ -172,6 +173,20 @@ pub fn serve(config_path: &Path) -> OwnerExit {
         }
         reporter.report(&owner.status());
     }
+}
+
+/// Startup up to readiness: take the drop zone's palette, reconcile the VT
+/// palette, report that outcome, and only then send `READY=1`, whatever the
+/// outcome was.
+fn start(
+    owner: &mut LocalOwner,
+    reporter: &mut Reporter,
+    loaded: Result<MachinePalette, PaletteError>,
+) {
+    owner.accept(loaded);
+    owner.reconcile_console();
+    reporter.report(&owner.status());
+    reporter.notify(&[Notification::Ready]);
 }
 
 /// A pollable event source of the owner.
@@ -531,6 +546,7 @@ impl Reporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::machine::notify::NotifyTarget;
     use crate::machine::types::Rgb;
     use crate::machine::uevent::{HidId, Hidraw};
     use std::fs;
@@ -830,6 +846,36 @@ mod tests {
             console.detail.as_deref(),
             Some("the published palette has no console colours")
         );
+    }
+
+    #[test]
+    fn startup_reports_the_console_reconcile_before_ready() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("notify");
+        let receiver = std::os::unix::net::UnixDatagram::bind(&socket).unwrap();
+        receiver.set_nonblocking(true).unwrap();
+        let notifier = Notifier::to(&NotifyTarget::Path(socket)).unwrap();
+        let status_dir = dir.path().join("status");
+        fs::create_dir(&status_dir).unwrap();
+        let mut reporter = Reporter::new(status_dir, Some(notifier));
+        // /dev/null is no VT, so the reconcile's outcome is a GIO_CMAP error,
+        // which only a reconcile reports.
+        let mut owner = LocalOwner::new(config(dir.path(), true), PathBuf::from("/dev/null"));
+
+        start(&mut owner, &mut reporter, Ok(palette(NORD1, true)));
+
+        let mut buf = [0u8; 4096];
+        let mut next = || {
+            let n = receiver.recv(&mut buf).expect("a notification datagram");
+            String::from_utf8(buf[..n].to_vec()).unwrap()
+        };
+        let first = next();
+        assert!(
+            first.starts_with("STATUS=console error: GIO_CMAP on /dev/null"),
+            "{first}"
+        );
+        assert_eq!(next(), "READY=1");
+        assert!(owner.tracks[&ring()].running.is_none(), "devices run later");
     }
 
     #[test]
