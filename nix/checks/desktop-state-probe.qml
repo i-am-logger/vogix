@@ -19,6 +19,8 @@ pragma ComponentBehavior: Bound
 // - card-scanlines: with background.scanlines on (the smoke runs this
 //   probe with it), every notification card restored from the previous
 //   runs carries the live scanline texture.
+// - card-times: the arrival times the restored cards carry, in order (the
+//   smoke compares them with the state file its first run wrote).
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -36,7 +38,7 @@ ShellRoot {
     // check → the value it passed with; a check absent here has not.
     property var passed: ({})
     readonly property list<string> checks:
-        ["window-title", "mode-label", "mode-label-after-failure", "card-scanlines"]
+        ["window-title", "mode-label", "mode-label-after-failure", "card-scanlines", "card-times"]
     // The mode checks run in order: the table must show before its file
     // goes away.
     property int modeStage: 0
@@ -103,6 +105,9 @@ ShellRoot {
         if (cards >= 2 && lit === cards)
             root.pass("card-scanlines", lit + "/" + cards);
 
+        if (cards >= 2)
+            root.pass("card-times", popups.visiblePopups.map(p => p.at).join(","));
+
         const open = root.checks.filter(c => root.passed[c] === undefined);
         if (open.length === 0) {
             Qt.exit(0);
@@ -111,7 +116,8 @@ ShellRoot {
                 "window-title": "title '" + (title?.text ?? "") + "'",
                 "mode-label": "label '" + (mode?.modeLabel ?? "") + "'",
                 "mode-label-after-failure": "label '" + (mode?.modeLabel ?? "") + "', mode '" + Mode.mode + "'",
-                "card-scanlines": lit + " live scanline overlays on " + cards + " cards"
+                "card-scanlines": lit + " live scanline overlays on " + cards + " cards",
+                "card-times": cards + " cards"
             };
             const waiting = open.map(c => c + ": " + seen[c]).join("; ");
             if (waiting !== root.waitingFor) {

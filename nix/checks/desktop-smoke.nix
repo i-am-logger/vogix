@@ -556,11 +556,10 @@ pkgs.runCommand "vogix-desktop-smoke"
   stop
   kill $MPVPID 2>/dev/null
 
-  # Restart run: the live notifications come back, each with the time it
-  # arrived.
+  # Restart run: the live notifications come back (the state run reads
+  # the times the restored cards carry).
   launch qs-restart.log
   ipcuntil restart-notify-count 2 notify count
-  cp $XDG_STATE_HOME/vogix/desktop/notifications.json $TMPDIR/notifications-2.json
   stop
 
   # Scanlines run: the texture on the bars and the restored cards.
@@ -588,7 +587,8 @@ pkgs.runCommand "vogix-desktop-smoke"
   kill $MPVPID 2>/dev/null
 
   # State run, with the scanline texture on: the window title, the mode
-  # cell's table and then its loss, and the restored cards' texture.
+  # cell's table and then its loss, and the restored cards' texture and
+  # arrival times.
   cp $TMPDIR/scanlines.json $XDG_STATE_HOME/vogix/desktop.json
   cp $inputJsonPath $XDG_STATE_HOME/vogix/input.json
   echo normal > $XDG_STATE_HOME/vogix/current-mode
@@ -617,8 +617,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo "── geometry:"; grep -hE "GEOMETRY|FOOTPRINT|FIT" $TMPDIR/qs-geometry.log || true
   echo "── state:"; grep -h 'STATE' $TMPDIR/qs-state.log || true
   echo "── Hyprland requests:"; cat $TMPDIR/feed/hypr-requests.log || true
-  echo "── notification arrival times:"
-  jq -c '[.[].at]' $TMPDIR/notifications-1.json $TMPDIR/notifications-2.json || true
+  echo "── notification arrival times:"; jq -c '[.[].at]' $TMPDIR/notifications-1.json || true
   grep -qx DONE $TMPDIR/result || {
     echo "── the run stopped waiting for $(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
     for log in qs-geometry.log qs-state.log; do
@@ -739,12 +738,10 @@ pkgs.runCommand "vogix-desktop-smoke"
   jq -e '.exact == false and .daemonStartMs == 1790100514000' \
     $XDG_RUNTIME_DIR/vogix/desktop/tailscale-connection.json
   # Notifications: both cards up and mirrored with their arrival time, the
-  # same two restored with the same times after a restart, and with the
-  # scanline texture on.
+  # same two restored after a restart, and with the scanline texture on.
   r 'notify-count 2'
   jq -e 'length == 2 and all(.[]; (.at | type) == "number")' $TMPDIR/notifications-1.json
   r 'restart-notify-count 2'
-  test "$(jq -c '[.[].at]' $TMPDIR/notifications-1.json)" = "$(jq -c '[.[].at]' $TMPDIR/notifications-2.json)"
   r SCANLINES-ALIVE
   r 'scanlines-notify-count 2'
   # A canvas instrument never lays out collapsed nor resizes when audio
@@ -766,12 +763,15 @@ pkgs.runCommand "vogix-desktop-smoke"
   grep -q 'FIT bottom media [0-9]' $TMPDIR/qs-geometry.log
   # The window title from hyprctl; the mode label from input.json, then
   # the bare mode once input.json cannot be read; the texture on both
-  # restored cards.
+  # restored cards, and the times they arrived at in the first run.
   r 'STATE-EXIT 0'
   grep -q 'STATE window-title smoke window title$' $TMPDIR/qs-state.log
   grep -q 'STATE mode-label NRM-SMOKE$' $TMPDIR/qs-state.log
   grep -q 'STATE mode-label-after-failure normal$' $TMPDIR/qs-state.log
   grep -q 'STATE card-scanlines 2/2$' $TMPDIR/qs-state.log
+  times=$(jq -r 'map(.at | tostring) | join(",")' $TMPDIR/notifications-1.json)
+  grep -q "STATE card-times $times\$" $TMPDIR/qs-state.log \
+    || { echo "the restored cards carry" $(grep -o 'STATE card-times .*' $TMPDIR/qs-state.log) "; they arrived at $times"; exit 1; }
   r SCHEMA1-ALIVE
   r 'schema1 top:off bottom:off left:off right:off'
   grep -q 'desktop.json schema 1 is not supported' $TMPDIR/qs-schema1.log
