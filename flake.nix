@@ -757,6 +757,14 @@
           # and its readiness assertion are checked at instantiation.
           openrgb-readiness = import ./nix/vm/tests/openrgb-readiness.nix { inherit pkgs self; };
 
+          # vogix-openrgb (`vogix machine serve openrgb`) against that real
+          # server with Debug, DDP and Govee devices: the published palette
+          # lands (observed on OpenRGB's own DDP and Govee wire output),
+          # confirmed at protocol 6 and sent at protocol 5; theme changes,
+          # SIGHUP, openrgb restarts and a killed server; `vogix machine
+          # inspect` captures the raw controller payloads into $out/capture.
+          openrgb-owner = import ./nix/vm/tests/openrgb-owner.nix { inherit pkgs self; };
+
           # `vogix machine serve local` under a hardened root Type=notify
           # unit, fed by the owner's real CLI publish: the kernel VT palette
           # follows (sysfs checked, no VT switch), a command device runs with
