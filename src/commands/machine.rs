@@ -1,14 +1,16 @@
 //! `vogix machine` — the command-line side of the machine surfaces.
 //!
-//! `status` reads the machine config, the published palette and each
+//! `serve` runs a machine owner as its unit starts it. `status` reads the
+//! machine config, the published palette and each
 //! declared owner unit's status file. `validate` runs the loaders the
 //! machine owners use on a given file, so a rendered
 //! `/etc/vogix/machine.json` or a published `palette.json` is accepted or
 //! rejected here exactly as the owners would.
 
-use crate::cli::MachineCommands;
+use crate::cli::{MachineCommands, ServeCommands};
 use crate::errors::{Result, VogixError};
 use crate::machine::config::{ConfigError, MACHINE_CONFIG_PATH, MachineConfig, Provider};
+use crate::machine::local;
 use crate::machine::palette::{MachinePalette, PALETTE_FILE, PaletteError};
 use crate::machine::status::{OwnerUnit, StatusError, StatusFile, SurfaceStatus};
 use std::fmt::Write as _;
@@ -16,6 +18,9 @@ use std::path::{Path, PathBuf};
 
 pub fn handle_machine(command: &MachineCommands) -> Result<()> {
     match command {
+        MachineCommands::Serve {
+            owner: ServeCommands::Local,
+        } => std::process::exit(local::serve(Path::new(MACHINE_CONFIG_PATH)).code()),
         MachineCommands::Status => {
             let report = status_report(Path::new(MACHINE_CONFIG_PATH), OwnerUnit::status_path);
             print!("{}", report.text);

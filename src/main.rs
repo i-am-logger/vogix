@@ -7,9 +7,6 @@ mod errors;
 mod fsutil;
 mod history;
 mod input;
-// `vogix machine validate` is this build's only caller of the machine module;
-// the parts the machine owner units use have no caller in this build.
-#[allow(dead_code)]
 mod machine;
 mod reload;
 mod scheme;

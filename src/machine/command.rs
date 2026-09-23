@@ -75,10 +75,7 @@ impl SingleFlight {
         }
     }
 
-    pub fn device(&self) -> &DeviceName {
-        &self.device
-    }
-
+    #[cfg(test)]
     pub fn running_pid(&self) -> Option<u32> {
         self.running.as_ref().map(|r| r.child.id())
     }
@@ -189,6 +186,7 @@ impl CommandSet {
             .collect()
     }
 
+    #[cfg(test)]
     pub fn get(&self, device: &DeviceName) -> Option<&SingleFlight> {
         self.devices.get(device)
     }

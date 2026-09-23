@@ -397,6 +397,23 @@ the LEDs, command devices and the VT palette. Check what they are doing:
 vogix machine status         # the owner, the published palette, and each owner unit's state
 ```
 
+The owner units run `serve`; it is their `ExecStart`, run by hand only to
+debug:
+
+```bash
+vogix machine serve local    # vogix-machine.service (root): the VT palette and the command devices
+```
+
+The local owner reads `/etc/vogix/machine.json` and the published palette,
+compares the kernel's VT palette with the palette's console colours (writing
+them only when they differ, and never switching VTs), and sends `READY=1` after
+that first comparison. It then runs each command device with its slot's colour
+substituted for its `{{color}}` argument: one run at a time per device, with
+changes during a run coalesced into one more run with the latest colour. A new
+palette, a hidraw node of a device's declared USB ids appearing, and `SIGHUP`
+(`systemctl reload`) re-apply; `SIGHUP` also re-runs every command device. It
+exits 78 when the machine config or the drop zone is unusable.
+
 `status` exits 1 when a surface is in error, an owner unit is faulted, an owner
 unit the machine config declares has no status (it is not running), or the
 published palette is rejected. An absent device (no controller matches it) is

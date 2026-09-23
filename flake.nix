@@ -756,6 +756,14 @@
           # nixpkgs OpenRGB failing that unit's start; the module wiring
           # and its readiness assertion are checked at instantiation.
           openrgb-readiness = import ./nix/vm/tests/openrgb-readiness.nix { inherit pkgs self; };
+
+          # `vogix machine serve local` under a hardened root Type=notify
+          # unit, fed by the owner's real CLI publish: the kernel VT palette
+          # follows (sysfs checked, no VT switch), a command device runs with
+          # its slot colour and re-runs on a hidraw hot-add and SIGHUP,
+          # another user's apply and a planted palette are refused, and after
+          # a reboot the palette is applied before systemd-user-sessions.
+          machine-local = import ./nix/vm/tests/machine-local.nix testArgs;
         }
       );
 

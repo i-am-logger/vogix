@@ -442,6 +442,13 @@ pub enum GreeterCommands {
 
 #[derive(Subcommand)]
 pub enum MachineCommands {
+    /// Run a machine owner in the foreground. Each is a system unit's
+    /// ExecStart; it reads /etc/vogix/machine.json and the palette published
+    /// into its drop zone
+    Serve {
+        #[command(subcommand)]
+        owner: ServeCommands,
+    },
     /// Show the machine owner, the published palette and each machine owner
     /// unit's state. Exits 1 when a surface is in error, an owner unit is
     /// faulted, an owner unit the config declares has no status, or the
@@ -461,6 +468,15 @@ pub enum MachineCommands {
         #[arg(long)]
         palette: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum ServeCommands {
+    /// The local owner (vogix-machine.service, as root): the kernel's VT
+    /// palette and the command devices. Sends READY=1 after its first VT
+    /// palette reconcile; SIGHUP forces a re-apply. Exits 78 when the
+    /// machine config or the drop zone is unusable
+    Local,
 }
 
 #[derive(Subcommand)]
@@ -1009,6 +1025,21 @@ mod tests {
                 "{argv:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_parse_machine_serve() {
+        let cli = Cli::try_parse_from(["vogix", "machine", "serve", "local"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Serve {
+                    owner: ServeCommands::Local
+                }
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "machine", "serve"]).is_err());
+        assert!(Cli::try_parse_from(["vogix", "machine", "serve", "remote"]).is_err());
     }
 
     #[test]

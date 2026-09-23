@@ -65,6 +65,7 @@ impl Delivered {
         self.0 & signal.bit() != 0
     }
 
+    #[cfg(test)]
     pub fn is_empty(self) -> bool {
         self.0 == 0
     }
@@ -206,6 +207,9 @@ impl UnblockSignals for Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interest {
     Read,
+    // Waiting for writability serves the OpenRGB client, which has no
+    // caller in this build.
+    #[allow(dead_code)]
     ReadWrite,
 }
 
