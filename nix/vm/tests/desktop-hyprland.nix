@@ -1,10 +1,11 @@
 # The desktop shell on a real compositor: Hyprland 0.56 on the VM's
 # virtio-gpu (DRM backend, software-rendered), started by greetd the way
 # the hosts start it, with the home-manager vogix desktop, the input
-# engine, PipeWire + WirePlumber and the session bus. Two nodes boot in
-# turn: `lua` runs Hyprland's Lua config provider and every gate below,
-# `hyprlang` the legacy provider and the gates whose command path differs
-# between the two.
+# engine, PipeWire + WirePlumber and the session bus. Three nodes boot in
+# turn: `lua` runs Hyprland's Lua config provider and every gate below
+# but the last, `hyprlang` the legacy provider and the gates whose command
+# path differs between the two, and `luks` a root filesystem on LUKS for
+# the last.
 #
 # Input goes through the compositor as a user's would: pointer moves and
 # clicks over the virtual-pointer protocol (wlrctl), keys through QEMU's
@@ -38,6 +39,8 @@
 #   lock-sampling       a locked session samples nothing; unlocking resumes
 #   network-lock        a NetworkManager restart due while locked waits for
 #                       the unlock
+#   root-gauge-device   the root gauge names the dm-N device a LUKS root
+#                       is counted under in /proc/diskstats
 { pkgs
 , home-manager
 , self
@@ -75,11 +78,57 @@ let
     exec ${pkgs.qt6.qtdeclarative}/bin/qml --apptype widget ${trayQml}
   '';
 
-  node = { dialect, networkManager }: { ... }: {
+  # The root filesystem on LUKS, as an encrypted install has it. The node's
+  # root disk starts empty: on first boot the initrd LUKS-formats it and
+  # puts ext4 inside, then systemd-cryptsetup opens it with a key file as
+  # /dev/mapper/cryptroot. The filesystem is made before that open because
+  # systemd holds back an encrypted device with no filesystem on it
+  # (99-systemd.rules: it may still be being formatted), so a mount that
+  # formats on demand would wait for it forever.
+  luksKey = pkgs.writeText "vogix-test-luks.key" "vogix test root key\n";
+  luksRoot = { pkgs, ... }:
+    let
+      disk = "/dev/disk/by-id/virtio-root";
+      diskUnit = "dev-disk-by\\x2did-virtio\\x2droot.device";
+      key = "/etc/vogix-test-luks.key";
+    in
+    {
+      virtualisation.useDefaultFilesystems = false;
+      virtualisation.fileSystems."/" = {
+        device = "/dev/mapper/cryptroot";
+        fsType = "ext4";
+      };
+      boot.initrd.systemd.enable = true;
+      boot.initrd.luks.devices.cryptroot = {
+        device = disk;
+        keyFile = key;
+      };
+      boot.initrd.systemd.contents.${key}.source = luksKey;
+      boot.initrd.systemd.extraBin.cryptsetup = "${pkgs.cryptsetup}/bin/cryptsetup";
+      boot.initrd.systemd.services.vogix-test-luks-format = {
+        description = "LUKS-format the empty root disk, with ext4 inside";
+        requiredBy = [ "systemd-cryptsetup@cryptroot.service" ];
+        before = [ "systemd-cryptsetup@cryptroot.service" ];
+        requires = [ diskUnit ];
+        after = [ diskUnit ];
+        unitConfig.DefaultDependencies = false;
+        serviceConfig.Type = "oneshot";
+        script = ''
+          if ! cryptsetup isLuks ${disk}; then
+            cryptsetup luksFormat -q --iter-time=1 --key-file=${key} ${disk}
+            cryptsetup open --key-file=${key} ${disk} vogix-test-mkfs
+            mkfs.ext4 -q /dev/mapper/vogix-test-mkfs
+            cryptsetup close vogix-test-mkfs
+          fi
+        '';
+      };
+    };
+
+  node = { dialect, networkManager, luks ? false }: { ... }: {
     imports = [
       self.nixosModules.default
       home-manager.nixosModules.home-manager
-    ];
+    ] ++ lib.optional luks luksRoot;
 
     nixpkgs.overlays = [ self.overlays.default ];
 
@@ -200,11 +249,13 @@ pkgs.testers.nixosTest {
   nodes = {
     lua = node { dialect = "lua"; networkManager = true; };
     hyprlang = node { dialect = "hyprlang"; networkManager = false; };
+    luks = node { dialect = "lua"; networkManager = false; luks = true; };
   };
 
   testScript = ''
     import json
     import os
+    import re
     import shlex
     import time
     from typing import Any, Callable
@@ -447,6 +498,22 @@ pkgs.testers.nixosTest {
                f"the mode's colour {want} is painted once the compositor answers")
 
 
+    def gate_root_gauge_device(d: Desktop) -> None:
+        # The kernel device behind "/", found apart from the shell's own
+        # probe: the root's major:minor under /sys/dev/block.
+        majmin = d.m.succeed("findmnt -no MAJ:MIN /").strip()
+        dev = d.m.succeed(f"basename \"$(readlink -f /sys/dev/block/{majmin})\"").strip()
+        uuid = d.m.succeed(f"cat /sys/block/{dev}/dm/uuid").strip()
+        assert uuid.startswith("CRYPT-LUKS"), f"the root {dev} is not a LUKS mapping ({uuid!r})"
+        assert f" {dev} " in d.m.succeed("cat /proc/diskstats"), f"/proc/diskstats has no {dev} row"
+        stats = d.poll("vogix desktop stats", lambda o: '"/"' in o and "gaugeDevice" in o, 30,
+                       "the shell's block-device probe answered")
+        got = json.loads(stats)["gaugeDevice"].get("/")
+        assert got is not None and re.fullmatch(r"dm-[0-9]+", got), \
+            f"the root gauge's device is {got!r}, not the dm-N /proc/diskstats counts"
+        assert got == dev, f"the root gauge reads {got}, the root is on {dev}"
+
+
     def gate_mode_border_reload(d: Desktop) -> None:
         # A config reload, as Hyprland's autoreload runs after a switch,
         # resets every value set at runtime; the engine paints the mode's
@@ -679,6 +746,11 @@ pkgs.testers.nixosTest {
     gate("hyprlang mode-border-stall", lambda: gate_mode_border_stall(hyprlang_desktop))
     gate("hyprlang mode-border-reload", lambda: gate_mode_border_reload(hyprlang_desktop))
     hyprlang.shutdown()
+
+    luks_desktop = Desktop(luks, "lua")
+    luks_desktop.boot()
+    gate("luks root-gauge-device", lambda: gate_root_gauge_device(luks_desktop))
+    luks.shutdown()
 
     if failures:
         raise Exception("desktop gates failed:\n  " + "\n  ".join(failures))
