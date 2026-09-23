@@ -16,6 +16,8 @@
 # - a hidden bar's taps, VU monitors and stat samplers stop, per edge, and
 #   come back when it is shown;
 # - a PipeWire restart stops the taps and brings them back;
+# - a reload that changes the spectrum's band count restarts cava on the
+#   new configuration;
 # - launched as the unit launches it, quickshell writes no DEBUG records.
 #
 # Every step waits for an event: a status the shell reports, a process
@@ -58,7 +60,7 @@ let
 
   # One consumer per source, split over two bars so hiding one edge
   # stops exactly its own sources.
-  desktopJson = builtins.toJSON {
+  desktop = {
     schema = 2;
     font = { family = "monospace"; size = 16; };
     bars = {
@@ -88,6 +90,10 @@ let
       urgent = { slot = "danger"; alpha = 1.0; };
     };
   };
+  desktopJson = builtins.toJSON desktop;
+  # The same layout with a different band count: cava's configuration
+  # changes on a reload.
+  desktopBarsJson = builtins.toJSON (pkgs.lib.recursiveUpdate desktop { meters.spectrum.bars = 12; });
 
   # A daemon with no hardware (pipewire-daemon.nix): one null sink,
   # published as the default the way a session manager would.
@@ -298,6 +304,16 @@ let
     play
     await "$running"
 
+    # 8. A reload that changes the spectrum's band count: the running cava
+    # is replaced by one on the new configuration.
+    cava8=$(tap_pid cava)
+    cp "$desktopBarsJsonPath" "$XDG_STATE_HOME/vogix/desktop.json"
+    qs -p "$qml" ipc call theme reload > /dev/null
+    cava9=$(tap_pid cava "$cava8")
+    await "$running"
+    note "pids: cava $cava8 -> $cava9 on the new band count"
+    note "ok: restarted on the reload"
+
     kill $QSPID $PWPID $PLAYPID 2>/dev/null
     wait
     note done
@@ -314,8 +330,8 @@ pkgs.runCommand "vogix-desktop-taps"
     pkgs.util-linux
   ];
   qml = qsPkgs.vogix-desktop-qml;
-  inherit themeJson desktopJson;
-  passAsFile = [ "themeJson" "desktopJson" ];
+  inherit themeJson desktopJson desktopBarsJson;
+  passAsFile = [ "themeJson" "desktopJson" "desktopBarsJson" ];
 } ''
   export HOME=$TMPDIR/home
   export XDG_CONFIG_HOME=$HOME/.config
@@ -351,6 +367,6 @@ pkgs.runCommand "vogix-desktop-taps"
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 29
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 31
   touch $out
 ''

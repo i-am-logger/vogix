@@ -11,6 +11,9 @@
 // sixth quick failure parks the tap until PipeWire reconnects, the
 // default sink changes or its widgets come back, so a tap that cannot
 // run costs five relaunches, not a loop.
+//
+// A command that changes while the tap runs (a reload that changes the
+// tap's configuration) restarts it on the new command.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -103,6 +106,16 @@ Scope {
         id: proc
 
         command: root.command
+
+        // quickshell starts a new command only on the next start, and
+        // emits this only when the list differs. The stop's exit runs
+        // _sync, which starts the new command.
+        onCommandChanged: {
+            if (running && !root._stopping) {
+                root._stopping = true;
+                running = false;
+            }
+        }
 
         stdout: SplitParser {
             onRead: data => root.line(data)
