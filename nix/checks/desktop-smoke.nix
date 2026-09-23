@@ -331,13 +331,45 @@ pkgs.runCommand "vogix-desktop-smoke"
     shift
     until "$@" > $TMPDIR/last 2>&1; do sleep 0.1; done
   }
-  # The shell, as the unit runs it; LOG names its log.
+  # A run of the shell ends as the unit does: systemd signals its whole
+  # control group (KillMode=control-group), so nothing the shell started
+  # outlives it, a command in a session of its own or a detached one
+  # included. quickshell has no SIGTERM handler, so SIGTERM to its pid
+  # alone leaves every process it started running. Here every process a
+  # run starts inherits VOGIX_SMOKE_RUN=<its log>, and the processes
+  # carrying it are that run's control group.
+  #
+  # The processes of the run LOG still running, one per line: pid and
+  # command line.
+  members() {
+    local f
+    for f in $(grep -lsxzF "VOGIX_SMOKE_RUN=$1" /proc/[0-9]*/environ); do
+      f=''${f%/environ}
+      printf '%s %s\n' "''${f#/proc/}" "$(tr '\0' ' ' 2>/dev/null < $f/cmdline)"
+    done
+  }
+  # Succeeds once no process of the run LOG is left; lists those that are.
+  ended() {
+    local left
+    left=$(members $1)
+    [ -z "$left" ] || { printf '%s\n' "$left"; return 1; }
+  }
+  # Ends the run LOG as systemd stops the unit: SIGTERM to every process of
+  # it at once, then a wait for each to exit.
+  end_run() {
+    local pids
+    pids=$(members $1 | cut -d' ' -f1)
+    [ -z "$pids" ] || kill $pids 2>/dev/null
+    await "every process of the $1 run to exit" ended $1
+  }
+  # The shell, as the unit runs it; LOG names its log and its run.
   launch() {
-    ${execStart} > $TMPDIR/$1 2>&1 &
+    RUN=$1
+    VOGIX_SMOKE_RUN=$1 ${execStart} > $TMPDIR/$1 2>&1 &
     QSPID=$!
   }
   stop() {
-    kill $QSPID 2>/dev/null
+    end_run $RUN
     wait $QSPID 2>/dev/null
   }
   # A verb, as keybindings and scripts call it; LABEL prefixes its reply.
@@ -575,8 +607,11 @@ pkgs.runCommand "vogix-desktop-smoke"
   . ${geometryFeed.script}
   feed_start && echo FEED-OK >> $R
   waiting "the geometry probe to exit"
-  feed_run ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
+  feed_run env VOGIX_SMOKE_RUN=qs-geometry.log ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
   echo "GEOMETRY-EXIT $?" >> $R
+  # What the probe started ends with it, as the rest of the unit's
+  # control group does once its main process has exited.
+  end_run qs-geometry.log
   feed_stop
   kill $MPVPID 2>/dev/null
 
@@ -593,7 +628,7 @@ pkgs.runCommand "vogix-desktop-smoke"
     av://lavfi:sine=frequency=440 > $TMPDIR/mpv-state-first.log 2>&1 &
   MPVPID=$!
   await "the state run's first player, paused" sh -c '[ "$(playerctl status)" = Paused ]'
-  ${desktopEnv} qs -p $TMPDIR/state > $TMPDIR/qs-state.log 2>&1 &
+  VOGIX_SMOKE_RUN=qs-state.log ${desktopEnv} qs -p $TMPDIR/state > $TMPDIR/qs-state.log 2>&1 &
   STATEPID=$!
   await "the state probe to see the first player" grep -q 'STATE media-first ' $TMPDIR/qs-state.log
   mpv --no-config --really-quiet --idle=no --loop=inf --ao=null --vo=null \
@@ -603,6 +638,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   waiting "the state probe to exit"
   wait $STATEPID
   echo "STATE-EXIT $?" >> $R
+  end_run qs-state.log
   kill $MPVPID $MPV2PID 2>/dev/null
 
   # Rejection run: a schema-1 desktop.json is refused, loudly, without
@@ -616,10 +652,18 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo DONE >> $R
   INNER
   chmod +x inner.sh
-  # The run's one bound. A step whose event never comes holds the run
-  # until here, and the result names it.
+  # The run's one bound, and a run that reaches it fails. A step whose
+  # event never comes holds the run until here, and the result names the
+  # step. A process the run leaves running holds it here too: cage
+  # returns once no process holds the write end of the pipe it watches
+  # for its client's exit (cage.c, spawn_primary_client), and every
+  # process the run starts inherits that end. At the bound only cage is
+  # signalled (--foreground), so what is still running is still here to
+  # be named.
+  cage_status=0
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
-    timeout -k 10 900 cage -- dbus-run-session --config-file=${pkgs.dbus}/share/dbus-1/session.conf -- ${pkgs.runtimeShell} ./inner.sh || true
+    timeout --foreground -k 10 900 cage -- dbus-run-session --config-file=${pkgs.dbus}/share/dbus-1/session.conf -- ${pkgs.runtimeShell} ./inner.sh \
+    || cage_status=$?
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── stats:"; cat $TMPDIR/stats.json || true
@@ -634,6 +678,26 @@ pkgs.runCommand "vogix-desktop-smoke"
     done
     exit 1
   }
+  # Done, but cage did not return with it: at the bound (124, or 137
+  # once killed), what the run left running held it; any other status is
+  # the run's own.
+  case $cage_status in
+    0) ;;
+    124 | 137)
+      echo "── the run was done, but cage ran on to the 900 s bound, held by what the run left running:"
+      for p in /proc/[0-9]*; do
+        p=''${p#/proc/}
+        [ $p = $$ ] && continue
+        cmd=$(tr '\0' ' ' 2>/dev/null < /proc/$p/cmdline) || continue
+        [ -z "$cmd" ] || echo "$p $cmd"
+      done
+      exit 1
+      ;;
+    *)
+      echo "── cage exited with status $cage_status"
+      exit 1
+      ;;
+  esac
 
   # The log gate. A failure is a script error, a binding problem, a
   # component that did not load, a program the shell could not start, or
