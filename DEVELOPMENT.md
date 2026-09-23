@@ -223,7 +223,9 @@ vogix/
 │   │   ├── desktop-smoke.nix   # The real shell under a headless compositor
 │   │   ├── desktop-taps.nix    # The audio taps against a real PipeWire
 │   │   ├── desktop-geometry-probe.qml # desktop-smoke's widget size and fit probe
-│   │   └── desktop-state-probe.qml    # desktop-smoke's window-title, mode and card probe
+│   │   ├── desktop-geometry-feed.nix  # the data every widget shows for that probe
+│   │   ├── desktop-state-probe.qml    # desktop-smoke's window-title, mode and card probe
+│   │   └── pipewire-daemon.nix # A hardware-less PipeWire for the checks
 │   ├── packages/
 │   │   ├── vogix.nix           # Package definition
 │   │   └── vogix-desktop-qml.nix # The desktop shell's QML tree
@@ -416,8 +418,11 @@ The shell is the QML tree in `desktop/` (see
   geometry probe lays each one out on every bar edge the registry lets it sit
   on: a widget that overflows a bar it is allowed on fails the check until its
   `orientation` says so, or it fits. A new widget is loaded and measured
-  without editing the check (one the sandbox gives nothing to show, such as a
-  battery cell, is named in the probe's output as not measured).
+  without editing the check when it shows with the data the probe is fed
+  (`nix/checks/desktop-geometry-feed.nix`: UPower, BlueZ, sysfs, PipeWire,
+  Hyprland's events, wttrbar). One that needs a source the feed lacks never
+  shows and fails the check until the feed gives it the widest realistic
+  data it shows.
 - **A new verb**: add the subcommand in `src/cli.rs`, its relay in
   `src/commands/desktop.rs` (an `IpcCall` through the `Shell` seam, with a
   case in the `relayed_verbs` table its tests drive), the IPC function in

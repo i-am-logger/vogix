@@ -89,54 +89,26 @@ let
     };
   };
 
-  # A daemon with no hardware: a null sink, published as the default the
-  # way a session manager would, and the dummy driver that clocks it.
-  pipewireConf = pkgs.writeText "taps-pipewire.conf" ''
-    context.properties = {
-      core.daemon = true
-      core.name = pipewire-0
-      link.max-buffers = 16
-      support.dbus = false
+  # A daemon with no hardware (pipewire-daemon.nix): one null sink,
+  # published as the default the way a session manager would.
+  pipewireConf = import ./pipewire-daemon.nix { inherit pkgs; } "taps-pipewire.conf" ''
+    { factory = adapter
+      args = {
+        factory.name = support.null-audio-sink
+        node.name = taps-sink
+        media.class = Audio/Sink
+        audio.position = [ FL FR ]
+        monitor.channel-volumes = true
+      }
     }
-    context.spa-libs = {
-      audio.convert.* = audioconvert/libspa-audioconvert
-      support.* = support/libspa-support
+    { factory = metadata
+      args = {
+        metadata.name = default
+        metadata.values = [
+          { key = default.audio.sink type = "Spa:String:JSON" value = { name = taps-sink } }
+        ]
+      }
     }
-    context.modules = [
-      { name = libpipewire-module-protocol-native }
-      { name = libpipewire-module-metadata }
-      { name = libpipewire-module-spa-node-factory }
-      { name = libpipewire-module-client-node }
-      { name = libpipewire-module-adapter }
-      { name = libpipewire-module-link-factory }
-      { name = libpipewire-module-access }
-    ]
-    context.objects = [
-      { factory = spa-node-factory
-        args = {
-          factory.name = support.node.driver
-          node.name = Dummy-Driver
-          priority.driver = 20000
-        }
-      }
-      { factory = adapter
-        args = {
-          factory.name = support.null-audio-sink
-          node.name = taps-sink
-          media.class = Audio/Sink
-          audio.position = [ FL FR ]
-          monitor.channel-volumes = true
-        }
-      }
-      { factory = metadata
-        args = {
-          metadata.name = default
-          metadata.values = [
-            { key = default.audio.sink type = "Spa:String:JSON" value = { name = taps-sink } }
-          ]
-        }
-      }
-    ]
   '';
 
   inner = pkgs.writeShellScript "taps-inner" ''

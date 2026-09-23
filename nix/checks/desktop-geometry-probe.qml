@@ -1,11 +1,12 @@
 pragma ComponentBehavior: Bound
 // checks.desktop-smoke's geometry probe. The smoke stages it as shell.qml
 // over a copy of the shipped QML tree, so `qs.` resolves to the shipped
-// modules, and runs it with the shipped default desktop.json. The real
-// Section loads the real widgets, backed by the real singletons, in real
-// windows: one per bar edge, at that bar's size, holding every widget the
-// registry (WidgetRegistry) lets that edge place. Three checks, one
-// verdict (the exit status):
+// modules, and runs it with the shipped default desktop.json and every
+// data source fed (desktop-geometry-feed.nix). The real Section loads the
+// real widgets, backed by the real singletons, in real windows: one per
+// bar edge, at that bar's size, holding every widget the registry
+// (WidgetRegistry) lets that edge place. Three checks, one verdict (the
+// exit status):
 //
 // - each Canvas a widget shows lays out at a non-zero size, measured on
 //   the canvas itself (a FrameCell keeps a minimum size of its own
@@ -14,12 +15,13 @@ pragma ComponentBehavior: Bound
 // - a frame of audio data resizes no canvas: the instruments keep their
 //   footprint whether or not anything plays. `FOOTPRINT <edge> <widget>`
 //   per canvas that moved;
-// - every placement fits its bar: a widget's extent across the bar is
-//   within the bar's size, so a widget the registry does not confine to
-//   one orientation fits both. `FIT <edge> <widget> <w>x<h> in <size>`
-//   per widget.
+// - every placement shows and fits its bar: a widget's extent across the
+//   bar is within the bar's size, so a widget the registry does not
+//   confine to one orientation fits both. `FIT <edge> <widget> <w>x<h> in
+//   <size>` per widget.
 import QtQuick
 import Quickshell
+import Quickshell.Services.UPower
 import qs.Bar.widgets
 import qs.Services
 import qs.Vogix
@@ -58,8 +60,8 @@ ShellRoot {
     }
 
     // [{ name, item }] for every widget a section loaded; a name that did
-    // not load is logged and counted.
-    function loaded(edge: string, section: Item): var {
+    // not load is logged and counted once.
+    function loaded(edge: string, section: Item, report: bool): var {
         const out = [];
         for (let i = 0; i < section.children.length; i++) {
             const child = section.children[i];
@@ -68,8 +70,10 @@ ShellRoot {
             if (!(child instanceof Loader))
                 continue;
             if (child.status !== Loader.Ready) {
-                console.error("GEOMETRY", edge, child["modelData"], "did not load");
-                root.failures++;
+                if (report) {
+                    console.error("GEOMETRY", edge, child["modelData"], "did not load");
+                    root.failures++;
+                }
                 continue;
             }
             out.push({ name: child["modelData"], item: child.item });
@@ -77,12 +81,39 @@ ShellRoot {
         return out;
     }
 
+    // "<edge> <widget>" for every loaded widget not showing.
+    function hidden(): list<string> {
+        const out = [];
+        for (const s of root.sections)
+            for (const w of root.loaded(s.edge, s.section, false))
+                if (!w.item.visible)
+                    out.push(`${s.edge} ${w.name}`);
+        return out;
+    }
+
+    // The widgets whose content arrives in parts have all of it: every
+    // UPower device's properties (one row per battery), and both privacy
+    // flags (a glyph each), which come from two sources.
+    function complete(): bool {
+        return UPower.displayDevice.ready && [...UPower.devices.values].every(d => d.ready)
+            && Privacy.micInUse && Privacy.screencast;
+    }
+
+    // Lays every item under `item` out now, innermost first, rather than
+    // on the next frame: a positioner or a layout computes its size in its
+    // polish.
+    function polishAll(item: Item): void {
+        for (let i = 0; i < item.children.length; i++)
+            root.polishAll(item.children[i]);
+        item.ensurePolished();
+    }
+
     property int failures: 0
     // edge/widget/index → "WxH", taken before the audio frame.
     property var before: ({})
 
     function measureCanvases(s: var, record: bool): void {
-        for (const w of root.loaded(s.edge, s.section)) {
+        for (const w of root.loaded(s.edge, s.section, record)) {
             const canvases = root.shownCanvases(w.item);
             for (let i = 0; i < canvases.length; i++) {
                 const size = `${canvases[i].width}x${canvases[i].height}`;
@@ -101,9 +132,10 @@ ShellRoot {
     }
 
     function measureFit(s: var): void {
-        for (const w of root.loaded(s.edge, s.section)) {
+        for (const w of root.loaded(s.edge, s.section, false)) {
             if (!w.item.visible) {
-                console.info("FIT", s.edge, w.name, "hidden here, not measured");
+                console.error("FIT", s.edge, w.name, "never showed: its data did not arrive");
+                root.failures++;
                 continue;
             }
             const across = s.vertical ? w.item.width : w.item.height;
@@ -116,6 +148,11 @@ ShellRoot {
             }
         }
     }
+
+    // The probe's bars are not live, so their widgets start no samplers.
+    // The swap cell shows only once the memory sampler has read
+    // /proc/meminfo, so the probe holds that one, as a shown bar would.
+    Component.onCompleted: SysStat.acquire(["memory"])
 
     Variants {
         model: root.edges
@@ -149,19 +186,35 @@ ShellRoot {
         }
     }
 
-    // Measured once the windows have laid out and drawn (a layout-sized
-    // canvas has no size before the first polish), then again after one
-    // frame of audio reaches the spectrum.
-    Timer {
-        id: first
+    // Measured once all four edges are laid out and every widget shows
+    // the data it is fed, checked every 100 ms. After giveUpMs the probe
+    // measures what shows and fails on each widget still hidden.
+    readonly property int giveUpMs: 30000
+    readonly property real startedAt: Date.now()
 
-        interval: 1500
+    Timer {
+        id: ready
+
+        interval: 100
+        repeat: true
         running: true
         onTriggered: {
+            const waited = Date.now() - root.startedAt;
+            const shown = root.sections.length === 4 && root.hidden().length === 0 && root.complete();
+            if (!shown && waited < root.giveUpMs)
+                return;
+            ready.stop();
+            console.info("GEOMETRY", shown ? "every widget showing after" : "gave up after", waited, "ms");
             if (root.sections.length !== 4) {
                 console.error("GEOMETRY", root.sections.length, "of 4 bar edges laid out");
                 root.failures++;
             }
+            if (!root.complete()) {
+                console.error("GEOMETRY UPower or privacy data incomplete after", waited, "ms");
+                root.failures++;
+            }
+            for (const s of root.sections)
+                root.polishAll(s.section);
             for (const s of root.sections) {
                 root.measureCanvases(s, true);
                 root.measureFit(s);
@@ -176,8 +229,10 @@ ShellRoot {
 
         interval: 500
         onTriggered: {
-            for (const s of root.sections)
+            for (const s of root.sections) {
+                root.polishAll(s.section);
                 root.measureCanvases(s, false);
+            }
             Qt.exit(root.failures === 0 ? 0 : 1);
         }
     }

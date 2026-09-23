@@ -18,7 +18,10 @@
 # Compositor-, PipeWire- and NetworkManager-dependent behaviour is out of
 # reach here (cage offers no layer-shell or session lock, and neither
 # daemon runs): desktop-hyprland covers it on a real Hyprland session, and
-# desktop-taps covers the taps against a real PipeWire.
+# desktop-taps covers the taps against a real PipeWire. The geometry run is
+# the exception: it feeds every widget the widest realistic data it shows
+# (desktop-geometry-feed.nix), PipeWire and Hyprland's events included,
+# so each placement is measured showing it.
 { pkgs, qsPkgs, home-manager, hmModule }:
 
 let
@@ -229,6 +232,9 @@ let
       *) exit 1 ;;
     esac
   '';
+  # The geometry run's data: every widget fed the widest realistic
+  # content it shows.
+  geometryFeed = import ./desktop-geometry-feed.nix { inherit pkgs; };
   tailscaleFixture =
     let
       status = pkgs.writeText "tailscale-status.json" (builtins.toJSON {
@@ -257,7 +263,7 @@ pkgs.runCommand "vogix-desktop-smoke"
     hyprctlFixture
     systemctlFixture
     tailscaleFixture
-  ];
+  ] ++ geometryFeed.packages;
   qml = qsPkgs.vogix-desktop-qml;
   geometryProbe = ./desktop-geometry-probe.qml;
   pinJson = ../modules/desktop/desktop-json.pin.json;
@@ -457,9 +463,10 @@ pkgs.runCommand "vogix-desktop-smoke"
   ipc scanlines-notify-count notify count
   stop
   # Geometry run, on the shipped default desktop.json's bar and font
-  # sizes, with a player on the bus so the media cell shows and is
-  # measured: the probe exits on its own with its verdict; the timeout
-  # only bounds a probe that never completes.
+  # sizes, with every data source fed (desktop-geometry-feed.nix) and a
+  # player on the bus, so every widget shows and is measured: the probe
+  # exits on its own with its verdict; the timeout only bounds a probe
+  # that never completes.
   install -m 644 $pinJson $XDG_STATE_HOME/vogix/desktop.json
   mpv --no-config --really-quiet --idle=no --loop=inf --ao=null --vo=null \
     --script=${pkgs.mpvScripts.mpris}/share/mpv/scripts/mpris.so \
@@ -469,8 +476,11 @@ pkgs.runCommand "vogix-desktop-smoke"
     [ "$(playerctl status 2>/dev/null)" = Playing ] && break
     sleep 0.1
   done
-  timeout 60 ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
+  . ${geometryFeed.script}
+  feed_start && echo FEED-OK >> $R
+  feed_run timeout 60 ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
   echo "GEOMETRY-EXIT $?" >> $R
+  feed_stop
   kill $MPVPID 2>/dev/null
   cp $TMPDIR/desktop.json $XDG_STATE_HOME/vogix/desktop.json
 
@@ -611,13 +621,15 @@ pkgs.runCommand "vogix-desktop-smoke"
   r SCANLINES-ALIVE
   r 'scanlines-notify-count 2'
   # A canvas instrument never lays out collapsed nor resizes when audio
-  # arrives, and every placement the registry permits fits its bar: the
-  # probe's verdict, with a FIT line for each of those placements (a
-  # widget this sandbox gives nothing to show is named as not measured),
-  # the oscilloscope measured and the media cell shown.
+  # arrives, and every placement the registry permits shows its fed data
+  # and fits its bar: the probe's verdict, with a measured FIT line for
+  # each of those placements, the oscilloscope measured and the media
+  # cell shown.
+  r FEED-OK
   r 'GEOMETRY-EXIT 0'
   for placement in ${lib.escapeShellArgs placements}; do
-    grep -qF "FIT $placement " $TMPDIR/qs-geometry.log || { echo "no FIT line for $placement"; exit 1; }
+    grep -q "FIT $placement [0-9]" $TMPDIR/qs-geometry.log \
+      || { echo "no measured FIT line for $placement"; exit 1; }
   done
   grep -q 'GEOMETRY bottom oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
   grep -q 'FIT bottom media [0-9]' $TMPDIR/qs-geometry.log
