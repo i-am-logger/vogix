@@ -6,6 +6,7 @@
 //! validated type, so no device name, slot or command is interpreted here
 //! beyond what the declaration says.
 
+use super::openrgb::model::ProtocolVersion;
 use super::types::{DeviceName, Label, SchemaV1, SlotName, UsbId, UserName};
 use crate::fsutil;
 use serde::{Deserialize, Serialize};
@@ -87,44 +88,34 @@ pub struct OpenRgbEndpoint {
     /// complete or be refused at once.
     pub host: Ipv4Addr,
     pub port: u16,
-    pub max_protocol: MaxProtocol,
+    /// The highest OpenRGB SDK protocol version the client offers
+    /// (`vogix.openrgb.client.maxProtocol`), written as the number 5 or 6.
+    #[serde(with = "max_protocol")]
+    pub max_protocol: ProtocolVersion,
     pub client_name: Label,
 }
 
-/// The highest OpenRGB SDK protocol version the client offers
-/// (`vogix.openrgb.client.maxProtocol`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "u32", into = "u32")]
-pub enum MaxProtocol {
-    V5,
-    V6,
-}
+/// `maxProtocol` as its JSON number, with a rejection that names the field.
+mod max_protocol {
+    use super::ProtocolVersion;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-impl MaxProtocol {
-    pub const fn number(self) -> u32 {
-        match self {
-            Self::V5 => 5,
-            Self::V6 => 6,
-        }
+    pub fn serialize<S: Serializer>(
+        version: &ProtocolVersion,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        version.serialize(serializer)
     }
-}
 
-impl TryFrom<u32> for MaxProtocol {
-    type Error = String;
-    fn try_from(value: u32) -> Result<Self, String> {
-        match value {
-            5 => Ok(Self::V5),
-            6 => Ok(Self::V6),
-            other => Err(format!(
-                "maxProtocol {other} is not supported: vogix speaks OpenRGB SDK protocol 5 or 6"
-            )),
-        }
-    }
-}
-
-impl From<MaxProtocol> for u32 {
-    fn from(value: MaxProtocol) -> u32 {
-        value.number()
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<ProtocolVersion, D::Error> {
+        let number = u32::deserialize(deserializer)?;
+        ProtocolVersion::try_from(number).map_err(|_| {
+            serde::de::Error::custom(format!(
+                "maxProtocol {number} is not supported: vogix speaks OpenRGB SDK protocol 5 or 6"
+            ))
+        })
     }
 }
 
@@ -451,7 +442,7 @@ mod tests {
         );
         let endpoint = config.openrgb.as_ref().unwrap();
         assert_eq!(endpoint.port, 6742);
-        assert_eq!(endpoint.max_protocol, MaxProtocol::V6);
+        assert_eq!(endpoint.max_protocol, ProtocolVersion::V6);
 
         let openrgb: Vec<_> = config
             .openrgb_devices()
