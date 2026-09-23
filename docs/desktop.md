@@ -280,7 +280,9 @@ window from `meters.vu.floorDb` (−40 by default) to 0. The meters rise
 instantly and fall at 3.0 full-scale per second; the peak cap holds 0.53 s,
 then falls at 0.75 full-scale per second. The spectrum shares that
 ballistics, so the bars and the meters fall together. The level is shown in
-steps of 1/40 of the window: 1 dB with the default window.
+steps of 1/40 of the window: 1 dB with the default window. On a sink without
+a hardware route (a virtual sink, or a device in its pro-audio profile) the
+output meter reads the level applications send, before the sink's volume.
 `vogix desktop vu` prints what the cells show. `checks.desktop-hyprland` plays
 −6 dBFS tones into the output and a virtual microphone and requires the
 meters to read −6 dB; [TESTING.md](../TESTING.md#vu-meter-calibration) has

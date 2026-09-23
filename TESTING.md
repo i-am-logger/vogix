@@ -44,7 +44,7 @@ symlink.
 | `desktop-options` | The default `desktop.json` equals `nix/modules/desktop/desktop-json.pin.json` byte for byte; each bar's layout options take exactly the widget registry's names (`desktop/Bar/widgets/registry.json`) that render on that bar's orientation, plus `custom/<name>`, so a widget the registry confines to the other orientation (a title or the oscilloscope on a rail, a rail meter on a horizontal bar), an unknown name, an undefined `custom/<name>` placement or a bad cell name fails evaluation; a `desktop.json` that `vogix desktop check` rejects fails the home-manager build, and the check rejects a misplaced widget in a document that never went through the options; the shell's unit restarts on exit status 75, waits for PipeWire, and runs quickshell without detailed logs. |
 | `desktop-runtime` | Every program the shell's QML starts by name is on the `vogix-desktop` unit's own `PATH` (or is a base-system tool or a client of a host daemon), and the NixOS module enables UPower and power-profiles-daemon exactly while a user runs the shell. |
 | `desktop-qmllint` | qmllint over the shell's QML against the pinned quickshell, unused imports included, plus the shell's rules: square corners, no raw `Hyprland.dispatch()`, bar widgets open panels beside their bar, tray menus open through `QsMenuAnchor`. |
-| `desktop-logic` | The shell's pure logic under Qt Quick Test: the parsers and policies in `desktop/Services/lib/` (block devices and swap, D-Bus service tracking, fan readings and titles, the GPU sample window, the mount gauges a df answer yields, screencast sessions, the tailnet connection record), meter ballistics, bar leases and popup placement; and its sysfs probe scripts against fixture trees. |
+| `desktop-logic` | The shell's pure logic under Qt Quick Test: the parsers and policies in `desktop/Services/lib/` (block devices and swap, D-Bus service tracking, fan readings and titles, the GPU sample window, the mount gauges a df answer yields, screencast sessions, the tailnet connection record, the output VU's reference for a sink's volume), meter ballistics, bar leases and popup placement; and its sysfs probe scripts against fixture trees. |
 | `desktop-smoke` | The real shell starts under a headless cage compositor exactly as its unit starts it, on the shipped default layout plus every registry widget it leaves out, with the verbs driven through the real `vogix desktop` CLI. It covers the bar, panel, power, launcher, gallery, reminder, notification, stats, privacy, custom-cell and keyboard verbs; custom cells on every trigger but a click, and not at all while their bar is parked; CAPS following the input engine's lock file; the window title and mode label; notification times across a restart; an MPRIS player; a hidden bar's samplers stopping; the tailnet record. A geometry probe lays every registry widget out on every bar edge the registry lets it sit on, at the default bar and font sizes, and requires each to fit across its bar, every canvas to measure at least 1x1, and the spectrums to keep their size before the first audio frame; a widget the sandbox gives nothing to show (a battery, a GPU, swap) is named as not measured. A schema-1 `desktop.json` is refused without taking the shell down. Every log passes a gate for script errors, binding loops, failed components and failed spawns. cage has no layer-shell, so the bars do not map here. |
 | `desktop-taps` | The audio taps against a real PipeWire daemon: nothing runs while nothing plays, a playback stream starts the taps and the output VU, the shell's own taps never light the privacy cell's microphone flag while another program's capture does, a dead tap is relaunched, taps wait for a default sink, a hidden bar's sources stop, a PipeWire restart is survived, and the unit writes no debug records. |
 | `desktop-backgrounds` | Every desktop theme variant ships its background set (the generated background, the aurora shader, merged extras), and the shell ships the shader precompiled. |
@@ -65,7 +65,7 @@ symlink.
 | `stress` | Rapid theme/variant switching |
 | `templates` | Template architecture; templates bundled in the Nix package; for a real theme of each scheme (vogix16 in both polarities, base16, base24, ansi16) the `theme.json` `vogix theme set` renders into the cache is byte-identical to the one home-manager built into the theme package |
 | `input-engine` | The evdev-grab → uinput re-emit / mock-compositor dispatch engine (below) |
-| `desktop-hyprland` | The desktop shell in a real Hyprland 0.56 session (greetd, virtio-gpu) with PipeWire, NetworkManager and the input engine, with every gate on the Lua config provider and the six whose command path differs (the workspace click, both LANG gates and the three mode-border gates) also on hyprlang: a workspace click, a tray icon's menu, notification and panel placement beside the bars, the focus brackets, the PRIVACY cell during a screencast, the LANG cell across a layout switch and a runtime layout change, the taps across a PipeWire restart, sampling stopped under the session lock, and the restart NetworkManager's arrival triggers, deferred while locked. The input engine paints the mode's border colour, read back from the compositor: at session start, when the engine starts while the compositor has not answered yet, and after a config reload. A −6 dBFS tone reads −6 dB on the output VU (at full and half sink volume) and, through a `pw-loopback` virtual source, on the MIC VU. A third node boots from a LUKS root, and the root gauge names the dm-N device /proc/diskstats counts it under |
+| `desktop-hyprland` | The desktop shell in a real Hyprland 0.56 session (greetd, virtio-gpu) with PipeWire, NetworkManager and the input engine, with every gate on the Lua config provider and the six whose command path differs (the workspace click, both LANG gates and the three mode-border gates) also on hyprlang: a workspace click, a tray icon's menu, notification and panel placement beside the bars, the focus brackets, the PRIVACY cell during a screencast, the LANG cell across a layout switch and a runtime layout change, the taps across a PipeWire restart, sampling stopped under the session lock, and the restart NetworkManager's arrival triggers, deferred while locked. The input engine paints the mode's border colour, read back from the compositor: at session start, when the engine starts while the compositor has not answered yet, and after a config reload. A −6 dBFS tone reads −6 dB on the output VU (at full and half sink volume, on a null sink whose monitor carries its volume and on one whose monitor does not) and, through a `pw-loopback` virtual source, on the MIC VU. A third node boots from a LUKS root, and the root gauge names the dm-N device /proc/diskstats counts it under |
 
 The **input-engine** suite exercises, among others:
 
@@ -202,16 +202,21 @@ is being measured.
 The VU meters convert quickshell's PipeWire peaks to dBFS
 (`desktop/Services/Peaks.qml`), and `vogix desktop vu` prints what they show.
 quickshell reports a cube-rooted peak, and for a sink without a hardware
-route (no `card.profile.device` property) it divides that peak by the sink's
-volume. Whether the meter then shows the level applications send (before the
-sink's volume) or the level the device receives (after it) depends on the
-sink.
+route (no `card.profile.device` property, or a pro-audio profile) it divides
+that peak by the sink's volume. The division is right for a sink whose monitor
+carries its volume (`monitor.channel-volumes = true`). By default a monitor
+carries the signal before the volume, and there `Peaks.qml` multiplies the
+division back out (`desktop/Services/lib/vu.js`). On a sink without a hardware
+route the meter therefore shows the level applications send, before the
+sink's volume. On a sink with one, quickshell leaves the peak alone, and what
+the meter shows depends on where the device applies its volume.
 
 **Automated.** `checks.desktop-hyprland` plays a 1 kHz tone peaking at
 −6.00 dBFS and requires the meters to read −6 dB ± 0.5 dB for 1.5 s:
 
-- the output meters, with the tone on the VM's null sink at 100% volume, and
-  again at 50%;
+- the output meters, with the tone on each of two null sinks at 100% volume
+  and again at 50%: the VM's, whose monitor carries its volume, and one made
+  with PipeWire's default, whose monitor does not;
 - the MIC meters, with the tone looped by `pw-loopback` into a virtual source
   that is the default input.
 
@@ -220,10 +225,9 @@ measurements. The level is published in steps of 1/40 of the `[floorDb, 0]`
 window (`Ballistics.steps`), rounded to the nearest step, so a reading is at
 most half a step from the level: 0.5 dB with the default −40 dB window. The
 attack is instant, and the release and the peak cap act only when the input
-falls, so a steady tone adds no ballistic error. The VM's null sink carries
-its volume on its monitor (`monitor.channel-volumes`), and quickshell divides
-it back out: the 50% reading shows that for such a sink the meter reads the
-level applications send.
+falls, so a steady tone adds no ballistic error. The two 50% readings show
+that on a sink without a hardware route the meter reads the level
+applications send, whichever signal the sink's monitor carries.
 
 **By hand.** The VM has no real output device. quickshell takes a device
 sink's volume from its hardware route and leaves the peak alone, so there
@@ -278,9 +282,10 @@ below measure it on the machine's own output (the rail's VU cell, and
      the sink's volume.
    - **about −24 dB**: the meter follows the sink's volume (it reads what the
      device receives).
-   - **0 dB, or pegged at the top**: the sink's volume was compensated
-     although the monitor never carried it. This one is a defect: the
-     reference in `Peaks.qml` needs correcting for this kind of sink.
+   - **0 dB, or pegged at the top**: the sink's volume was divided out
+     although the monitor never carried it. This one is a defect:
+     `desktop/Services/lib/vu.js` misjudges this kind of sink. Record its
+     properties (`wpctl inspect @DEFAULT_AUDIO_SINK@`).
 
 6. Stop the tone and restore the volume noted in step 3:
 

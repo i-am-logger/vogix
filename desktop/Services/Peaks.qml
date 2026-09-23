@@ -2,7 +2,10 @@ pragma Singleton
 // Live VU state for the default sink and source, from quickshell's native
 // PwNodePeakMonitor — no external tap. Monitor peaks arrive
 // cbrt-compressed (peak.cpp: visualPeak = cbrt(peak)), so true
-// dB = 20·log10(raw³) = 60·log10(raw). Levels are positions in the
+// dB = 20·log10(raw³) = 60·log10(raw). The output meter reads the level
+// applications send: quickshell divides a virtual sink's peak by the
+// sink's volume, and where the sink's monitor never carried that volume
+// the division is undone (lib/vu.js). Levels are positions in the
 // [floorDb, 0] window, moved by the meter ballistics the spectrum
 // shares (qs.Components Ballistics); published values quantize and skip
 // unchanged writes. Monitors are ref-counted and capture only while a VU
@@ -14,6 +17,7 @@ import Quickshell
 import Quickshell.Services.Pipewire
 import qs.Components
 import qs.Vogix
+import "lib/vu.js" as Vu
 
 Singleton {
     id: root
@@ -132,6 +136,22 @@ Singleton {
         root._publish();
     }
 
+    // Per output channel, the factor that puts quickshell's peak at the
+    // level applications send (lib/vu.js). It follows the default sink,
+    // its properties and its volume.
+    readonly property var _outGains: {
+        const audio = outMon.node?.audio ?? null;
+        return Vu.outputGains(outMon.node?.properties ?? {}, Array.from(outMon.channels),
+            Array.from(audio?.channels ?? []), Array.from(audio?.volumes ?? []));
+    }
+
+    // An output column's peak, in quickshell's cube-rooted scale. A mono
+    // stream feeds both columns.
+    function _outPeak(column: int): real {
+        const i = column < outMon.peaks.length ? column : 0;
+        return (outMon.peaks[i] ?? 0) * (root._outGains[i] ?? 1);
+    }
+
     onOutActiveChanged: {
         if (!outActive)
             _zero([0, 1]);
@@ -146,11 +166,9 @@ Singleton {
         id: outMon
         node: Pipewire.defaultAudioSink
         enabled: root.outActive
-        // A mono stream feeds both columns.
         onPeaksChanged: {
-            const l = root._norm(peaks[0] ?? 0);
-            root._heard(0, l);
-            root._heard(1, peaks.length > 1 ? root._norm(peaks[1]) : l);
+            root._heard(0, root._norm(root._outPeak(0)));
+            root._heard(1, root._norm(root._outPeak(1)));
         }
     }
 
@@ -171,8 +189,8 @@ Singleton {
 
         onTriggered: {
             const now = [
-                root._norm(outMon.peaks[0] ?? 0),
-                root._norm(outMon.peaks[1] ?? (outMon.peaks[0] ?? 0)),
+                root._norm(root._outPeak(0)),
+                root._norm(root._outPeak(1)),
                 root._norm(micMon.peak)
             ];
             const target = now.map((v, i) => Math.max(v, root._pending[i]));

@@ -36,7 +36,8 @@
 #   tray-menu           a tray item's menu opens against its icon
 #   screencast          a screen capture session lights PRIVACY while it runs
 #   vu-out              a −6 dBFS tone reads −6 dB on the output VU, at full
-#                       and at half sink volume
+#                       and at half sink volume, on a sink whose monitor
+#                       carries its volume and on one whose monitor does not
 #   vu-mic              the same tone through a virtual microphone reads
 #                       −6 dB on the MIC VU
 #   taps-pipewire       spectrum and scope taps return after PipeWire restarts
@@ -565,21 +566,53 @@ pkgs.testers.nixosTest {
         return int(d.poll(query, lambda o: o.isdigit(), 10, f"PipeWire node {name}"))
 
 
-    def gate_vu_out(d: Desktop) -> None:
-        tol = vu_tolerance(d)
-        before = d.run("wpctl get-volume @DEFAULT_AUDIO_SINK@").split()[1]
-        d.run("wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0")
+    def node_prop(d: Desktop, name: str, key: str) -> str:
+        """A PipeWire node's property, or "unset"."""
+        query = ("pw-dump | jq -r '.[] | select(.type == \"PipeWire:Interface:Node\""
+                 + f" and .info.props[\"node.name\"] == \"{name}\") | .info.props[\"{key}\"] // \"unset\"'")
+        return d.run(query).strip()
+
+
+    def vu_out_on(d: Desktop, sink: str, tol: float) -> None:
+        """The tone on `sink`, made the default, reads the tone's level on the
+        output VU at full and at half sink volume: the meter reads the level
+        applications send, before the sink's volume."""
+        sid = node_id(d, sink)
+        d.run(f"wpctl set-default {sid} && wpctl set-volume {sid} 1.0")
+        d.poll("wpctl inspect @DEFAULT_AUDIO_SINK@", lambda o: f'node.name = "{sink}"' in o, 10,
+               f"{sink} is the default sink")
         d.run(f"systemd-run --user --collect --unit=vogix-test-tone pw-play {TONE}")
         try:
-            vu_holds(d, "out", TONE_DB, tol, "the output VU at full volume")
-            # This sink's monitor carries its volume (monitor.channel-volumes),
-            # which quickshell divides back out: the meter reads what
-            # applications send, before the sink's volume.
-            d.run("wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5")
-            vu_holds(d, "out", TONE_DB, tol, "the output VU at half volume")
+            vu_holds(d, "out", TONE_DB, tol, f"the output VU on {sink} at full volume")
+            d.run(f"wpctl set-volume {sid} 0.5")
+            vu_holds(d, "out", TONE_DB, tol, f"the output VU on {sink} at half volume")
         finally:
             d.attempt("systemctl --user stop vogix-test-tone")
-            d.run(f"wpctl set-volume @DEFAULT_AUDIO_SINK@ {before}")
+
+
+    def gate_vu_out(d: Desktop) -> None:
+        # Both kinds of virtual sink: the VM's, whose monitor carries its
+        # volume (monitor.channel-volumes), and one made here with PipeWire's
+        # default, whose monitor carries the signal before the volume.
+        # quickshell divides the peak by the sink's volume on both.
+        tol = vu_tolerance(d)
+        home, plain = "vogix-null-sink", "vogix-test-plain-sink"
+        before = d.run("wpctl get-volume @DEFAULT_AUDIO_SINK@").split()[1]
+        got = node_prop(d, home, "monitor.channel-volumes")
+        assert got == "true", f"{home} has monitor.channel-volumes {got!r}"
+        d.run("pw-cli create-node adapter '{ factory.name = support.null-audio-sink"
+              f" node.name = {plain} media.class = Audio/Sink"
+              " audio.position = [ FL FR ] object.linger = true }'")
+        plain_id = node_id(d, plain)
+        try:
+            got = node_prop(d, plain, "monitor.channel-volumes")
+            assert got == "unset", f"{plain} has monitor.channel-volumes {got!r}"
+            vu_out_on(d, home, tol)
+            vu_out_on(d, plain, tol)
+        finally:
+            home_id = node_id(d, home)
+            d.run(f"wpctl set-default {home_id} && wpctl set-volume {home_id} {before}")
+            d.attempt(f"pw-cli destroy {plain_id}")
 
 
     def gate_vu_mic(d: Desktop) -> None:
