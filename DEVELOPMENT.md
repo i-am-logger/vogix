@@ -90,15 +90,19 @@ nix build .#checks.x86_64-linux.theme-switching # Theme/variant switching
 nix build .#checks.x86_64-linux.cli             # CLI flags, error handling
 
 # The desktop shell (no VM; seconds to minutes each)
-nix build .#checks.x86_64-linux.desktop-qmllint -L --no-link   # lint the QML
-nix build .#checks.x86_64-linux.desktop-logic -L --no-link     # Qt Quick Test over the pure logic
-nix build .#checks.x86_64-linux.desktop-smoke -L --no-link     # the real shell under a headless compositor
-nix build .#checks.x86_64-linux.desktop-options -L --no-link   # the desktop.json pin and module assertions
-nix build .#checks.x86_64-linux.desktop-taps -L --no-link      # the audio taps against a real PipeWire
+nix build .#checks.x86_64-linux.desktop-qmllint -L --no-link     # lint the QML, plus the shell's own rules
+nix build .#checks.x86_64-linux.desktop-logic -L --no-link       # Qt Quick Test over the pure logic, probe scripts on fixtures
+nix build .#checks.x86_64-linux.desktop-smoke -L --no-link       # the real shell under a headless compositor, widget fit included
+nix build .#checks.x86_64-linux.desktop-options -L --no-link     # the desktop.json pin, the registry-typed layouts, module assertions
+nix build .#checks.x86_64-linux.desktop-runtime -L --no-link     # every program the shell starts is on its unit's PATH
+nix build .#checks.x86_64-linux.desktop-taps -L --no-link        # the audio taps against a real PipeWire
+nix build .#checks.x86_64-linux.desktop-backgrounds -L --no-link # every theme variant ships its backgrounds
 
 # The desktop shell on a real Hyprland session (a VM; about two minutes of test time)
 nix build .#checks.x86_64-linux.desktop-hyprland -L --no-link
 ```
+
+[TESTING.md](TESTING.md#what-gets-tested) says what each check covers.
 
 ### VM Testing
 
