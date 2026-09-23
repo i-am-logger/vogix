@@ -7,8 +7,11 @@
 //! holds the data model both sides share and the primitives those units are
 //! built from.
 
+pub mod command;
 pub mod config;
 pub mod notify;
 pub mod palette;
+pub mod reactor;
 pub mod status;
 pub mod types;
+pub mod uevent;

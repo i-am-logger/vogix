@@ -71,6 +71,13 @@ evdev = "0.13"
 # crate2nix — unlike the libudev-based `udev` crate (vogix's first native-C link).
 inotify = "0.11"
 
+# Signal delivery must be tested in a single-threaded process, as the machine
+# owners run: without the libtest harness.
+[[test]]
+name = "machine_reactor_signals"
+path = "tests/machine_reactor_signals.rs"
+harness = false
+
 [dev-dependencies]
 tempfile = "3.10"
 serial_test = "3.2"
