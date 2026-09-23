@@ -210,6 +210,11 @@ pub enum DesktopCommands {
     /// application is capturing the microphone, and whether a screen capture
     /// session is running
     Privacy,
+    /// What the VU cells show, as one JSON object: the output meter's two
+    /// columns (`out`) and the microphone meter (`mic`) in dBFS, each null
+    /// while its monitor is not capturing, and `stepDb`, the dB one step of
+    /// the meter spans
+    Vu,
     /// Control the bar surface
     Bar {
         #[command(subcommand)]
@@ -903,6 +908,18 @@ mod tests {
             }
         ));
         assert!(Cli::try_parse_from(["vogix", "desktop", "privacy", "extra"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_desktop_vu() {
+        let cli = Cli::try_parse_from(["vogix", "desktop", "vu"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Desktop {
+                command: DesktopCommands::Vu
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "desktop", "vu", "extra"]).is_err());
     }
 
     #[test]

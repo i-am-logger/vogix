@@ -70,6 +70,7 @@ fn run(command: &DesktopCommands, shell: &mut dyn Shell) -> Result<()> {
         DesktopCommands::Meters => print_reply(shell, &IpcCall::new("meters", "status")),
         DesktopCommands::Stats => print_reply(shell, &IpcCall::new("stats", "status")),
         DesktopCommands::Privacy => print_reply(shell, &IpcCall::new("privacy", "status")),
+        DesktopCommands::Vu => print_reply(shell, &IpcCall::new("vu", "status")),
         DesktopCommands::Bar { command } => bar(shell, command),
         DesktopCommands::Notify { command } => notify(shell, command),
         DesktopCommands::Lock {
@@ -1309,6 +1310,7 @@ mod tests {
             (vec!["meters"], vec![call("meters", "status", &[])]),
             (vec!["stats"], vec![call("stats", "status", &[])]),
             (vec!["privacy"], vec![call("privacy", "status", &[])]),
+            (vec!["vu"], vec![call("vu", "status", &[])]),
             (vec!["bar", "show"], vec![call("bar", "unhide", &["all"])]),
             (
                 vec!["bar", "show", "top"],

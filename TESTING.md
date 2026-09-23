@@ -65,7 +65,7 @@ symlink.
 | `stress` | Rapid theme/variant switching |
 | `templates` | Template architecture; templates bundled in the Nix package; for a real theme of each scheme (vogix16 in both polarities, base16, base24, ansi16) the `theme.json` `vogix theme set` renders into the cache is byte-identical to the one home-manager built into the theme package |
 | `input-engine` | The evdev-grab → uinput re-emit / mock-compositor dispatch engine (below) |
-| `desktop-hyprland` | The desktop shell in a real Hyprland 0.56 session (greetd, virtio-gpu) with PipeWire, NetworkManager and the input engine, with every gate on the Lua config provider and the six whose command path differs (the workspace click, both LANG gates and the three mode-border gates) also on hyprlang: a workspace click, a tray icon's menu, notification and panel placement beside the bars, the focus brackets, the PRIVACY cell during a screencast, the LANG cell across a layout switch and a runtime layout change, the taps across a PipeWire restart, sampling stopped under the session lock, and the restart NetworkManager's arrival triggers, deferred while locked. The input engine paints the mode's border colour, read back from the compositor: at session start, when the engine starts while the compositor has not answered yet, and after a config reload. A third node boots from a LUKS root, and the root gauge names the dm-N device /proc/diskstats counts it under |
+| `desktop-hyprland` | The desktop shell in a real Hyprland 0.56 session (greetd, virtio-gpu) with PipeWire, NetworkManager and the input engine, with every gate on the Lua config provider and the six whose command path differs (the workspace click, both LANG gates and the three mode-border gates) also on hyprlang: a workspace click, a tray icon's menu, notification and panel placement beside the bars, the focus brackets, the PRIVACY cell during a screencast, the LANG cell across a layout switch and a runtime layout change, the taps across a PipeWire restart, sampling stopped under the session lock, and the restart NetworkManager's arrival triggers, deferred while locked. The input engine paints the mode's border colour, read back from the compositor: at session start, when the engine starts while the compositor has not answered yet, and after a config reload. A −6 dBFS tone reads −6 dB on the output VU (at full and half sink volume) and, through a `pw-loopback` virtual source, on the MIC VU. A third node boots from a LUKS root, and the root gauge names the dm-N device /proc/diskstats counts it under |
 
 The **input-engine** suite exercises, among others:
 
@@ -81,9 +81,10 @@ The **input-engine** suite exercises, among others:
 
 Two properties of the desktop shell depend on real hardware and a real
 session, so no check can settle them: its CPU cost, and the reference level
-of its VU meters. Run these on the machine after switching to the build under
-test. Steps marked *changes the session* hide bars, lock the screen or change
-the volume; each says how to undo it.
+of its VU meters on a real output device (the VM suite checks the meters on a
+virtual sink and a virtual microphone). Run these on the machine after
+switching to the build under test. Steps marked *changes the session* hide
+bars, lock the screen or change the volume; each says how to undo it.
 
 ### Desktop CPU budget
 
@@ -199,16 +200,36 @@ is being measured.
 ### VU meter calibration
 
 The VU meters convert quickshell's PipeWire peaks to dBFS
-(`desktop/Services/Peaks.qml`). quickshell reports a cube-rooted peak, and
-for a sink without a hardware route (no `card.profile.device` property) it
-divides that peak by the sink's volume. Whether the meter then shows the
-level applications send (before the sink's volume) or the level the device
-receives (after it) depends on the sink, so it is measured here against a
-tone of known level.
+(`desktop/Services/Peaks.qml`), and `vogix desktop vu` prints what they show.
+quickshell reports a cube-rooted peak, and for a sink without a hardware
+route (no `card.profile.device` property) it divides that peak by the sink's
+volume. Whether the meter then shows the level applications send (before the
+sink's volume) or the level the device receives (after it) depends on the
+sink.
 
-The MIC meters use the same conversion on the default input; this procedure
-calibrates the output meters (the rail's VU cell, and `vu-out` wherever it is
-placed).
+**Automated.** `checks.desktop-hyprland` plays a 1 kHz tone peaking at
+−6.00 dBFS and requires the meters to read −6 dB ± 0.5 dB for 1.5 s:
+
+- the output meters, with the tone on the VM's null sink at 100% volume, and
+  again at 50%;
+- the MIC meters, with the tone looped by `pw-loopback` into a virtual source
+  that is the default input.
+
+The tolerance follows from how the meter is defined; it is not fitted to
+measurements. The level is published in steps of 1/40 of the `[floorDb, 0]`
+window (`Ballistics.steps`), rounded to the nearest step, so a reading is at
+most half a step from the level: 0.5 dB with the default −40 dB window. The
+attack is instant, and the release and the peak cap act only when the input
+falls, so a steady tone adds no ballistic error. The VM's null sink carries
+its volume on its monitor (`monitor.channel-volumes`), and quickshell divides
+it back out: the 50% reading shows that for such a sink the meter reads the
+level applications send.
+
+**By hand.** The VM has no real output device. quickshell takes a device
+sink's volume from its hardware route and leaves the peak alone, so there
+the reference depends on where the device applies its volume. The steps
+below measure it on the machine's own output (the rail's VU cell, and
+`vu-out` wherever it is placed).
 
 1. **Protect your ears** (*changes the session*: the volume goes to 100%).
    Turn the speakers or amplifier down, or unplug the headphones: a −6 dBFS
@@ -232,17 +253,17 @@ placed).
    wpctl inspect @DEFAULT_AUDIO_SINK@ | grep -E 'node.name|card.profile.device'
    ```
 
-4. At 100% volume, play the tone and read the VU cell's dB (the left rail
-   in the default layout) while it plays:
+4. At 100% volume, play the tone and read the meters while it plays:
 
    ```bash
    wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0
    pw-play /tmp/tone-6dbfs.wav &
-   sleep 3; vogix desktop meters   # vu-out:on
+   sleep 3; vogix desktop vu       # {"out":[-6,-6],...}
    ```
 
-   Pass: the meter reads **−6 dB**, give or take one step (1 dB). Both columns
-   read the same, since both channels carry the tone.
+   Pass: both output columns read **−6 dB**; the VU cell (the left rail in
+   the default layout) shows the same. The tone is 0.02 dB under −6 dBFS,
+   well inside half a step.
 
 5. At 50% volume (in wpctl's cubic scale, −18 dB), with the tone still
    playing:
@@ -251,7 +272,7 @@ placed).
    wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5
    ```
 
-   Read the meter again and record which case applies:
+   Read `vogix desktop vu` again and record which case applies:
 
    - **−6 dB again**: the meter shows the level applications send, whatever
      the sink's volume.
@@ -400,7 +421,8 @@ The automated tests cover:
    behavior under Hyprland
 
 **Checked by hand** (see [Live checks](#live-checks-on-a-desktop-session)):
-- The desktop shell's CPU cost, and its VU meters' reference level
+- The desktop shell's CPU cost, and its VU meters' reference level on a real
+  output device
 - Colors and layout as they look on a real display
 
 ## Troubleshooting

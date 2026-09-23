@@ -278,6 +278,15 @@ ShellRoot {
     }
 
     IpcHandler {
+        target: "vu"
+
+        // What the VU cells show, one JSON object.
+        function status(): string {
+            return JSON.stringify(Peaks.readings());
+        }
+    }
+
+    IpcHandler {
         target: "osd"
 
         // value: 0..100 (percent), -1 = no gauge. Named flash, not show —

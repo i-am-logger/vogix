@@ -238,6 +238,7 @@ vogix desktop meters                     # spectrum:idle scope:idle vu-out:idle 
 vogix desktop keyboard                   # device:vogix-input layouts:us,il active:us caps:off
 vogix desktop stats                      # {"cpu":0.12,"memory":0.41,"swap":null,"gpu":null,...}
 vogix desktop privacy                    # mic:off screencast:off
+vogix desktop vu                         # {"out":[-6,-6],"mic":-12,"stepDb":1}
 ```
 
 `meters` reports each data source the HUD can run. The spectrum and scope taps
@@ -262,6 +263,12 @@ gauge), `gaugeDevice` (the kernel device behind each gauge) and `hasGpu`.
 `privacy` is what the PRIVACY cell shows: `mic:on` while another program
 captures a microphone (the shell's own audio taps never count), and
 `screencast:on` while a screen capture session runs.
+
+`vu` is what the VU cells show, in dBFS: `out` holds the output meter's left
+and right columns and `mic` the microphone meter, each `null` while its
+monitor is not capturing (the output one captures only while something plays).
+`stepDb` is the dB one step of the meter spans, so every reading is a multiple
+of it (1 dB with the default window).
 
 #### Notifications
 

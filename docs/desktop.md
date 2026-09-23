@@ -281,8 +281,10 @@ instantly and fall at 3.0 full-scale per second; the peak cap holds 0.53 s,
 then falls at 0.75 full-scale per second. The spectrum shares that
 ballistics, so the bars and the meters fall together. The level is shown in
 steps of 1/40 of the window: 1 dB with the default window.
-[TESTING.md](../TESTING.md#vu-meter-calibration) has the procedure that checks
-the meters' reference level against a test tone.
+`vogix desktop vu` prints what the cells show. `checks.desktop-hyprland` plays
+−6 dBFS tones into the output and a virtual microphone and requires the
+meters to read −6 dB; [TESTING.md](../TESTING.md#vu-meter-calibration) has
+the procedure for checking a real output device the same way.
 
 The spectrum is cava at 25 frames a second, `meters.spectrum.bars` bands per
 stereo channel (48 by default); `meters.spectrum.enable = false` removes it.
@@ -597,6 +599,7 @@ vogix desktop meters                     # which taps, monitors and samplers run
 vogix desktop keyboard                   # the keyboard, layouts and CapsLock the LANG cell shows
 vogix desktop stats                      # the stat cells' readings, as JSON
 vogix desktop privacy                    # what the PRIVACY cell shows: mic:off screencast:off
+vogix desktop vu                         # what the VU cells show, in dBFS, as JSON
 vogix desktop bar geometry               # where each placed widget sits on its screen
 journalctl --user -u vogix-desktop -b    # the shell's warnings
 ```

@@ -67,6 +67,18 @@ Singleton {
         return root.floorDb * (1 - level);
     }
 
+    // What the VU cells show, in dB: the output meter's two columns and the
+    // mic meter, each null while its monitor is not capturing. `stepDb` is
+    // the dB one published step spans, so a reading is a multiple of it.
+    function readings(): var {
+        const db = level => Math.round(root.dbOf(level) * 100) / 100;
+        return {
+            out: root.outActive ? [db(root.outL), db(root.outR)] : null,
+            mic: root.micActive ? db(root.micLevel) : null,
+            stepDb: Math.abs(root.floorDb) / Ballistics.steps
+        };
+    }
+
     // Ballistics state, one entry per channel in one order throughout:
     // out L, out R, mic. `_pending` is the highest level each channel
     // reached since the last tick, so a transient between ticks lands.

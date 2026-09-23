@@ -35,6 +35,10 @@
 #   notification-place  notification cards clear the top bar and right rail
 #   tray-menu           a tray item's menu opens against its icon
 #   screencast          a screen capture session lights PRIVACY while it runs
+#   vu-out              a −6 dBFS tone reads −6 dB on the output VU, at full
+#                       and at half sink volume
+#   vu-mic              the same tone through a virtual microphone reads
+#                       −6 dB on the MIC VU
 #   taps-pipewire       spectrum and scope taps return after PipeWire restarts
 #   lock-sampling       a locked session samples nothing; unlocking resumes
 #   network-lock        a NetworkManager restart due while locked waits for
@@ -76,6 +80,19 @@ let
     export QT_PLUGIN_PATH=${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}:${pkgs.qt6.qtwayland}/${pkgs.qt6.qtbase.qtPluginPrefix}
     export QML_IMPORT_PATH=${pkgs.qt6.qtdeclarative}/${pkgs.qt6.qtbase.qtQmlPrefix}
     exec ${pkgs.qt6.qtdeclarative}/bin/qml --apptype widget ${trayQml}
+  '';
+
+  # The VU reference: a 30 s, 1 kHz stereo sine peaking at −6.00 dBFS. 32-bit
+  # float, so no dither moves the peak, and 48 samples a period at 48 kHz,
+  # so every period has a sample on the crest. The build fails unless sox
+  # measures that peak.
+  tone = pkgs.runCommand "vogix-test-tone-6dbfs.wav" { nativeBuildInputs = [ pkgs.sox pkgs.gawk ]; } ''
+    sox -n -r 48000 -c 2 -e floating-point -b 32 -t wav $out synth 30 sine 1000 vol -6dB
+    peak=$(sox $out -n stat 2>&1 | awk '/^Maximum amplitude/ { print $3 }')
+    awk -v p="$peak" 'BEGIN {
+      db = 20 * log(p) / log(10)
+      if (db < -6.005 || db > -5.995) { printf "tone peak %s is %.4f dBFS\n", p, db; exit 1 }
+    }'
   '';
 
   # The root filesystem on LUKS, as an encrypted install has it. The node's
@@ -498,6 +515,89 @@ pkgs.testers.nixosTest {
                f"the mode's colour {want} is painted once the compositor answers")
 
 
+    TONE = "${tone}"
+    TONE_DB = -6.0
+
+
+    def vu_tolerance(d: Desktop) -> float:
+        """How far a VU reading of a steady tone may be from the tone's level.
+
+        The meters publish their level quantized to 1/steps of the
+        [floorDb, 0] window (Ballistics.steps), rounded to nearest, so a
+        reading is at most half a step from the level it shows. The attack
+        is instant and the release and the peak cap act only when the input
+        falls, so a steady tone's level sits on its peak every tick, and the
+        rounding is the whole error."""
+        qml = d.run("cat ~/.config/quickshell/vogix/Components/Ballistics.qml")
+        found = re.search(r"readonly property int steps: (\d+)", qml)
+        assert found, "Ballistics.qml has no steps property"
+        steps = int(found.group(1))
+        floor = ((d.desktop_json().get("meters") or {}).get("vu") or {}).get("floorDb", -40)
+        step = abs(floor) / steps
+        reported = json.loads(d.run("vogix desktop vu"))["stepDb"]
+        assert abs(reported - step) < 1e-9, f"vu reports a {reported} dB step, the meter's is {step}"
+        return step / 2
+
+
+    def vu_holds(d: Desktop, key: str, want: float, tol: float, what: str) -> None:
+        """`key` of `vogix desktop vu` reads want ± tol, and keeps reading it
+        for longer than the peak cap holds."""
+        def ok(reply: str) -> bool:
+            try:
+                value = json.loads(reply)[key]
+            except (ValueError, KeyError):
+                return False
+            values = value if isinstance(value, list) else [value]
+            return None not in values and all(abs(v - want) <= tol for v in values)
+
+        d.poll("vogix desktop vu", ok, 15, f"{what} reads {want} dB ± {tol}")
+        end = time.monotonic() + 1.5
+        while time.monotonic() < end:
+            reply = d.attempt("vogix desktop vu").strip()
+            assert ok(reply), f"{what} left {want} dB ± {tol} while the tone played: {reply}"
+            time.sleep(0.2)
+        print(f"VU {what}: {reply}")
+
+
+    def node_id(d: Desktop, name: str) -> int:
+        query = ("pw-dump | jq -r '.[] | select(.type == \"PipeWire:Interface:Node\""
+                 + f" and .info.props[\"node.name\"] == \"{name}\") | .id'")
+        return int(d.poll(query, lambda o: o.isdigit(), 10, f"PipeWire node {name}"))
+
+
+    def gate_vu_out(d: Desktop) -> None:
+        tol = vu_tolerance(d)
+        before = d.run("wpctl get-volume @DEFAULT_AUDIO_SINK@").split()[1]
+        d.run("wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0")
+        d.run(f"systemd-run --user --collect --unit=vogix-test-tone pw-play {TONE}")
+        try:
+            vu_holds(d, "out", TONE_DB, tol, "the output VU at full volume")
+            # This sink's monitor carries its volume (monitor.channel-volumes),
+            # which quickshell divides back out: the meter reads what
+            # applications send, before the sink's volume.
+            d.run("wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.5")
+            vu_holds(d, "out", TONE_DB, tol, "the output VU at half volume")
+        finally:
+            d.attempt("systemctl --user stop vogix-test-tone")
+            d.run(f"wpctl set-volume @DEFAULT_AUDIO_SINK@ {before}")
+
+
+    def gate_vu_mic(d: Desktop) -> None:
+        # A virtual microphone: pw-loopback's sink side takes the tone and its
+        # source side, made the default input, carries it to the MIC meter.
+        tol = vu_tolerance(d)
+        d.run("systemd-run --user --collect --unit=vogix-test-mic pw-loopback -m '[ FL FR ]'"
+              " --capture-props='media.class=Audio/Sink node.name=vogix-test-mic-in'"
+              " --playback-props='media.class=Audio/Source node.name=vogix-test-mic'")
+        try:
+            sink, source = node_id(d, "vogix-test-mic-in"), node_id(d, "vogix-test-mic")
+            d.run(f"wpctl set-volume {sink} 1.0 && wpctl set-volume {source} 1.0 && wpctl set-default {source}")
+            d.run(f"systemd-run --user --collect --unit=vogix-test-mic-tone pw-play --target vogix-test-mic-in {TONE}")
+            vu_holds(d, "mic", TONE_DB, tol, "the MIC VU")
+        finally:
+            d.attempt("systemctl --user stop vogix-test-mic-tone vogix-test-mic")
+
+
     def gate_root_gauge_device(d: Desktop) -> None:
         # The kernel device behind "/", found apart from the shell's own
         # probe: the root's major:minor under /sys/dev/block.
@@ -730,6 +830,8 @@ pkgs.testers.nixosTest {
     gate("lua notification-place", lambda: gate_notification_placement(lua_desktop))
     gate("lua tray-menu", lambda: gate_tray_menu(lua_desktop))
     gate("lua screencast", lambda: gate_screencast(lua_desktop))
+    gate("lua vu-out", lambda: gate_vu_out(lua_desktop))
+    gate("lua vu-mic", lambda: gate_vu_mic(lua_desktop))
     gate("lua taps-pipewire", lambda: gate_taps_pipewire(lua_desktop))
     gate("lua lock-sampling", lambda: gate_lock_sampling(lua_desktop))
     gate("lua network-lock", lambda: gate_network_lock(lua_desktop))
