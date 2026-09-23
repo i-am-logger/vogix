@@ -100,13 +100,18 @@ programs.vogix.desktop.bars.right = {
   and `end`.
 - The horizontal bars span the whole screen edge; the side rails fit between
   them.
-- `window`, `media`, `weather` and `theme` read horizontally, so they are
-  rejected on `left` and `right` at build time.
+- Some widgets render on one bar orientation only, and the layout options
+  reject them on the other at build time:
+  - horizontal bars only: `window`, `media`, `weather` and `theme`, which read
+    across, and `oscilloscope`, `vu-out`, `vu-mic` and `stat-net`, which are
+    wider than a rail at the default bar and font sizes;
+  - rails only: `vu-rail` and `mic-rail`, which are taller than a horizontal
+    bar.
 - The layout options accept only the names in the shell's widget registry
-  (`desktop/Bar/widgets/registry.json`) and `custom/<name>`. A name that
-  still reaches the shell unresolved renders as a magenta `?name` tile, with
-  a journal warning saying why, so a mistake is visible rather than silently
-  dropped.
+  (`desktop/Bar/widgets/registry.json`) that render on the bar's
+  orientation, and `custom/<name>`. A name that still reaches the shell
+  unresolved renders as a magenta `?name` tile, with a journal warning saying
+  why, so a mistake is visible rather than silently dropped.
 - `bars.<edge>.enable = false` turns an edge off; `vogix desktop bar status`
   reports it as `off`.
 

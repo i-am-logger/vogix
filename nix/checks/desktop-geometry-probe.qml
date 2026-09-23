@@ -3,19 +3,21 @@ pragma ComponentBehavior: Bound
 // over a copy of the shipped QML tree, so `qs.` resolves to the shipped
 // modules, and runs it with the shipped default desktop.json. The real
 // Section loads the real widgets, backed by the real singletons, in real
-// windows. Three checks, one verdict (the exit status):
+// windows: one per bar edge, at that bar's size, holding every widget the
+// registry (WidgetRegistry) lets that edge place. Three checks, one
+// verdict (the exit status):
 //
-// - every widget the registry (WidgetRegistry) names, on a horizontal bar
-//   and, where it may sit there, on a vertical one: each Canvas it shows
-//   lays out at a non-zero size, measured on the canvas itself (a
-//   FrameCell keeps a minimum size of its own around empty content).
-//   `GEOMETRY <edge> <widget> <w>x<h>` per canvas;
+// - each Canvas a widget shows lays out at a non-zero size, measured on
+//   the canvas itself (a FrameCell keeps a minimum size of its own
+//   around empty content). `GEOMETRY <edge> <widget> <w>x<h>` per
+//   canvas;
 // - a frame of audio data resizes no canvas: the instruments keep their
 //   footprint whether or not anything plays. `FOOTPRINT <edge> <widget>`
 //   per canvas that moved;
-// - the default layout fits its bars: every cell's extent across its bar
-//   is within the bar's size. `FIT <edge> <widget> <w>x<h> in <size>`
-//   per cell.
+// - every placement fits its bar: a widget's extent across the bar is
+//   within the bar's size, so a widget the registry does not confine to
+//   one orientation fits both. `FIT <edge> <widget> <w>x<h> in <size>`
+//   per widget.
 import QtQuick
 import Quickshell
 import qs.Bar.widgets
@@ -27,15 +29,16 @@ ShellRoot {
     id: root
 
     readonly property list<string> names: Object.keys(WidgetRegistry.widgets)
-    readonly property list<string> railNames:
-        root.names.filter(n => WidgetRegistry.widgets[n].horizontalOnly !== true)
-    readonly property int bottomSize: ((Config.bars ?? {}).bottom ?? {}).size ?? 96
-    readonly property int rightSize: ((Config.bars ?? {}).right ?? {}).size ?? 114
-    readonly property list<string> edges:
-        Object.keys(Config.bars ?? {}).filter(e => Config.bars[e].enable === true)
+    readonly property list<string> edges: Object.keys(Config.bars ?? {})
 
-    // The default layout's sections: { edge, size, vertical, section }.
-    property var layoutSections: []
+    // The registry names a bar of this orientation may place.
+    function placeable(vertical: bool): list<string> {
+        const orientation = vertical ? "vertical" : "horizontal";
+        return root.names.filter(n => (WidgetRegistry.widgets[n].orientation ?? orientation) === orientation);
+    }
+
+    // Every edge's section: { edge, size, vertical, section }.
+    property var sections: []
 
     function canvasesUnder(item: Item): list<Item> {
         let found = [];
@@ -78,76 +81,42 @@ ShellRoot {
     // edge/widget/index → "WxH", taken before the audio frame.
     property var before: ({})
 
-    function measureCanvases(edge: string, section: Item, record: bool): void {
-        for (const w of root.loaded(edge, section)) {
+    function measureCanvases(s: var, record: bool): void {
+        for (const w of root.loaded(s.edge, s.section)) {
             const canvases = root.shownCanvases(w.item);
             for (let i = 0; i < canvases.length; i++) {
                 const size = `${canvases[i].width}x${canvases[i].height}`;
-                const key = `${edge} ${w.name} ${i}`;
+                const key = `${s.edge} ${w.name} ${i}`;
                 if (record) {
-                    console.info("GEOMETRY", edge, w.name, size);
+                    console.info("GEOMETRY", s.edge, w.name, size);
                     if (!(canvases[i].width >= 1 && canvases[i].height >= 1))
                         root.failures++;
                     root.before[key] = size;
                 } else if (root.before[key] !== size) {
-                    console.error("FOOTPRINT", edge, w.name, root.before[key], "->", size);
+                    console.error("FOOTPRINT", s.edge, w.name, root.before[key], "->", size);
                     root.failures++;
                 }
             }
         }
     }
 
-    function measureFit(): void {
-        for (const s of root.layoutSections) {
-            for (const w of root.loaded(s.edge, s.section)) {
-                if (!w.item.visible)
-                    continue;
-                const across = s.vertical ? w.item.width : w.item.height;
-                const line = `${w.item.width}x${w.item.height} in ${s.size}`;
-                if (across > s.size) {
-                    console.error("FIT", s.edge, w.name, line, "overflows its bar");
-                    root.failures++;
-                } else {
-                    console.info("FIT", s.edge, w.name, line);
-                }
+    function measureFit(s: var): void {
+        for (const w of root.loaded(s.edge, s.section)) {
+            if (!w.item.visible) {
+                console.info("FIT", s.edge, w.name, "hidden here, not measured");
+                continue;
+            }
+            const across = s.vertical ? w.item.width : w.item.height;
+            const line = `${w.item.width}x${w.item.height} in ${s.size}`;
+            if (across > s.size) {
+                console.error("FIT", s.edge, w.name, line, "overflows its bar");
+                root.failures++;
+            } else {
+                console.info("FIT", s.edge, w.name, line);
             }
         }
     }
 
-    // Every registry widget, sized like the default bottom bar and right
-    // rail.
-    FloatingWindow {
-        implicitWidth: 1920
-        implicitHeight: root.bottomSize
-
-        Section {
-            id: horizontal
-
-            names: root.names
-            axis: BarAxis {
-                edge: "bottom"
-                thickness: root.bottomSize
-            }
-        }
-    }
-
-    FloatingWindow {
-        implicitWidth: root.rightSize
-        implicitHeight: 1080
-
-        Section {
-            id: vertical
-
-            names: root.railNames
-            axis: BarAxis {
-                edge: "right"
-                thickness: root.rightSize
-                vertical: true
-            }
-        }
-    }
-
-    // The default layout, one window per enabled bar.
     Variants {
         model: root.edges
 
@@ -155,35 +124,27 @@ ShellRoot {
             id: barWindow
 
             required property string modelData
-            readonly property var bar: Config.bars[barWindow.modelData]
             readonly property bool vertical: barWindow.modelData === "left" || barWindow.modelData === "right"
+            readonly property int size: Config.bars[barWindow.modelData].size
 
-            implicitWidth: barWindow.vertical ? barWindow.bar.size : 1920
-            implicitHeight: barWindow.vertical ? 1080 : barWindow.bar.size
+            implicitWidth: barWindow.vertical ? barWindow.size : 1920
+            implicitHeight: barWindow.vertical ? 1080 : barWindow.size
 
-            Column {
-                Repeater {
-                    model: ["start", "center", "end"]
+            Section {
+                id: section
 
-                    Section {
-                        id: layoutSection
-
-                        required property string modelData
-
-                        names: barWindow.bar.layout[layoutSection.modelData] ?? []
-                        axis: BarAxis {
-                            edge: barWindow.modelData
-                            thickness: barWindow.bar.size
-                            vertical: barWindow.vertical
-                        }
-                        Component.onCompleted: root.layoutSections = root.layoutSections.concat([{
-                            edge: barWindow.modelData,
-                            size: barWindow.bar.size,
-                            vertical: barWindow.vertical,
-                            section: layoutSection
-                        }])
-                    }
+                names: root.placeable(barWindow.vertical)
+                axis: BarAxis {
+                    edge: barWindow.modelData
+                    thickness: barWindow.size
+                    vertical: barWindow.vertical
                 }
+                Component.onCompleted: root.sections = root.sections.concat([{
+                    edge: barWindow.modelData,
+                    size: barWindow.size,
+                    vertical: barWindow.vertical,
+                    section: section
+                }])
             }
         }
     }
@@ -197,9 +158,14 @@ ShellRoot {
         interval: 1500
         running: true
         onTriggered: {
-            root.measureCanvases("bottom", horizontal, true);
-            root.measureCanvases("right", vertical, true);
-            root.measureFit();
+            if (root.sections.length !== 4) {
+                console.error("GEOMETRY", root.sections.length, "of 4 bar edges laid out");
+                root.failures++;
+            }
+            for (const s of root.sections) {
+                root.measureCanvases(s, true);
+                root.measureFit(s);
+            }
             Cava.values = Array(Cava.bars * 2).fill(0.5);
             second.start();
         }
@@ -210,8 +176,8 @@ ShellRoot {
 
         interval: 500
         onTriggered: {
-            root.measureCanvases("bottom", horizontal, false);
-            root.measureCanvases("right", vertical, false);
+            for (const s of root.sections)
+                root.measureCanvases(s, false);
             Qt.exit(root.failures === 0 ? 0 : 1);
         }
     }

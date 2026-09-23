@@ -59,10 +59,15 @@ let
   placed = lib.concatMap
     (edge: lib.concatMap (section: pin.bars.${edge}.layout.${section}) [ "start" "center" "end" ])
     (builtins.attrNames pin.bars);
-  # Registry widgets the default layout does not place: all of them on the
-  # top bar, and the ones that may sit on a rail on the right one too.
-  extras = builtins.filter (n: !(builtins.elem n placed)) registry.names;
-  railExtras = builtins.filter (n: !(builtins.elem n registry.horizontalOnly)) extras;
+  # Registry widgets the default layout does not place: on the top bar
+  # each that renders horizontally, on the right rail each that renders
+  # vertically (a widget the registry confines to neither sits on both).
+  extras = orientation: builtins.filter (n: !(builtins.elem n placed)) registry.placeable.${orientation};
+  # Every placement the registry permits, as the geometry probe names it:
+  # "<edge> <widget>".
+  placements = lib.concatMap
+    (edge: map (n: "${edge} ${n}") registry.placeable.${registry.edgeOrientation edge})
+    [ "top" "bottom" "left" "right" ];
 
   fixture = lib.recursiveUpdate pin {
     # One mount every host has and one no host has: the mounts cell comes
@@ -93,8 +98,8 @@ let
       };
     };
     bars = {
-      top.layout.center = pin.bars.top.layout.center ++ extras ++ [ "custom/smoke" "custom/gauge" ];
-      right.layout.center = pin.bars.right.layout.center ++ railExtras
+      top.layout.center = pin.bars.top.layout.center ++ extras "horizontal" ++ [ "custom/smoke" "custom/gauge" ];
+      right.layout.center = pin.bars.right.layout.center ++ extras "vertical"
         ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" ];
     };
   };
@@ -448,12 +453,22 @@ pkgs.runCommand "vogix-desktop-smoke"
   kill -0 $QSPID 2>/dev/null && echo SCANLINES-ALIVE >> $R
   ipc scanlines-notify-count notify count
   stop
-  # Geometry run, on the shipped default desktop.json: the probe exits on
-  # its own with its verdict; the timeout only bounds a probe that never
-  # completes.
+  # Geometry run, on the shipped default desktop.json's bar and font
+  # sizes, with a player on the bus so the media cell shows and is
+  # measured: the probe exits on its own with its verdict; the timeout
+  # only bounds a probe that never completes.
   install -m 644 $pinJson $XDG_STATE_HOME/vogix/desktop.json
+  mpv --no-config --really-quiet --idle=no --loop=inf --ao=null --vo=null \
+    --script=${pkgs.mpvScripts.mpris}/share/mpv/scripts/mpris.so \
+    av://lavfi:sine=frequency=440 > $TMPDIR/mpv-geometry.log 2>&1 &
+  MPVPID=$!
+  for _ in $(seq 50); do
+    [ "$(playerctl status 2>/dev/null)" = Playing ] && break
+    sleep 0.1
+  done
   timeout 60 ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
   echo "GEOMETRY-EXIT $?" >> $R
+  kill $MPVPID 2>/dev/null
   cp $TMPDIR/desktop.json $XDG_STATE_HOME/vogix/desktop.json
 
   # State run, with the scanline texture on: the window title, the mode
@@ -593,15 +608,16 @@ pkgs.runCommand "vogix-desktop-smoke"
   r SCANLINES-ALIVE
   r 'scanlines-notify-count 2'
   # A canvas instrument never lays out collapsed nor resizes when audio
-  # arrives, and the default layout fits its bars: the probe's verdict
-  # over every registry widget on both bar axes and every default cell,
-  # with the oscilloscope measured and each bar's cells fitted.
+  # arrives, and every placement the registry permits fits its bar: the
+  # probe's verdict, with a FIT line for each of those placements (a
+  # widget this sandbox gives nothing to show is named as not measured),
+  # the oscilloscope measured and the media cell shown.
   r 'GEOMETRY-EXIT 0'
-  grep -q 'GEOMETRY bottom oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
-  for edge in top bottom left right; do
-    grep -q "FIT $edge " $TMPDIR/qs-geometry.log
+  for placement in ${lib.escapeShellArgs placements}; do
+    grep -qF "FIT $placement " $TMPDIR/qs-geometry.log || { echo "no FIT line for $placement"; exit 1; }
   done
-  grep -q 'FIT bottom oscilloscope ' $TMPDIR/qs-geometry.log
+  grep -q 'GEOMETRY bottom oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
+  grep -q 'FIT bottom media [0-9]' $TMPDIR/qs-geometry.log
   # The window title from hyprctl; the mode label from input.json, then
   # the bare mode once input.json cannot be read; the texture on both
   # restored cards.

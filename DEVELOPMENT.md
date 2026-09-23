@@ -404,12 +404,16 @@ The shell is the QML tree in `desktop/` (see
   `property BarAxis axis` to receive the bar's context, and hold any data
   source through a `Lease` on `axis.live`), give it an entry in
   `desktop/Bar/widgets/registry.json` (its name, its component, and
-  `"horizontalOnly": true` when it reads only horizontally), and list it in
-  `docs/desktop.md`. The registry is the only list of widget names: the shell
-  resolves names through it, the layout options and the home-manager
-  assertion are typed from it, and `vogix desktop check` compiles it in.
-  `desktop-smoke` places every registry widget and its geometry probe measures
-  each one, so a new widget is loaded and measured without editing the check.
+  `"orientation": "horizontal"` or `"vertical"` when it renders on one bar
+  orientation only), and list it in `docs/desktop.md`. The registry is the
+  only list of widget names: the shell resolves names through it, the layout
+  options are typed from it per bar orientation, and `vogix desktop check`
+  compiles it in. `desktop-smoke` places every registry widget, and its
+  geometry probe lays each one out on every bar edge the registry lets it sit
+  on: a widget that overflows a bar it is allowed on fails the check until its
+  `orientation` says so, or it fits. A new widget is loaded and measured
+  without editing the check (one the sandbox gives nothing to show, such as a
+  battery cell, is named in the probe's output as not measured).
 - **A new verb**: add the subcommand in `src/cli.rs`, its relay in
   `src/commands/desktop.rs` (an `IpcCall` through the `Shell` seam, with a
   case in the `relayed_verbs` table its tests drive), the IPC function in

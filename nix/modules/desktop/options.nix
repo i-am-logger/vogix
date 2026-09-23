@@ -30,10 +30,18 @@ let
     };
   });
 
-  # A layout entry: a name from the shell's widget registry, or
-  # `custom/<name>` for a custom cell.
+  # A layout entry on a bar of one orientation: a name from the shell's
+  # widget registry that renders on that orientation, or `custom/<name>`
+  # for a custom cell. A widget the registry confines to the other
+  # orientation is not of this type, so the option rejects it.
   registry = import ./registry.nix;
-  widgetNames = types.listOf (types.either (types.enum registry.names) (types.strMatching registry.customPattern));
+  widgetNames = orientation:
+    let
+      placeable = types.enum registry.placeable.${orientation};
+    in
+    types.listOf (types.either
+      (placeable // { description = "widget that renders on a ${orientation} bar (${placeable.description})"; })
+      (types.strMatching registry.customPattern));
 
   # A launcher menu entry. `action` is a shell command; `submenu` nests one
   # level; `when` guards visibility (entry shown
@@ -211,8 +219,8 @@ in
         # are start/center/end along the bar's axis (start = left on a
         # horizontal bar, top on a vertical one). The names a section takes
         # are the shell's widget registry (desktop/Bar/widgets/
-        # registry.json); the ones it marks horizontal-only are rejected
-        # on left/right by an assertion in the home-manager module.
+        # registry.json), less the ones it confines to the other bar
+        # orientation.
         # `custom/<name>` places a `custom` cell.
         bars = lib.genAttrs barEdges (edge: {
           enable = mkOption {
@@ -227,17 +235,17 @@ in
           };
           layout = {
             start = mkOption {
-              type = widgetNames;
+              type = widgetNames (registry.edgeOrientation edge);
               default = defaults.bars.${edge}.layout.start;
               description = "Widgets in the ${edge} bar's start section, in order.";
             };
             center = mkOption {
-              type = widgetNames;
+              type = widgetNames (registry.edgeOrientation edge);
               default = defaults.bars.${edge}.layout.center;
               description = "Widgets in the ${edge} bar's center section, in order.";
             };
             end = mkOption {
-              type = widgetNames;
+              type = widgetNames (registry.edgeOrientation edge);
               default = defaults.bars.${edge}.layout.end;
               description = "Widgets in the ${edge} bar's end section, in order.";
             };

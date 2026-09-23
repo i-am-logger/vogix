@@ -335,12 +335,41 @@ struct WidgetRegistry {
 struct RegisteredWidget {
     /// The component in desktop/Bar/widgets that renders the name (the
     /// registry tests hold it to an existing file; the check itself needs
-    /// only the name and the flag).
+    /// only the name and its orientation).
     #[cfg_attr(not(test), expect(dead_code, reason = "read by the registry tests"))]
     component: String,
-    /// Reads only horizontally, so never renders on a vertical bar.
+    /// The one bar orientation the widget renders on; absent, it renders
+    /// on both.
     #[serde(default)]
-    horizontal_only: bool,
+    orientation: Option<Orientation>,
+}
+
+/// A bar's orientation: top and bottom are horizontal, left and right
+/// vertical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Orientation {
+    Horizontal,
+    Vertical,
+}
+
+impl Orientation {
+    fn of_edge(edge: &str) -> Self {
+        if edge == "left" || edge == "right" {
+            Self::Vertical
+        } else {
+            Self::Horizontal
+        }
+    }
+}
+
+impl std::fmt::Display for Orientation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Horizontal => "horizontal",
+            Self::Vertical => "vertical",
+        })
+    }
 }
 
 fn widget_registry() -> &'static WidgetRegistry {
@@ -440,15 +469,16 @@ fn check_custom_cells(doc: &Value, report: &mut CheckReport) {
 }
 
 /// The four-bar table: every named widget must be one the shell's
-/// registry knows or a `custom/<name>` cell desktop.json defines, and
-/// horizontal-only widgets may not appear on a vertical bar.
+/// registry knows or a `custom/<name>` cell desktop.json defines, and a
+/// widget the registry confines to one bar orientation may not appear on
+/// a bar of the other.
 fn check_bar_widgets(doc: &Value, report: &mut CheckReport) {
     let Some(bars) = doc.get("bars").and_then(|b| b.as_object()) else {
         return;
     };
     let custom = doc.get("custom").and_then(|c| c.as_object());
     for (edge, bar) in bars {
-        let vertical = edge == "left" || edge == "right";
+        let orientation = Orientation::of_edge(edge);
         let layout = bar.get("layout").and_then(|l| l.as_object());
         for section in ["start", "center", "end"] {
             let names = layout
@@ -468,8 +498,11 @@ fn check_bar_widgets(doc: &Value, report: &mut CheckReport) {
                         None => report.errors.push(format!(
                             "bars.{edge}.layout.{section}: unknown widget '{name}'"
                         )),
-                        Some(w) if vertical && w.horizontal_only => report.errors.push(format!(
-                            "bars.{edge}.layout.{section}: '{name}' is horizontal-only and cannot render on a vertical bar"
+                        Some(RegisteredWidget {
+                            orientation: Some(only),
+                            ..
+                        }) if *only != orientation => report.errors.push(format!(
+                            "bars.{edge}.layout.{section}: '{name}' is {only}-only and cannot render on a {orientation} bar"
                         )),
                         Some(_) => {}
                     }
@@ -1058,9 +1091,10 @@ mod tests {
         assert!(SECTION_QML.contains("widgets/CustomCell.qml"));
     }
 
-    /// Every registry entry names a component that exists, and the flag is
-    /// spelled the way the registry's readers look it up (an unknown field
-    /// fails the parse, so a misspelt flag cannot read as false).
+    /// Every registry entry names a component that exists, and its
+    /// orientation is spelled the way the registry's readers look it up (an
+    /// unknown field or value fails the parse, so a misspelt one cannot
+    /// read as "renders on both").
     #[test]
     fn the_widget_registry_names_existing_components() {
         let registry = widget_registry();
@@ -1070,8 +1104,15 @@ mod tests {
             let file = dir.join(format!("{}.qml", w.component));
             assert!(file.is_file(), "{name}: {} does not exist", file.display());
         }
-        assert!(registry.widgets["window"].horizontal_only);
-        assert!(!registry.widgets["clock"].horizontal_only);
+        assert_eq!(
+            registry.widgets["window"].orientation,
+            Some(Orientation::Horizontal)
+        );
+        assert_eq!(
+            registry.widgets["vu-rail"].orientation,
+            Some(Orientation::Vertical)
+        );
+        assert_eq!(registry.widgets["clock"].orientation, None);
     }
 
     /// Section.qml resolves every name through the registry rather than a
@@ -1081,7 +1122,7 @@ mod tests {
         const REGISTRY_QML: &str = include_str!("../../desktop/Services/WidgetRegistry.qml");
         assert!(REGISTRY_QML.contains("Qt.resolvedUrl(\"../Bar/widgets/registry.json\")"));
         assert!(SECTION_QML.contains("WidgetRegistry.widgets[name]"));
-        assert!(SECTION_QML.contains("entry.horizontalOnly"));
+        assert!(SECTION_QML.contains("entry.orientation"));
         assert!(
             !SECTION_QML.contains("case \""),
             "Section.qml carries its own widget names again"
@@ -1101,9 +1142,19 @@ mod tests {
         assert!(validate(&doc("left", "clock"), None).errors.is_empty());
         let unknown = validate(&doc("top", "clokc"), None).errors;
         assert_eq!(unknown, ["bars.top.layout.start: unknown widget 'clokc'"]);
-        let misplaced = validate(&doc("right", "window"), None).errors;
-        assert_eq!(misplaced.len(), 1, "{misplaced:#?}");
-        assert!(misplaced[0].contains("'window' is horizontal-only"));
+        assert!(validate(&doc("left", "vu-rail"), None).errors.is_empty());
+        assert_eq!(
+            validate(&doc("right", "window"), None).errors,
+            [
+                "bars.right.layout.start: 'window' is horizontal-only and cannot render on a vertical bar"
+            ]
+        );
+        assert_eq!(
+            validate(&doc("bottom", "vu-rail"), None).errors,
+            [
+                "bars.bottom.layout.start: 'vu-rail' is vertical-only and cannot render on a horizontal bar"
+            ]
+        );
     }
 
     #[test]

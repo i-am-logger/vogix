@@ -2,12 +2,13 @@ pragma ComponentBehavior: Bound
 // One bar section: the widgets desktop.json names, in order, laid along
 // the bar's axis. Names resolve through the widget registry
 // (WidgetRegistry, widgets/registry.json); `custom/<name>` places a cell
-// desktop.json defines. A name the registry lacks, a horizontal-only
-// widget on a vertical bar, or an undefined custom cell renders LOUD — a
-// magenta tile, and a warning naming why. The config is Nix-generated and
-// both the options and `vogix desktop check` reject such names, so seeing
-// one is a generator bug. The axis context is injected post-load into any
-// widget that declares `property BarAxis axis`.
+// desktop.json defines. A name the registry lacks, a widget on a bar of
+// the orientation the registry keeps it off, or an undefined custom cell
+// renders LOUD — a magenta tile, and a warning naming why. The config is
+// Nix-generated and both the options and `vogix desktop check` reject
+// such placements, so seeing one is a generator bug. The axis context is
+// injected post-load into any widget that declares `property BarAxis
+// axis`.
 import QtQuick
 import QtQuick.Layouts
 import qs.Bar.widgets
@@ -33,8 +34,9 @@ GridLayout {
         const entry = WidgetRegistry.widgets[name];
         if (entry === undefined)
             return unknown("not in the widget registry");
-        if (root.vertical && entry.horizontalOnly === true)
-            return unknown("horizontal-only, placed on a vertical bar");
+        const orientation = root.vertical ? "vertical" : "horizontal";
+        if ((entry.orientation ?? orientation) !== orientation)
+            return unknown(entry.orientation + "-only, placed on a " + orientation + " bar");
         return { source: "widgets/" + entry.component + ".qml", problem: "" };
     }
 

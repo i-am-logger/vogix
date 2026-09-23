@@ -16,8 +16,9 @@ _:
   };
 
   # The HUD: four bars on every monitor. Sections run start→end along the
-  # bar's axis. Horizontal-only widgets (window, media, weather, theme)
-  # never appear on left/right — the home-manager module asserts it.
+  # bar's axis. A widget the registry confines to one bar orientation
+  # (desktop/Bar/widgets/registry.json) appears only on bars of it — the
+  # layout options' type holds it there.
   bars = {
     top = {
       enable = true;

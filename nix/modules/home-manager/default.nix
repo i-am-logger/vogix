@@ -369,11 +369,9 @@ in
         '';
       in
       {
-        # Some widgets read horizontally (a window title, the media
-        # transport row; the registry marks them): fail the build rather
-        # than render them sideways. A
-        # `custom/<name>` placement must name a defined custom cell, and a
-        # cell's name must stay one path segment of that placement.
+        # A `custom/<name>` placement must name a defined custom cell, and a
+        # cell's name must stay one path segment of that placement. (Which
+        # bar a registry widget may sit on is the layout options' own type.)
         assertions =
           let
             barWidgets = edge:
@@ -385,18 +383,7 @@ in
             badCustomNames = builtins.filter (n: builtins.match "[A-Za-z0-9_-]+" n == null)
               (builtins.attrNames cfg.desktop.custom);
           in
-          (map
-            (edge:
-              let
-                inherit (import ../desktop/registry.nix) horizontalOnly;
-                bad = lib.intersectLists horizontalOnly (barWidgets edge);
-              in
-              {
-                assertion = bad == [ ];
-                message = "programs.vogix.desktop.bars.${edge}: ${lib.concatStringsSep ", " bad} cannot render on a vertical bar (horizontal-only widgets).";
-              })
-            [ "left" "right" ])
-          ++ [
+          [
             {
               assertion = undefinedCustom == [ ];
               message = "programs.vogix.desktop.bars: ${lib.concatMapStringsSep ", " (n: "custom/${n}") undefinedCustom} placed, but programs.vogix.desktop.custom defines no such cell.";

@@ -205,8 +205,9 @@ It fails on:
   is outside [0,1], or whose slot the current theme does not resolve
 - a bar widget missing from the shell's widget registry
   (`desktop/Bar/widgets/registry.json`), a `custom/<name>` for a cell
-  `custom` does not define, or a horizontal-only widget (window, media,
-  weather, theme) on the left or right bar
+  `custom` does not define, or a widget the registry confines to one bar
+  orientation on a bar of the other (a horizontal-only `window` on the left
+  bar, a vertical-only `vu-rail` on the top one)
 - a malformed custom cell
 - a launcher-menu `action`/`when` or a custom `command`/`onClick` with broken
   shell quoting, or one that runs `vogix` with arguments this CLI rejects

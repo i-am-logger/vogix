@@ -330,45 +330,6 @@
                 ];
               };
               rendered = hmConf.config.home.file.".local/state/vogix/desktop.json".source;
-              # Negative case: a horizontal-only widget on a vertical bar
-              # must trip the assertion (checked here at eval, since plain
-              # home-manager only surfaces assertions at activation build).
-              badConf = home-manager.lib.homeManagerConfiguration {
-                inherit pkgs;
-                modules = [
-                  self.homeManagerModules.default
-                  {
-                    home = {
-                      username = "t";
-                      homeDirectory = "/home/t";
-                      stateVersion = "24.11";
-                    };
-                    programs.vogix = {
-                      enable = true;
-                      appearance = {
-                        theme = "yoga";
-                        variant = "night";
-                        prebuiltThemes = [ "yoga" ];
-                      };
-                      desktop = {
-                        enable = true;
-                        bars.left.layout.start = [ "window" ];
-                      };
-                      enableDaemon = false;
-                    };
-                    wayland.windowManager.hyprland = {
-                      enable = true;
-                      package = null;
-                      portalPackage = null;
-                    };
-                  }
-                ];
-              };
-              # home-manager gates all of `config` behind its assertion check
-              # (any access throws the "Failed assertions" error), so the
-              # negative case is observed as eval failure — the good config
-              # above evaluating cleanly is what rules out unrelated breakage.
-              verticalRejected = !(builtins.tryEval badConf.config.home.username).success;
               # Custom cells: a defined one renders whole into desktop.json;
               # placing an undefined one, or naming one with a `/`, fails.
               customConf = desktop: home-manager.lib.homeManagerConfiguration {
@@ -408,13 +369,53 @@
               customGuarded =
                 customRejected { bars.top.layout.end = [ "custom/nope" ]; }
                 && customRejected { custom."a/b".command = "date"; };
+              registry = import ./nix/modules/desktop/registry.nix;
+              # The layout options' values, forced: a placement their type
+              # rejects fails here, as it fails every build that renders
+              # desktop.json from them.
+              layoutEvaluates = desktop:
+                (builtins.tryEval (builtins.deepSeq (customConf desktop).config.programs.vogix.desktop.bars true)).success;
               # A layout name is typed by the shell's widget registry: every
-              # registry name evaluates, a name outside it does not.
+              # name the registry lets a bar orientation place evaluates on
+              # both bars of it, and a name outside the registry does not.
               registryTyped =
-                (builtins.tryEval (customConf {
-                  bars.top.layout.center = (import ./nix/modules/desktop/registry.nix).names;
-                }).config.home.username).success
-                && customRejected { bars.top.layout.end = [ "clokc" ]; };
+                layoutEvaluates
+                  {
+                    bars = {
+                      top.layout.center = registry.placeable.horizontal;
+                      bottom.layout.center = registry.placeable.horizontal;
+                      left.layout.center = registry.placeable.vertical;
+                      right.layout.center = registry.placeable.vertical;
+                    };
+                  }
+                && !layoutEvaluates { bars.top.layout.end = [ "clokc" ]; };
+              # ... and by the bar's orientation: on every edge, a section's
+              # element type takes a registry name exactly when the
+              # registry's `orientation` for it is absent or that edge's. A
+              # rail meter on a horizontal bar, and a wide cell on a rail,
+              # fail the whole configuration.
+              orientationTyped =
+                let
+                  inherit (hmConf.options.programs.vogix.desktop.type.getSubOptions [ ]) bars;
+                  takes = edge: bars.${edge}.layout.start.type.nestedTypes.elemType.check;
+                  expected = edge: name: builtins.elem (registry.widgets.${name}.orientation or null) [ null (registry.edgeOrientation edge) ];
+                in
+                builtins.all (edge: builtins.all (name: takes edge name == expected edge name) registry.names)
+                  [ "top" "bottom" "left" "right" ]
+                && !layoutEvaluates { bars.left.layout.start = [ "window" ]; }
+                && !layoutEvaluates { bars.right.layout.center = [ "oscilloscope" ]; }
+                && !layoutEvaluates { bars.top.layout.center = [ "vu-rail" ]; };
+              # `vogix desktop check` holds a document that never went
+              # through these options to the same registry facts: a rail
+              # meter on the top bar and the oscilloscope on the right rail
+              # fail the check, and with it the build.
+              misplaced = pkgs.testers.testBuildFailure (pkgs.runCommand "vogix-desktop-misplaced"
+                { nativeBuildInputs = [ pkgs.jq self.packages.${system}.vogix ]; } ''
+                jq '.bars.top.layout.center += ["vu-rail"] | .bars.right.layout.center += ["oscilloscope"]' \
+                  ${./nix/modules/desktop/desktop-json.pin.json} > desktop.json
+                HOME=$TMPDIR vogix desktop check --config desktop.json
+                touch $out
+              '');
               unit = hmConf.config.systemd.user.services.vogix-desktop;
               # Exit status 75 is the shell's fresh-start request
               # (desktop/Services/NetworkBackend.qml); the unit must answer
@@ -428,9 +429,9 @@
               # (desktop.detailedLogs = false).
               sparseLogs = builtins.any (pkgs.lib.hasSuffix " --no-detailed-logs") (pkgs.lib.toList unit.Service.ExecStart);
             in
-            assert verticalRejected || throw "a horizontal-only widget on bars.left did not trip the vertical-bar assertion";
             assert customGuarded || throw "an undefined custom/<name> placement or a bad custom cell name did not trip its assertion";
             assert registryTyped || throw "the bar layout options do not take exactly the shell's widget registry names";
+            assert orientationTyped || throw "a bar's layout options take a widget the registry confines to the other bar orientation, or refuse one it permits";
             assert restartsOn75 || throw "vogix-desktop.service does not restart the shell on exit status 75";
             assert waitsForPipewire || throw "vogix-desktop.service lost its PipeWire ordering or QS_PIPEWIRE_IMMEDIATE_RECONNECT";
             assert sparseLogs || throw "vogix-desktop.service runs quickshell with detailed logs by default";
@@ -448,6 +449,10 @@
                 } and .bars.right.layout.end == ["custom/updates"]' ${customRendered}
               grep -F "launcher.menu.probe.action: \`vogix desktop remind add 'Reminder' 10m\` is not a valid vogix command" \
                 ${uncheckable}/testBuildFailure.log
+              grep -F "bars.top.layout.center: 'vu-rail' is vertical-only and cannot render on a horizontal bar" \
+                ${misplaced}/testBuildFailure.log
+              grep -F "bars.right.layout.center: 'oscilloscope' is horizontal-only and cannot render on a vertical bar" \
+                ${misplaced}/testBuildFailure.log
               touch $out
             '';
 
