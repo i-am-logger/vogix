@@ -7,6 +7,8 @@
 # - with nothing playing — PipeWire down or up — no tap is launched;
 # - a playback stream starts both taps and the output VU, and they stop
 #   when it ends;
+# - the shell's own taps and VU monitors never light the privacy cell's
+#   microphone flag; another program's capture stream does, until it ends;
 # - a tap that dies is relaunched;
 # - without a default sink the taps wait, and start when one appears;
 # - a hidden bar's taps, VU monitors and stat samplers stop, per edge, and
@@ -170,6 +172,18 @@ let
       pw-play --raw --format=s16 --rate=48000 --channels=2 /dev/zero >> "$TMPDIR/pipewire.log" 2>&1 &
       PLAYPID=$!
     }
+    # Polls `privacy status` every 0.5 s until it is $1, for up to $2 s.
+    await_privacy() {
+      local tries=$(( $2 * 2 )) s=""
+      while [ "$tries" -gt 0 ]; do
+        s=$(qs -p "$qml" ipc call privacy status 2>&1)
+        [ "$s" = "$1" ] && { note "ok: privacy $1"; return 0; }
+        sleep 0.5
+        tries=$(( tries - 1 ))
+      done
+      note "FAIL: privacy not '$1' within $2 s (last: $s)"
+      return 1
+    }
     running="spectrum:running scope:running vu-out:on"
     idle="spectrum:idle scope:idle vu-out:idle"
 
@@ -189,6 +203,18 @@ let
     # 2. Playback starts both taps and the output VU.
     play
     await "$running" 20
+
+    # 2b. The taps (cava, the scope's pw-record) and the peak monitors
+    # capture the output monitor, not a microphone: with all of them
+    # running the privacy cell's microphone flag stays off. Another
+    # program's capture stream turns it on, and its end turns it off.
+    await_privacy "mic:off screen:off" 5
+    pw-cat --record --raw --format=s16 --rate=48000 --channels=2 /dev/null >> "$TMPDIR/pipewire.log" 2>&1 &
+    CAPPID=$!
+    await_privacy "mic:on screen:off" 10
+    kill $CAPPID
+    wait $CAPPID
+    await_privacy "mic:off screen:off" 10
     cava1=$(pgrep -x cava) pw1=$(pgrep -x pw-record)
 
     # 3. A tap that dies comes back as a new process.
@@ -293,6 +319,6 @@ pkgs.runCommand "vogix-desktop-taps"
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 22
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 25
   touch $out
 ''
