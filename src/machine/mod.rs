@@ -12,6 +12,7 @@ pub mod config;
 pub mod notify;
 pub mod openrgb;
 pub mod palette;
+pub mod publish;
 pub mod reactor;
 pub mod status;
 pub mod types;

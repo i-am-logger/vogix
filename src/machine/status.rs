@@ -4,7 +4,7 @@
 //! Each owner rewrites it (atomically, identical bytes skipped) whenever its
 //! state changes, and sends the same state as its `STATUS=` line.
 
-use super::config::MAX_MACHINE_FILE_BYTES;
+use super::config::{MAX_MACHINE_FILE_BYTES, MachineConfig};
 use super::palette::ThemeRef;
 use super::types::{DeviceName, SchemaV1};
 use crate::fsutil::{self, WriteOutcome};
@@ -50,6 +50,17 @@ impl OwnerUnit {
 
     pub fn status_path(self) -> PathBuf {
         self.runtime_dir().join(STATUS_FILE)
+    }
+
+    /// Whether a machine config gives this owner anything to own, which is
+    /// when the NixOS module creates its unit: the OpenRGB owner for any
+    /// openrgb device, the local owner for the VT palette or any command
+    /// device.
+    pub fn is_declared_by(self, config: &MachineConfig) -> bool {
+        match self {
+            Self::Openrgb => config.openrgb_devices().next().is_some(),
+            Self::Local => config.console.enable || config.command_devices().next().is_some(),
+        }
     }
 }
 
@@ -196,10 +207,7 @@ impl StatusFile {
     pub fn problems(&self) -> Vec<String> {
         let mut problems = Vec::new();
         if self.phase == Phase::Faulted {
-            problems.push(with_detail(
-                format!("{} faulted", self.owner.unit_name()),
-                self.detail.as_deref(),
-            ));
+            problems.push(with_detail("faulted".into(), self.detail.as_deref()));
         }
         if let Some(console) = &self.console
             && console.state == SurfaceState::Error
@@ -408,10 +416,7 @@ mod tests {
 
         let mut faulted = StatusFile::new(OwnerUnit::Openrgb, Phase::Faulted);
         faulted.detail = Some("server speaks protocol 4".into());
-        assert_eq!(
-            faulted.problems(),
-            ["vogix-openrgb.service faulted: server speaks protocol 4"]
-        );
+        assert_eq!(faulted.problems(), ["faulted: server speaks protocol 4"]);
     }
 
     #[test]

@@ -389,17 +389,34 @@ vogix greeter sync   # copy the live theme into /var/lib/vogix/greeter (the SDDM
 
 ### Machine surfaces
 
+The machine owner's theme applies publish its palette to
+`/var/lib/vogix/machine/palette.json`, which the machine owner units apply to
+the LEDs, command devices and the VT palette. Check what they are doing:
+
+```bash
+vogix machine status         # the owner, the published palette, and each owner unit's state
+```
+
+`status` exits 1 when a surface is in error, an owner unit is faulted, an owner
+unit the machine config declares has no status (it is not running), or the
+published palette is rejected. An absent device (no controller matches it) is
+reported but is not an error.
+
 Check the files the machine owners read, with the loaders they use:
 
 ```bash
-vogix machine validate /etc/vogix/machine.json    # the rendered machine config
-vogix machine validate --palette /var/lib/vogix/machine/palette.json   # a published palette
+vogix machine validate       # /etc/vogix/machine.json
+vogix machine validate --palette   # the published palette, matched against the config's devices
+vogix machine validate /etc/vogix/machine.json    # a given machine config
+vogix machine validate --palette /var/lib/vogix/machine/palette.json   # a given palette
 ```
 
 Both print a summary and exit 0 when the file is accepted, and name the file
 and the reason and exit 1 when it is not. A palette is checked on the drop-zone
 terms: a regular file (not a symlink) owned by its directory's owner, at most
-64 KiB, schema 1 with no unknown fields.
+64 KiB, schema 1 with no unknown fields. `--palette` without a path reads the
+drop zone the installed machine config names and shows the colour each declared
+device resolves to.
 
 ### Modes
 

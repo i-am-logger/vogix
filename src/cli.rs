@@ -442,12 +442,19 @@ pub enum GreeterCommands {
 
 #[derive(Subcommand)]
 pub enum MachineCommands {
-    /// Check a machine config (/etc/vogix/machine.json) — or, with
-    /// --palette, a published palette.json — with the same loader the
-    /// machine owners use, and summarize it. Exits 1 when it is rejected
+    /// Show the machine owner, the published palette and each machine owner
+    /// unit's state. Exits 1 when a surface is in error, an owner unit is
+    /// faulted, an owner unit the config declares has no status, or the
+    /// published palette is rejected
+    Status,
+    /// Check a machine config — or, with --palette, a published palette.json
+    /// — with the same loader the machine owners use, and summarize it.
+    /// Exits 1 when it is rejected
     Validate {
-        /// The file to check
-        path: std::path::PathBuf,
+        /// The file to check. Default: /etc/vogix/machine.json, or with
+        /// --palette the palette.json in the drop zone that config names,
+        /// whose slots are then matched against the config's devices
+        path: Option<std::path::PathBuf>,
         /// Check a published palette.json (drop-zone rules: a regular file,
         /// not a symlink, owned by its directory's owner) instead of a
         /// machine config
@@ -967,7 +974,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Commands::Machine {
-                command: MachineCommands::Validate { ref path, palette: false }
+                command: MachineCommands::Validate { path: Some(ref path), palette: false }
             } if path == std::path::Path::new("/etc/vogix/machine.json")
         ));
         let cli = Cli::try_parse_from([
@@ -981,10 +988,39 @@ mod tests {
         assert!(matches!(
             cli.command,
             Commands::Machine {
-                command: MachineCommands::Validate { palette: true, .. }
+                command: MachineCommands::Validate {
+                    path: Some(_),
+                    palette: true
+                }
             }
         ));
-        assert!(Cli::try_parse_from(["vogix", "machine", "validate"]).is_err());
+        for (argv, palette) in [
+            (&["vogix", "machine", "validate"][..], false),
+            (&["vogix", "machine", "validate", "--palette"][..], true),
+        ] {
+            let cli = Cli::try_parse_from(argv).unwrap();
+            assert!(
+                matches!(
+                    cli.command,
+                    Commands::Machine {
+                        command: MachineCommands::Validate { path: None, palette: p }
+                    } if p == palette
+                ),
+                "{argv:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_machine_status() {
+        let cli = Cli::try_parse_from(["vogix", "machine", "status"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Status
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "machine", "status", "extra"]).is_err());
     }
 
     // ── Property: invalid subcommands fail gracefully ──

@@ -32,6 +32,7 @@ use commands::{
 use engine::{ShaderParam, VogixAction};
 use errors::Result;
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
 
 fn main() {
     // Restore default SIGPIPE handling. Rust sets SIGPIPE to SIG_IGN at startup,
@@ -229,19 +230,22 @@ fn run_with_engine(command: &Commands) -> Result<()> {
     }
 
     // Side effects first — if they fail, state is NOT persisted
-    execute_side_effects(command, &config, new_state)?;
+    let applied = execute_side_effects(command, &config, new_state)?;
 
     // Refresh deliberately produces no state change; don't pollute history.
-    if *new_state == state {
-        return Ok(());
+    if *new_state != state {
+        // Commit: push history and persist state only after side effects succeed
+        let mut hist = history::History::load()?;
+        hist.push(&state);
+        hist.save()?;
+        new_state.save()?;
+        debug!("State saved: {}", new_state.describe());
     }
 
-    // Commit: push history and persist state only after side effects succeed
-    let mut hist = history::History::load()?;
-    hist.push(&state);
-    hist.save()?;
-    new_state.save()?;
-    debug!("State saved: {}", new_state.describe());
+    // The machine surfaces follow committed state: publish only now.
+    if let Some(applied) = &applied {
+        publish_machine_palette(new_state, applied);
+    }
 
     Ok(())
 }
@@ -260,7 +264,7 @@ fn handle_theme_undo() -> Result<()> {
             // so a theme undo doesn't revert the interaction mode to a stale value.
             prev.current_mode = state.current_mode.clone();
             // Side effects first — if they fail, state is NOT persisted (same as engine flow)
-            execute_side_effects(
+            let applied = execute_side_effects(
                 &Commands::Theme {
                     command: ThemeCommands::Refresh { quiet: false },
                 },
@@ -269,6 +273,9 @@ fn handle_theme_undo() -> Result<()> {
             )?;
             prev.save()?;
             hist.save()?;
+            if let Some(applied) = &applied {
+                publish_machine_palette(&prev, applied);
+            }
             info!("Undo → {}", prev.describe());
             Ok(())
         }
@@ -290,7 +297,7 @@ fn handle_theme_redo() -> Result<()> {
             // Carry the live (daemon-owned) current_mode forward — see handle_theme_undo.
             next.current_mode = state.current_mode.clone();
             // Side effects first — if they fail, state is NOT persisted (same as engine flow)
-            execute_side_effects(
+            let applied = execute_side_effects(
                 &Commands::Theme {
                     command: ThemeCommands::Refresh { quiet: false },
                 },
@@ -299,6 +306,9 @@ fn handle_theme_redo() -> Result<()> {
             )?;
             next.save()?;
             hist.save()?;
+            if let Some(applied) = &applied {
+                publish_machine_palette(&next, applied);
+            }
             info!("Redo → {}", next.describe());
             Ok(())
         }
@@ -424,13 +434,24 @@ fn cli_to_action(
     }
 }
 
-/// Execute side effects AFTER the engine has committed a state transition.
+/// What a theme apply's side effects produced that the machine palette is
+/// built from.
+struct ThemeApply {
+    /// The theme's slot colours, as the apply hooks received them; `None`
+    /// when they could not be loaded.
+    colors: Option<HashMap<String, String>>,
+}
+
+/// Execute the side effects of the engine's state transition, before it is
+/// committed.
+/// A theme apply (`set`, `refresh`, and the undo/redo replays) returns what
+/// the machine palette is published from.
 fn execute_side_effects(
     command: &Commands,
     config: &config::Config,
     state: &state::State,
-) -> Result<()> {
-    match command {
+) -> Result<Option<ThemeApply>> {
+    let applied = match command {
         Commands::Theme {
             command: ThemeCommands::Set { quiet, .. },
         }
@@ -454,38 +475,46 @@ fn execute_side_effects(
             let reload_result = reload_dispatcher.reload_apps(config, *quiet);
 
             // Load theme colors for validation and the apply hooks
-            if let Some(theme_sources) = &config.theme_sources {
-                let variant_path = cache::paths::theme_variant_path(
-                    theme_sources,
-                    &state.current_scheme,
-                    &state.current_theme,
-                    &state.current_variant,
-                );
-                match theme::load_theme_colors(&variant_path, state.current_scheme) {
-                    Ok(colors) => {
-                        // Validate palette against praxis axioms
-                        let palette = theme::palette::build_palette(&colors, state.current_scheme);
-                        let expected = state.current_scheme.slot_count();
-                        if palette.len() < expected {
-                            warn!(
-                                "Theme palette has {} slots, expected {} for {}",
-                                palette.len(),
-                                expected,
-                                state.current_scheme
-                            );
-                        }
-                        if let Some(pol) = theme::palette::polarity(&palette) {
-                            debug!("Theme polarity: {:?}", pol);
-                        }
-                        for failure in theme::palette::validate(&palette) {
-                            warn!("Theme axiom: {}", failure);
-                        }
+            let colors = match &config.theme_sources {
+                Some(theme_sources) => {
+                    let variant_path = cache::paths::theme_variant_path(
+                        theme_sources,
+                        &state.current_scheme,
+                        &state.current_theme,
+                        &state.current_variant,
+                    );
+                    match theme::load_theme_colors(&variant_path, state.current_scheme) {
+                        Ok(colors) => {
+                            // Validate palette against praxis axioms
+                            let palette =
+                                theme::palette::build_palette(&colors, state.current_scheme);
+                            let expected = state.current_scheme.slot_count();
+                            if palette.len() < expected {
+                                warn!(
+                                    "Theme palette has {} slots, expected {} for {}",
+                                    palette.len(),
+                                    expected,
+                                    state.current_scheme
+                                );
+                            }
+                            if let Some(pol) = theme::palette::polarity(&palette) {
+                                debug!("Theme polarity: {:?}", pol);
+                            }
+                            for failure in theme::palette::validate(&palette) {
+                                warn!("Theme axiom: {}", failure);
+                            }
 
-                        reload_dispatcher.run_apply_hooks(config, &colors, *quiet);
+                            reload_dispatcher.run_apply_hooks(config, &colors, *quiet);
+                            Some(colors)
+                        }
+                        Err(e) => {
+                            warn!("Theme colors not loaded: {}", e);
+                            None
+                        }
                     }
-                    Err(e) => warn!("Theme colors not loaded: {}", e),
                 }
-            }
+                None => None,
+            };
 
             // Shader auto-apply
             if let Err(e) = commands::shader::maybe_apply_shader(config, state) {
@@ -514,6 +543,7 @@ fn execute_side_effects(
             } else {
                 info!("Applied: {}", theme_variant);
             }
+            Some(ThemeApply { colors })
         }
 
         Commands::Shader { .. } => {
@@ -521,6 +551,7 @@ fn execute_side_effects(
             if let Err(e) = commands::shader::maybe_apply_shader(config, state) {
                 warn!("Shader apply failed: {}", e);
             }
+            None
         }
 
         Commands::Mode { target } => {
@@ -535,10 +566,52 @@ fn execute_side_effects(
                 },
                 None => warn!("Hyprland not running; mode not dispatched"),
             }
+            None
         }
 
-        _ => {}
-    }
+        _ => None,
+    };
 
-    Ok(())
+    Ok(applied)
+}
+
+/// Publish the machine palette from a theme apply, once its state is
+/// committed (or, for a refresh, once its side effects ran). Publishing
+/// never fails the apply: every outcome is a log line.
+fn publish_machine_palette(state: &state::State, applied: &ThemeApply) {
+    let console_file = match state::State::state_dir() {
+        Ok(dir) => dir
+            .join("current-theme")
+            .join(machine::publish::CONSOLE_PALETTE),
+        Err(e) => {
+            warn!("Machine palette not published: {e}");
+            return;
+        }
+    };
+    let input = machine::publish::Applied {
+        scheme: state.current_scheme,
+        theme: &state.current_theme,
+        variant: &state.current_variant,
+        colors: applied.colors.as_ref(),
+        console_file: &console_file,
+    };
+    let config_path = std::path::Path::new(machine::config::MACHINE_CONFIG_PATH);
+    match machine::publish::publish(config_path, &input) {
+        Ok(machine::publish::Published::NotConfigured) => {
+            debug!(
+                "No {}: no machine palette to publish",
+                config_path.display()
+            )
+        }
+        Ok(machine::publish::Published::NotOwner { owner }) => {
+            info!("Machine surfaces follow '{owner}'; this user's theme is not published to them")
+        }
+        Ok(machine::publish::Published::Unchanged { path }) => {
+            debug!("Machine palette unchanged: {}", path.display())
+        }
+        Ok(machine::publish::Published::Written { path }) => {
+            info!("Published the machine palette: {}", path.display())
+        }
+        Err(e) => warn!("Machine palette not published: {e}"),
+    }
 }
