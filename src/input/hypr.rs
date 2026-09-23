@@ -6,6 +6,7 @@
 //! request socket — the same thing `hyprctl dispatch` does, but without spawning
 //! a process per keystroke.
 
+use std::cell::OnceCell;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -50,11 +51,15 @@ pub fn action_to_command(action: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct Hypr {
     socket: PathBuf,
-    /// The config engine behind this socket, detected once at discovery. A
+    /// The config engine behind this socket, as the instance itself stated
+    /// it. Unset while the instance has not answered: a compositor that is
+    /// still starting accepts the connection and answers later, so a missing
+    /// answer says nothing about the engine. It is asked again before each
+    /// write until it answers, and then fixed for the handle's life. A
     /// compositor restart re-enters through [`Hypr::discover`] (the callers
     /// drop the handle on a rejected write), so a provider change — e.g. the
     /// hyprlang→Lua migration flip — is picked up with the new socket.
-    provider: ConfigProvider,
+    provider: OnceCell<ConfigProvider>,
 }
 
 impl Hypr {
@@ -76,38 +81,60 @@ impl Hypr {
         Self::candidate_sockets()
             .into_iter()
             .find(|sock| Self::is_live(sock))
-            .map(|socket| {
-                let provider = Self::query_provider(&socket);
-                Self { socket, provider }
-            })
+            .map(Self::attach)
     }
 
-    /// Which config engine this handle talks to.
-    pub fn provider(&self) -> ConfigProvider {
-        self.provider
+    /// A handle on `socket`, asking the instance once which config engine it
+    /// runs. An unanswered question leaves the provider unset for the writes
+    /// to ask again ([`Self::write_provider`]).
+    fn attach(socket: PathBuf) -> Self {
+        let provider = OnceCell::new();
+        if let Some(p) = Self::query_provider(&socket) {
+            let _ = provider.set(p);
+        }
+        Self { socket, provider }
+    }
+
+    /// Which config engine this handle talks to, asking the instance if it
+    /// has not said yet. `None` while it has not answered.
+    pub fn provider(&self) -> Option<ConfigProvider> {
+        if let Some(p) = self.provider.get() {
+            return Some(*p);
+        }
+        let p = Self::query_provider(&self.socket)?;
+        Some(*self.provider.get_or_init(|| p))
+    }
+
+    /// The dialect a write must be sent in. A write in a guessed dialect is
+    /// wrong on the other engine (`keyword` under Lua is rejected; a Lua
+    /// expression under hyprlang is an unknown dispatcher), so an instance
+    /// that has not answered fails the write instead, and the caller's
+    /// re-discovery or retry asks again.
+    fn write_provider(&self) -> std::io::Result<ConfigProvider> {
+        self.provider().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "hyprland has not answered which config engine it runs (j/status); \
+                 not writing in a guessed dialect",
+            )
+        })
     }
 
     /// Ask the instance which config engine it runs (`j/status` →
-    /// `"configProvider": "lua" | "hyprlang"`). Any failure — no such endpoint
-    /// (pre-Lua Hyprland), timeout, unparseable reply — falls back to
-    /// hyprlang: on such an instance the legacy dialect is the only one that
-    /// exists, so the fallback is also the correct answer.
-    fn query_provider(socket: &Path) -> ConfigProvider {
-        let reply = (|| -> std::io::Result<String> {
-            let mut stream = UnixStream::connect(socket)?;
-            stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-            stream.set_write_timeout(Some(Duration::from_millis(200)))?;
-            stream.write_all(b"j/status")?;
-            let mut buf = String::new();
-            let _ = stream.read_to_string(&mut buf);
-            Ok(buf)
-        })();
-        match reply {
-            Ok(json) if parse_config_provider_json(&json) == Some(ConfigProvider::Lua) => {
-                ConfigProvider::Lua
-            }
-            _ => ConfigProvider::Hyprlang,
-        }
+    /// `"configProvider": "lua" | "hyprlang"`), or `None` when it gave no
+    /// complete answer (see [`provider_from_reply`]).
+    fn query_provider(socket: &Path) -> Option<ConfigProvider> {
+        let mut stream = UnixStream::connect(socket).ok()?;
+        stream
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .ok()?;
+        stream
+            .set_write_timeout(Some(Duration::from_millis(200)))
+            .ok()?;
+        stream.write_all(b"j/status").ok()?;
+        let mut buf = String::new();
+        let complete = stream.read_to_string(&mut buf).is_ok();
+        provider_from_reply(&buf, complete)
     }
 
     /// Candidate control-socket paths in priority order (see [`Self::discover`]).
@@ -172,7 +199,7 @@ impl Hypr {
     /// translation fails loudly rather than sending a guaranteed Lua syntax
     /// error.
     pub fn dispatch(&self, action: &str) -> std::io::Result<()> {
-        match self.provider {
+        match self.write_provider()? {
             ConfigProvider::Hyprlang => self.send(&action_to_command(action)),
             ConfigProvider::Lua => {
                 let expr = super::hypr_lua::action_to_lua(action).map_err(std::io::Error::other)?;
@@ -186,7 +213,7 @@ impl Hypr {
     /// Under the Lua engine `keyword` no longer exists; the same change is an
     /// incremental `eval hl.config({…})`.
     pub fn set_keyword(&self, key: &str, value: &str) -> std::io::Result<()> {
-        match self.provider {
+        match self.write_provider()? {
             ConfigProvider::Hyprlang => self.send(&format!("keyword {key} {value}")),
             ConfigProvider::Lua => {
                 self.send(&format!("eval {}", keywords_to_eval(&[(key, value)])))
@@ -202,7 +229,7 @@ impl Hypr {
         if pairs.is_empty() {
             return Ok(());
         }
-        match self.provider {
+        match self.write_provider()? {
             ConfigProvider::Hyprlang => {
                 let body = pairs
                     .iter()
@@ -322,6 +349,25 @@ fn parse_config_provider_json(json: &str) -> Option<ConfigProvider> {
         "lua" => Some(ConfigProvider::Lua),
         "hyprlang" => Some(ConfigProvider::Hyprlang),
         _ => None,
+    }
+}
+
+/// What a `j/status` reply says about the config engine. `complete` is
+/// whether the instance closed the connection after replying (Hyprland
+/// replies, then closes) rather than the read timing out.
+///
+/// - A reply naming the provider is the answer, even if the read then timed
+///   out.
+/// - A complete, non-empty reply without the field comes from an instance
+///   that predates the Lua engine ("unknown request"), which is hyprlang.
+/// - Anything else is no answer (`None`). That includes an empty reply and a
+///   timed-out read: a compositor still starting up accepts the connection
+///   and answers later.
+fn provider_from_reply(reply: &str, complete: bool) -> Option<ConfigProvider> {
+    match parse_config_provider_json(reply) {
+        Some(provider) => Some(provider),
+        None if complete && !reply.trim().is_empty() => Some(ConfigProvider::Hyprlang),
+        None => None,
     }
 }
 
@@ -445,6 +491,150 @@ mod tests {
         // A pre-Lua Hyprland answers the unknown request with no such field.
         assert_eq!(parse_config_provider_json("unknown request"), None);
         assert_eq!(parse_config_provider_json("{}"), None);
+    }
+
+    #[test]
+    fn only_an_answer_settles_the_provider() {
+        let lua = "\n{\n    \"configProvider\": \"lua\",\n    \"backend\": \"drm\"\n}\n";
+        assert_eq!(provider_from_reply(lua, true), Some(ConfigProvider::Lua));
+        // Named before the read timed out: still the answer.
+        assert_eq!(provider_from_reply(lua, false), Some(ConfigProvider::Lua));
+        assert_eq!(
+            provider_from_reply(r#"{"configProvider": "hyprlang"}"#, true),
+            Some(ConfigProvider::Hyprlang)
+        );
+        // A pre-Lua instance answers the unknown request, and closes.
+        assert_eq!(
+            provider_from_reply("unknown request", true),
+            Some(ConfigProvider::Hyprlang)
+        );
+        // No answer yet: a compositor still starting, or one that closed
+        // without a reply. Neither says which engine it runs.
+        assert_eq!(provider_from_reply("", false), None);
+        assert_eq!(provider_from_reply("", true), None);
+        assert_eq!(provider_from_reply("\n{\n", false), None);
+    }
+
+    /// A stand-in control socket. `status` answers the n-th (0-based)
+    /// `j/status` request, or `None` to leave it unanswered (the connection
+    /// stays open, as a compositor's does while it is busy). Every other
+    /// request is recorded and answered `ok`.
+    struct FakeInstance {
+        dir: PathBuf,
+        socket: PathBuf,
+        writes: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl FakeInstance {
+        fn start(name: &str, status: fn(usize) -> Option<(Duration, &'static str)>) -> Self {
+            use std::os::unix::net::UnixListener;
+            use std::sync::{Arc, Mutex};
+            // Short: a Unix socket path is at most 107 bytes, and TMPDIR can
+            // be long under a dev shell.
+            let dir = std::env::temp_dir().join(format!(".vh-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("fake instance dir");
+            let socket = dir.join(".socket.sock");
+            let listener = UnixListener::bind(&socket).expect("bind fake instance");
+            let writes = Arc::new(Mutex::new(Vec::new()));
+            let seen = writes.clone();
+            let queries = Arc::new(Mutex::new(0usize));
+            std::thread::spawn(move || {
+                for conn in listener.incoming() {
+                    let Ok(mut conn) = conn else { return };
+                    let (seen, queries) = (seen.clone(), queries.clone());
+                    std::thread::spawn(move || {
+                        let mut buf = [0u8; 4096];
+                        let n = conn.read(&mut buf).unwrap_or(0);
+                        let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                        if request.is_empty() {
+                            return;
+                        }
+                        if request != "j/status" {
+                            seen.lock().unwrap().push(request);
+                            let _ = conn.write_all(b"ok");
+                            return;
+                        }
+                        let nth = {
+                            let mut q = queries.lock().unwrap();
+                            *q += 1;
+                            *q - 1
+                        };
+                        match status(nth) {
+                            Some((delay, reply)) => {
+                                std::thread::sleep(delay);
+                                let _ = conn.write_all(reply.as_bytes());
+                            }
+                            None => std::thread::sleep(Duration::from_secs(2)),
+                        }
+                    });
+                }
+            });
+            Self {
+                dir,
+                socket,
+                writes,
+            }
+        }
+
+        fn writes(&self) -> Vec<String> {
+            self.writes.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for FakeInstance {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    const LUA_STATUS: &str = r#"{"configProvider": "lua", "backend": "drm"}"#;
+
+    #[test]
+    fn a_late_status_answer_is_asked_again_not_guessed() {
+        // The first j/status is answered after the handle stopped waiting,
+        // as a compositor still starting its session does; later ones at
+        // once. The write must go out in the Lua dialect.
+        let fake = FakeInstance::start("late", |nth| {
+            Some(if nth == 0 {
+                (Duration::from_millis(600), LUA_STATUS)
+            } else {
+                (Duration::ZERO, LUA_STATUS)
+            })
+        });
+        let hypr = Hypr::attach(fake.socket.clone());
+        hypr.set_keyword("general:col.active_border", "rgb(6c5d52)")
+            .expect("the write goes out once the instance answers");
+        assert_eq!(hypr.provider(), Some(ConfigProvider::Lua));
+        assert_eq!(
+            fake.writes(),
+            vec![r#"eval hl.config({ ["general.col.active_border"] = "rgb(6c5d52)" })"#]
+        );
+    }
+
+    #[test]
+    fn an_instance_that_never_answers_gets_no_write() {
+        let fake = FakeInstance::start("silent", |_| None);
+        let hypr = Hypr::attach(fake.socket.clone());
+        let err = hypr
+            .set_keyword("general:col.active_border", "rgb(6c5d52)")
+            .expect_err("no dialect, no write");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(hypr.dispatch("workspace, 2").is_err());
+        assert_eq!(hypr.provider(), None);
+        assert!(fake.writes().is_empty(), "wrote {:?}", fake.writes());
+    }
+
+    #[test]
+    fn a_pre_lua_instance_is_hyprlang() {
+        let fake = FakeInstance::start("prelua", |_| Some((Duration::ZERO, "unknown request")));
+        let hypr = Hypr::attach(fake.socket.clone());
+        hypr.set_keyword("general:col.active_border", "rgb(6c5d52)")
+            .expect("hyprlang write");
+        assert_eq!(
+            fake.writes(),
+            vec!["keyword general:col.active_border rgb(6c5d52)"]
+        );
     }
 
     #[test]

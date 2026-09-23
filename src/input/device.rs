@@ -34,7 +34,8 @@ use pr4xis_domains::applied::hmi::input::keybindings::{
     Key, KeyCombo, Modifier as PxMod, RemapSet,
 };
 use pr4xis_domains::applied::hmi::input::modes::ModeId;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 /// The name of our virtual re-emit device. We must never grab it back, or the
 /// engine would capture its own emitted events; the device filter
@@ -866,7 +867,6 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     use crate::errors::VogixError;
     use evdev::{AttributeSet, EventType, InputEvent};
     use std::os::fd::AsRawFd;
-    use std::time::Instant;
 
     // Single-instance guard FIRST, before any grab. Two engines grabbing the
     // same keyboards at once collide and drop keystrokes (observed when a
@@ -1020,7 +1020,13 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
     // arm_semantic seeds the theme palette the border slots resolve through
     // (and re-reads it after a theme switch, mtime-guarded, off the key path).
     router.arm_semantic();
-    execute(&mut vdev, &mut hypr, router.paint_current_mode());
+    let mut undelivered = Undelivered::default();
+    execute(
+        &mut vdev,
+        &mut hypr,
+        &mut undelivered,
+        router.paint_current_mode(),
+    );
     publish_mode(&router.mode());
 
     // Lock state for the desktop shell: seeded from the grabbed keyboards'
@@ -1129,8 +1135,9 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         });
 
         // Wake at the EARLIEST of: the caps tap-hold deadline, the sticky-idle
-        // auto-revert deadline, and a 2s retry while the active-window stream is
-        // down. -1 = block indefinitely when nothing is pending.
+        // auto-revert deadline, a 2s retry while the active-window stream is
+        // down, and the retry of an owed keyword write. -1 = block indefinitely
+        // when nothing is pending.
         let now_ms = ms(&start);
         let mut timeout: i32 = -1;
         for dl in [router.deadline(), router.idle_deadline()]
@@ -1143,6 +1150,9 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         if win_events.is_none() {
             timeout = if timeout < 0 { 2000 } else { timeout.min(2000) };
         }
+        if let Some(t) = undelivered.wait_ms(Instant::now()) {
+            timeout = if timeout < 0 { t } else { timeout.min(t) };
+        }
         let n = unsafe { libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, timeout) };
         if n < 0 {
             let err = std::io::Error::last_os_error();
@@ -1150,6 +1160,12 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                 continue;
             }
             return Err(VogixError::Config(format!("poll: {err}")));
+        }
+        // Owed keyword writes go out again once due, whatever woke the loop,
+        // so steady typing cannot starve them.
+        if undelivered.due(Instant::now()) {
+            let owed = undelivered.take();
+            execute(&mut vdev, &mut hypr, &mut undelivered, owed);
         }
         if n == 0 {
             // Lazily (re)connect the active-window stream when the compositor
@@ -1177,8 +1193,13 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                 }
             }
             let now = ms(&start);
-            execute(&mut vdev, &mut hypr, router.on_timeout(now));
-            execute(&mut vdev, &mut hypr, router.on_idle(now));
+            execute(
+                &mut vdev,
+                &mut hypr,
+                &mut undelivered,
+                router.on_timeout(now),
+            );
+            execute(&mut vdev, &mut hypr, &mut undelivered, router.on_idle(now));
             health::write_snapshot(&build_snapshot(&slots, &held, &router.mode(), now, pid));
             last_snapshot_ms = now;
             continue;
@@ -1186,7 +1207,12 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
         // Shutdown signalled → release any modifier we hold, then exit cleanly.
         if have_shutdown_pipe && pollfds[shutdown_idx].revents & libc::POLLIN != 0 {
             log::info!("vogix input: shutdown signal received — releasing held modifiers");
-            execute(&mut vdev, &mut hypr, router.release_held_modifiers());
+            execute(
+                &mut vdev,
+                &mut hypr,
+                &mut undelivered,
+                router.release_held_modifiers(),
+            );
             // With the engine gone there is no mode: publish the root so the
             // bar's Mode widget doesn't show a mode nothing will ever exit.
             publish_mode(&router.root_mode());
@@ -1249,7 +1275,12 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                     // so the departed device's still-down keys aren't reported
                     // stuck forever by `vogix input doctor`.
                     held.retain_held(&survivor_held, ms(&start));
-                    execute(&mut vdev, &mut hypr, router.resync_held_keys(survivor_held));
+                    execute(
+                        &mut vdev,
+                        &mut hypr,
+                        &mut undelivered,
+                        router.resync_held_keys(survivor_held),
+                    );
                 }
                 continue;
             }
@@ -1284,7 +1315,7 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                 }
                 let fx = router.on_key(code, value, now);
                 g.counters.record(&fx, now);
-                execute(&mut vdev, &mut hypr, fx);
+                execute(&mut vdev, &mut hypr, &mut undelivered, fx);
             }
         }
         // Hotplug: a new /dev/input node appeared → grab it if it's a text
@@ -1427,9 +1458,63 @@ fn build_snapshot(
     }
 }
 
+/// Keyword writes the compositor has not taken: the latest value per key. A
+/// border colour is state, not an event. A write can be lost because the
+/// compositor has not answered yet (a session still starting) or is
+/// restarting. It is sent again every [`Self::RETRY`] until it lands,
+/// unless a newer write for the same key lands first.
+#[derive(Debug, Default)]
+struct Undelivered {
+    keywords: BTreeMap<String, String>,
+    /// When the last write attempt failed; `None` while nothing is owed.
+    failed_at: Option<Instant>,
+}
+
+impl Undelivered {
+    const RETRY: Duration = Duration::from_secs(2);
+
+    fn failed(&mut self, key: String, value: String, now: Instant) {
+        self.keywords.insert(key, value);
+        self.failed_at = Some(now);
+    }
+
+    /// A write for `key` landed, so any older value owed for it is stale.
+    fn delivered(&mut self, key: &str) {
+        self.keywords.remove(key);
+        if self.keywords.is_empty() {
+            self.failed_at = None;
+        }
+    }
+
+    fn due(&self, now: Instant) -> bool {
+        self.failed_at
+            .is_some_and(|at| now.saturating_duration_since(at) >= Self::RETRY)
+    }
+
+    /// Milliseconds until the next retry, for the poll timeout.
+    fn wait_ms(&self, now: Instant) -> Option<i32> {
+        self.failed_at.map(|at| {
+            Self::RETRY
+                .saturating_sub(now.saturating_duration_since(at))
+                .as_millis() as i32
+        })
+    }
+
+    /// Everything owed, as effects to execute again; a write that fails
+    /// again is owed again.
+    fn take(&mut self) -> Vec<Effect> {
+        self.failed_at = None;
+        std::mem::take(&mut self.keywords)
+            .into_iter()
+            .map(|(key, value)| Effect::Keyword { key, value })
+            .collect()
+    }
+}
+
 fn execute(
     vdev: &mut evdev::uinput::VirtualDevice,
     hypr: &mut Option<super::hypr::Hypr>,
+    undelivered: &mut Undelivered,
     fx: Vec<Effect>,
 ) {
     use evdev::{EventType, InputEvent};
@@ -1466,21 +1551,30 @@ fn execute(
                 }
             }
             Effect::Keyword { key, value } => {
-                // Mode-visibility surface (border colour). Same best-effort,
-                // self-healing path as Dispatch — a missing compositor just means
-                // the border isn't repainted; it never blocks the engine.
+                // Mode-visibility surface (border colour). The same self-healing
+                // path as Dispatch, and it never blocks the engine; a write that
+                // does not land is owed, and `Undelivered` sends it again.
                 if hypr.is_none() {
                     *hypr = super::hypr::Hypr::discover();
                 }
                 match hypr.as_ref() {
                     Some(h) => match h.set_keyword(&key, &value) {
-                        Ok(()) => log::debug!("keyword ok: '{key} {value}'"),
+                        Ok(()) => {
+                            log::debug!("keyword ok: '{key} {value}'");
+                            undelivered.delivered(&key);
+                        }
                         Err(e) => {
-                            log::warn!("keyword '{key} {value}' failed: {e}; will re-discover");
+                            log::warn!(
+                                "keyword '{key} {value}' failed: {e}; will re-discover and retry"
+                            );
                             *hypr = None;
+                            undelivered.failed(key, value, Instant::now());
                         }
                     },
-                    None => log::warn!("keyword '{key} {value}' dropped: no compositor socket"),
+                    None => {
+                        log::warn!("keyword '{key} {value}' owed: no compositor socket yet");
+                        undelivered.failed(key, value, Instant::now());
+                    }
                 }
             }
             Effect::ModeChanged(mode) => {
@@ -1835,6 +1929,75 @@ mod tests {
             !fx.iter()
                 .any(|e| matches!(e, Effect::Keyword { key, .. } if key.contains("border"))),
             "an unresolvable slot must not paint, got {fx:?}"
+        );
+    }
+
+    #[test]
+    fn an_owed_keyword_is_retried_until_it_lands() {
+        let t0 = Instant::now();
+        let mut owed = Undelivered::default();
+        assert_eq!(owed.wait_ms(t0), None, "nothing owed, no wake");
+        owed.failed("general:col.active_border".into(), "rgb(6c5d52)".into(), t0);
+        assert!(!owed.due(t0));
+        assert_eq!(owed.wait_ms(t0), Some(2000));
+        let later = t0 + Undelivered::RETRY;
+        assert!(owed.due(later));
+        assert_eq!(owed.wait_ms(later), Some(0));
+        assert_eq!(
+            owed.take(),
+            vec![Effect::Keyword {
+                key: "general:col.active_border".into(),
+                value: "rgb(6c5d52)".into(),
+            }]
+        );
+        assert!(
+            !owed.due(later + Undelivered::RETRY),
+            "taken, not owed twice"
+        );
+        // It failed again: owed again, a full interval from the new failure.
+        owed.failed(
+            "general:col.active_border".into(),
+            "rgb(6c5d52)".into(),
+            later,
+        );
+        assert!(!owed.due(later));
+        owed.delivered("general:col.active_border");
+        assert_eq!(owed.wait_ms(later), None, "landed, nothing owed");
+    }
+
+    #[test]
+    fn a_newer_value_supersedes_an_owed_one() {
+        let t0 = Instant::now();
+        let mut owed = Undelivered::default();
+        owed.failed("general:col.active_border".into(), "rgb(111111)".into(), t0);
+        owed.failed(
+            "general:col.inactive_border".into(),
+            "rgb(313244)".into(),
+            t0,
+        );
+        // The next mode's colour failed too: only it is owed for the key.
+        owed.failed("general:col.active_border".into(), "rgb(222222)".into(), t0);
+        let fx = owed.take();
+        assert_eq!(fx.len(), 2);
+        assert!(fx.contains(&Effect::Keyword {
+            key: "general:col.active_border".into(),
+            value: "rgb(222222)".into(),
+        }));
+        // A newer write that landed makes the owed value for its key stale,
+        // and the other key stays owed.
+        owed.failed("general:col.active_border".into(), "rgb(111111)".into(), t0);
+        owed.failed(
+            "general:col.inactive_border".into(),
+            "rgb(313244)".into(),
+            t0,
+        );
+        owed.delivered("general:col.active_border");
+        assert_eq!(
+            owed.take(),
+            vec![Effect::Keyword {
+                key: "general:col.inactive_border".into(),
+                value: "rgb(313244)".into(),
+            }]
         );
     }
 

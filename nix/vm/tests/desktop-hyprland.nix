@@ -16,6 +16,10 @@
 #
 # Gates, one function each (a failing gate is reported and the run goes
 # on, so one boot names every failure):
+#   mode-border         the input engine paints the mode's border colour
+#                       at session start, read back from the compositor
+#   mode-border-stall   an engine started while the compositor has not
+#                       answered yet still paints it, once it answers
 #   network-backend     NetworkManager starting after the shell restarts
 #                       the shell exactly once, cleanly, and it attaches
 #   keyboard-active     the LANG cell lights the keyboard's active layout by
@@ -380,6 +384,67 @@ pkgs.testers.nixosTest {
         d.wait_shell()
 
 
+    GET_BORDER = "hyprctl -j getoption general:col.active_border"
+
+
+    def border_colour(reply: str) -> str:
+        """The first colour of a getoption reply for the active border, AARRGGBB."""
+        try:
+            doc = json.loads(reply)
+        except ValueError:
+            return ""
+        # A gradient reads as "<colour>... <angle>deg"; the Lua provider
+        # reports it as `gradient`, hyprlang as a `custom` type.
+        return (str(doc.get("gradient") or doc.get("custom") or "").split() or [""])[0].lower()
+
+
+    def mode_border(d: Desktop) -> str:
+        """The border the engine owes the current mode: its slot in input.json's
+        modeColors, resolved through the current theme's semantic palette."""
+        state = "~/.local/state/vogix"
+        mode = d.run(f"cat {state}/current-mode").strip()
+        slot = json.loads(d.run(f"cat {state}/input.json"))["modeColors"][mode]["slot"]
+        theme = json.loads(d.run(f"cat {state}/current-theme/vogix-desktop/theme.json"))
+        return "ff" + theme["semantic"][slot].lstrip("#").lower()
+
+
+    def set_active_border(d: Desktop, rgb: str) -> None:
+        if d.dialect == "lua":
+            d.run("hyprctl eval " + shlex.quote(f'hl.config({{ ["general.col.active_border"] = "rgb({rgb})" }})'))
+        else:
+            d.run("hyprctl keyword general:col.active_border " + shlex.quote(f"rgb({rgb})"))
+
+
+    def gate_mode_border(d: Desktop) -> None:
+        # Hyprland's own default is white and the config sets no border, so
+        # the mode's colour is there only if the engine's write landed.
+        want = mode_border(d)
+        d.poll(GET_BORDER, lambda o: border_colour(o) == want, 5,
+               f"the active border is the mode's colour {want}")
+
+
+    def gate_mode_border_stall(d: Desktop) -> None:
+        # The engine starts while the compositor accepts connections but has
+        # not answered them yet, as at session start. It must not write in a
+        # guessed dialect, and the border must be painted once it answers.
+        want, sentinel = mode_border(d), "123456"
+        set_active_border(d, sentinel)
+        d.poll(GET_BORDER, lambda o: border_colour(o) == "ff" + sentinel, 5, "the sentinel border is set")
+        pid = json.loads(d.run("hyprctl instances -j"))[0]["pid"]
+        running = "journalctl --user -u vogix-input -o cat | grep -c 'vogix input running'"
+        started = int(d.attempt(running).strip() or "0")
+        d.run("systemctl --user stop vogix-input")
+        d.m.succeed(f"kill -STOP {pid}")
+        try:
+            d.run("systemctl --user start vogix-input")
+            d.poll(running, lambda o: o.isdigit() and int(o) > started, 15,
+                   "the engine started while the compositor was stopped")
+        finally:
+            d.m.succeed(f"kill -CONT {pid}")
+        d.poll(GET_BORDER, lambda o: border_colour(o) == want, 10,
+               f"the mode's colour {want} is painted once the compositor answers")
+
+
     def set_layouts(d: Desktop, layouts: str) -> None:
         if d.dialect == "lua":
             d.run("hyprctl eval " + shlex.quote(f'hl.config({{ input = {{ kb_layout = "{layouts}" }} }})'))
@@ -575,6 +640,7 @@ pkgs.testers.nixosTest {
 
     lua_desktop = Desktop(lua, "lua")
     lua_desktop.boot()
+    gate("lua mode-border", lambda: gate_mode_border(lua_desktop))
     gate("lua network-backend", lambda: gate_network_backend(lua_desktop))
     gate("lua keyboard-active", lambda: gate_keyboard_active(lua_desktop))
     gate("lua keyboard-reload", lambda: gate_keyboard_reload(lua_desktop))
@@ -587,13 +653,16 @@ pkgs.testers.nixosTest {
     gate("lua taps-pipewire", lambda: gate_taps_pipewire(lua_desktop))
     gate("lua lock-sampling", lambda: gate_lock_sampling(lua_desktop))
     gate("lua network-lock", lambda: gate_network_lock(lua_desktop))
+    gate("lua mode-border-stall", lambda: gate_mode_border_stall(lua_desktop))
     lua.shutdown()
 
     hyprlang_desktop = Desktop(hyprlang, "hyprlang")
     hyprlang_desktop.boot()
+    gate("hyprlang mode-border", lambda: gate_mode_border(hyprlang_desktop))
     gate("hyprlang keyboard-active", lambda: gate_keyboard_active(hyprlang_desktop))
     gate("hyprlang keyboard-reload", lambda: gate_keyboard_reload(hyprlang_desktop))
     gate("hyprlang workspace-click", lambda: gate_workspace_click(hyprlang_desktop))
+    gate("hyprlang mode-border-stall", lambda: gate_mode_border_stall(hyprlang_desktop))
     hyprlang.shutdown()
 
     if failures:

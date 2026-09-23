@@ -22,8 +22,9 @@ pub fn handle_status() -> Result<()> {
     // here makes a mismatch diagnosable at a glance during the Lua migration.
     if let Some(hypr) = crate::input::hypr::Hypr::discover() {
         let engine = match hypr.provider() {
-            crate::input::hypr::ConfigProvider::Hyprlang => "hyprlang",
-            crate::input::hypr::ConfigProvider::Lua => "lua",
+            Some(crate::input::hypr::ConfigProvider::Hyprlang) => "hyprlang",
+            Some(crate::input::hypr::ConfigProvider::Lua) => "lua",
+            None => "unknown (the compositor has not answered j/status)",
         };
         println!("compositor config engine: {engine}");
     }
