@@ -11,7 +11,7 @@
 use crate::cli::GreeterCommands;
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
-use std::os::unix::fs::PermissionsExt;
+use crate::fsutil;
 use std::path::Path;
 
 const DROP_ZONE: &str = "/var/lib/vogix/greeter";
@@ -48,45 +48,13 @@ fn sync() -> Result<()> {
     Ok(())
 }
 
-/// Atomic, symlink-proof write into the shared drop zone: the zone is
-/// group-writable (any vogix user syncs), so a plain write/copy at the
-/// destination could FOLLOW a pre-planted symlink and clobber an arbitrary
-/// file. Create a fresh temp file (O_EXCL — never follows anything) and
-/// rename() it over the target: rename replaces a symlink itself rather
-/// than dereferencing it, and readers see old-or-new, never a torn file.
+/// Write into the shared drop zone with the symlink-proof atomic writer. The
+/// zone is group-writable (any vogix user syncs, setgid directory), so the
+/// file is left group-writable (0664) for the next user's sync to replace.
 fn write_group_writable(dest: &Path, contents: &[u8]) -> Result<()> {
-    use std::io::Write;
-
-    let dir = dest
-        .parent()
-        .ok_or_else(|| VogixError::Config(format!("{} has no parent directory", dest.display())))?;
-    let tmp = dir.join(format!(
-        ".{}.tmp.{}",
-        dest.file_name().and_then(|n| n.to_str()).unwrap_or("sync"),
-        std::process::id()
-    ));
-    let err =
-        |e: std::io::Error| VogixError::Config(format!("cannot write {}: {e}", dest.display()));
-
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
-        .map_err(err)?;
-    let result = f
-        .write_all(contents)
-        .and_then(|()| {
-            // The zone is shared by every vogix user (setgid dir); leave the
-            // file group-writable so the NEXT user's sync can replace it.
-            f.set_permissions(std::fs::Permissions::from_mode(0o664))
-        })
-        .and_then(|()| f.sync_all())
-        .map_err(err)
-        .and_then(|()| std::fs::rename(&tmp, dest).map_err(err));
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    result
+    fsutil::write_atomic(dest, contents, 0o664)
+        .map(|_| ())
+        .map_err(|e| VogixError::Config(format!("cannot write {}: {e}", dest.display())))
 }
 
 fn current_background(state: &Path) -> Option<String> {

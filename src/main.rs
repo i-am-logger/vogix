@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod engine;
 mod errors;
+mod fsutil;
 mod history;
 mod input;
 mod reload;
