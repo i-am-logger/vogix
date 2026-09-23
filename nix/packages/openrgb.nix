@@ -6,7 +6,14 @@
 # - the NetworkServer controller-queue, profile-manager and client-send
 #   threads wait on their queues with a predicate, so a write queued while
 #   a thread is about to sleep is not stranded;
-# - StopServer stops the profile-manager thread before it deletes clients.
+# - a NetworkServer client is reference-counted: its queued requests and
+#   every server signal being sent to it hold it, and its listen thread
+#   deletes it only once none do, so a reply, ACK or signal never reaches a
+#   deleted client or a reused socket descriptor;
+# - signals go to a referenced copy of the client list, sent with no list
+#   lock held;
+# - StopServer stops the profile-manager thread and shuts every client's
+#   socket down, and the listen threads delete the clients.
 #
 # `pin` is the only place the source is named; moving to a newer branch
 # head is one edit of rev and hash. The build is the caller's openrgb
@@ -23,8 +30,8 @@
 
 let
   pin = {
-    rev = "4e447dd3c055f73e81c627a4aa2fbd4af5b67fb5";
-    hash = "sha256-YIZKcpiAhM1v6heo4Vre/LXkzlgbi7iupuByZAiZppU=";
+    rev = "d1192da8bcab710dba38ff88fd98cf7841b16125";
+    hash = "sha256-goRGIYy5JjmPdyhM6jVHqGQ+eemvefc4UhxZdPHWYKE=";
   };
 
   # A plugin wrapper execs this same binary, so it keeps the readiness.
