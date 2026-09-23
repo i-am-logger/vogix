@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "protocol": 5,
+  "serverMax": 6,
+  "serverName": null,
+  "controllers": [
+    {
+      "index": 0,
+      "devId": 0,
+      "displayName": "ENE DRAM Wire",
+      "file": "controller-00.bin",
+      "bytes": 450
+    },
+    {
+      "index": 1,
+      "devId": 1,
+      "displayName": "ENE DRAM",
+      "file": "controller-01.bin",
+      "bytes": 587
+    },
+    {
+      "index": 2,
+      "devId": 2,
+      "displayName": "ENE DRAM",
+      "file": "controller-02.bin",
+      "bytes": 587
+    },
+    {
+      "index": 3,
+      "devId": 3,
+      "displayName": "Debug Keyboard",
+      "file": "controller-03.bin",
+      "bytes": 4717
+    },
+    {
+      "index": 4,
+      "devId": 4,
+      "displayName": "Govee ",
+      "file": "controller-04.bin",
+      "bytes": 360
+    }
+  ]
+}

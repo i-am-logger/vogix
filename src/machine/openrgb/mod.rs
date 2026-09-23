@@ -28,4 +28,6 @@ pub mod session;
 pub mod wire;
 
 #[cfg(test)]
+mod captured;
+#[cfg(test)]
 mod testkit;
