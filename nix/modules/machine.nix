@@ -49,6 +49,8 @@ let
   commandDevices = filterAttrs (_: device: device.provider ? command) devices;
 
   surfaces = cfg.enable && machine.owner != null;
+  # vogix-machine writes the kernel's VT palette, and nothing else does.
+  ownsConsole = surfaces && machine.console.enable;
   localOwner = surfaces && (machine.console.enable || commandDevices != { });
   openrgbOwner = surfaces && openrgbDevices != [ ];
   ownerUnits =
@@ -131,7 +133,12 @@ in
         boot and on every published change. It compares first and never
         switches VTs; a VT in graphics mode shows the palette when it next
         draws text. console.colors, from the owner's configured theme,
-        stays the palette of early boot.
+        stays the palette of early boot. While it does, no user's theme
+        apply writes the VT palette: every home-manager user's console app
+        renders its palette without reloading it, and the chvt and
+        setvtrgb wrappers are not installed. Off (or with no owner), the
+        console app's reload loads the applying user's palette on the text
+        VT they run on, through those wrappers.
       '';
     };
 
@@ -196,6 +203,39 @@ in
       # An OpenRGB device needs the SDK server.
       vogix.openrgb.enable = mkIf (openrgbDevices != [ ]) (mkDefault true);
     }
+
+    # Every home-manager user learns whether vogix-machine owns the VT
+    # palette; their console app is then not reloaded. The module is shared
+    # whatever the answer, which is read lazily: the default owner is found
+    # among the users' own configurations.
+    (mkIf cfg.enable (lib.optionalAttrs (options ? home-manager) {
+      home-manager.sharedModules = [
+        ({ options, ... }: {
+          config = lib.optionalAttrs (options ? programs.vogix.machineConsole) {
+            programs.vogix.machineConsole = ownsConsole;
+          };
+        })
+      ];
+    }))
+
+    # Where vogix-machine does not own the VT palette, the console app's
+    # reload is the runtime VT re-theme, through these wrappers.
+    (mkIf (cfg.enable && !ownsConsole) {
+      security.wrappers = {
+        chvt = {
+          owner = "root";
+          group = "root";
+          capabilities = "cap_sys_tty_config+ep";
+          source = "${pkgs.kbd}/bin/chvt";
+        };
+        setvtrgb = {
+          owner = "root";
+          group = "root";
+          capabilities = "cap_sys_tty_config+ep";
+          source = "${pkgs.kbd}/bin/setvtrgb";
+        };
+      };
+    })
 
     (mkIf surfaces {
       environment.etc."vogix/machine.json".text = builtins.toJSON machineJson;

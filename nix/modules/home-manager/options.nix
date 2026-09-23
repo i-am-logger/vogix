@@ -206,6 +206,20 @@ in
       '';
     };
 
+    machineConsole = mkOption {
+      type = types.bool;
+      default = false;
+      internal = true;
+      description = ''
+        Whether the host's vogix-machine.service owns the kernel's VT
+        palette, following the machine owner's published palette. The vogix
+        NixOS module sets it for every user when vogix.machine.owner is set
+        and vogix.machine.console.enable is on. The console app is then not
+        reloaded, so no user's theme apply writes the VT palette; its
+        console/palette is still rendered, and the owner's CLI publishes it.
+      '';
+    };
+
     themeApply = mkOption {
       type = types.attrsOf types.str;
       default = { };

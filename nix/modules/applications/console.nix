@@ -19,6 +19,11 @@ in
   # Don't include metadata header (setvtrgb expects exactly 16 hex lines)
   includeHeader = false;
 
+  # The reload writes the kernel's VT palette. Where the host's
+  # vogix-machine owns that palette (programs.vogix.machineConsole), the app
+  # is not reloaded; its palette file is still rendered.
+  reloadWritesVtPalette = true;
+
   # Reload method: use setvtrgb command to load palette and switch VTs
   reloadMethod = {
     method = "command";

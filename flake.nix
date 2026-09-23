@@ -847,7 +847,8 @@
           # The NixOS machine module at evaluation (nix/checks/machine-contract.nix):
           # machine.json for the dram-rgb, keychron-k2-he and kraken-elite
           # modules, the owner units and when each exists, the machine
-          # owner's default and the console colours following it, and the
+          # owner's default and the console colours following it, which
+          # user's console app reloads the VT palette, and the
           # declarations the module refuses (an OpenRGB server without
           # readiness, a command outside the store, a non-vogix owner, the
           # removed vogix.hardware.themeApply, ill-typed devices).

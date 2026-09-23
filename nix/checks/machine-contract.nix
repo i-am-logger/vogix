@@ -272,6 +272,30 @@ let
     && !(noOwner.systemd.services ? vogix-machine)
     && noneFail noOwner;
 
+  # The VT palette has one writer. Where vogix-machine owns it, every vogix
+  # user's config.toml has the console app without a reload, and there are
+  # no setvtrgb and chvt wrappers; with the console off or no owner, the
+  # console app reloads with setvtrgb through the wrappers.
+  consoleTable = config: user:
+    let
+      parts = lib.splitString ''[apps."console"]'' config.home-manager.users.${user}.home.activation.vogixSetup.data;
+    in
+    if builtins.length parts == 2 then builtins.head (lib.splitString "\n[" (lib.last parts)) else "";
+  leftToMachine = config: user:
+    lib.hasInfix ''reload_method = "none"'' (consoleTable config user)
+    && !(lib.hasInfix "reload_command" (consoleTable config user));
+  reloadsVt = config: user:
+    lib.hasInfix ''reload_method = "command"'' (consoleTable config user)
+    && lib.hasInfix "setvtrgb" (consoleTable config user);
+  hasVtWrappers = config: config.security.wrappers ? setvtrgb && config.security.wrappers ? chvt;
+  hasNoVtWrapper = config: !(config.security.wrappers ? setvtrgb) && !(config.security.wrappers ? chvt);
+  consoleOff = (host { users = { a = "desert"; t = "yoga"; }; extra.vogix.machine.console.enable = false; }).config;
+  ownerOff = (host { users = { a = "desert"; t = "yoga"; }; extra.vogix.machine.owner = null; }).config;
+  vtPaletteOwned =
+    builtins.all (leftToMachine cfg) [ "a" "t" ]
+    && hasNoVtWrapper cfg
+    && builtins.all (config: builtins.all (reloadsVt config) [ "a" "t" ] && hasVtWrappers config) [ consoleOff ownerOff ];
+
   # What the module refuses.
   commandDevice = argv: { vogix.hardware.devices.probe = { slot = "base01"; provider.command = { inherit argv; }; }; };
   refused = {
@@ -326,6 +350,7 @@ let
     assert ownerFollowed || throw "the machine owner default or the owner-following console colours are wrong";
     assert endpointFollows || throw "vogix.openrgb.client.maxProtocol or the OpenRGB server port does not reach machine.json";
     assert unitsFollowDevices || throw "the machine owner units do not exist exactly when they have something to own";
+    assert vtPaletteOwned || throw "a user's console app writes the VT palette vogix-machine owns, or cannot where vogix-machine does not own it";
     assert refusedFailures == [ ] || throw "the machine module accepted declarations it must refuse: ${toString refusedFailures}";
     assert acceptedFailures == [ ] || throw "the machine module refused declarations it must accept: ${toString acceptedFailures}";
     pkgs.runCommand "vogix-machine-contract" { } ''

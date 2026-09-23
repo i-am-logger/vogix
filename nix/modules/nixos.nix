@@ -2,9 +2,10 @@
 #
 # Provides system-level integration:
 # - Console colors (TTY) from the machine owner's vogix theme
-# - Security wrappers for console theme switching (chvt, setvtrgb)
 # - Machine surfaces (machine.nix): the VT palette, LEDs and command devices
-#   following the machine owner's published palette
+#   following the machine owner's published palette; where the VT palette
+#   is not vogix-machine's, the chvt and setvtrgb wrappers the console app
+#   reloads with
 # - Hardware modules (Kraken Elite, Keychron, DRAM RGB, OpenRGB)
 # - The desktop shell's system side (lock PAM service, lock handler, and
 #   the UPower / power-profiles D-Bus services while a user runs the shell)
@@ -137,22 +138,6 @@ in
       # `loginctl lock-session` and suspend reach the shell's lock through
       # the vogix-lock.service unit (declared in the home-manager module).
       services.systemd-lock-handler.enable = true;
-
-      # Add security wrappers for console theme switching
-      security.wrappers = {
-        chvt = {
-          owner = "root";
-          group = "root";
-          capabilities = "cap_sys_tty_config+ep";
-          source = "${pkgs.kbd}/bin/chvt";
-        };
-        setvtrgb = {
-          owner = "root";
-          group = "root";
-          capabilities = "cap_sys_tty_config+ep";
-          source = "${pkgs.kbd}/bin/setvtrgb";
-        };
-      };
     }
 
     # The system D-Bus services the desktop shell reads: UPower (battery

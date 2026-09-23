@@ -186,7 +186,10 @@ let
         appModule = appGenerators.${app} or null;
         configFileName = if appModule != null then appModule.configFile or "config" else "config";
         themeFileName = if appModule != null then appModule.themeFile or null else null;
-        reloadMethod = if appModule != null then appModule.reloadMethod or null else null;
+        reloadMethod =
+          if appModule == null then null
+          else if cfg.machineConsole && appModule.reloadWritesVtPalette or false then { method = "none"; }
+          else appModule.reloadMethod or null;
         dataDir = if appModule != null then appModule.dataDir or null else null;
         # Full path to the config file symlink
         configPath =

@@ -93,10 +93,12 @@ option `vogix.hardware.devices`, applied by the machine owner units (see
 
 The `console` generator's `console/palette` is the palette the machine owner
 publishes for the VT: the machine owner unit `vogix-machine` writes it into the
-kernel for every VT. The generator's reload command acts only when the CLI runs
-on a text VT: it loads the palette into the kernel (`setvtrgb`) and switches
-away and back, so the VT it runs on shows the new colours at once. Its ANSI
-mapping is `templates/<scheme>/console.palette.vogix`, read as data by
+kernel for every VT. While it does (a machine owner and
+`vogix.machine.console.enable`), the console app has no reload, so no user's
+theme apply writes the VT palette. Otherwise its reload command acts only when
+the CLI runs on a text VT: it loads the palette into the kernel (`setvtrgb`)
+and switches away and back, so the VT it runs on shows the new colours at once.
+Its ANSI mapping is `templates/<scheme>/console.palette.vogix`, read as data by
 `nix/modules/lib/console-palette.nix`: the runtime renders the same template,
 and the NixOS module builds `console.colors` from the same lines.
 
