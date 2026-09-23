@@ -274,8 +274,15 @@ impl Session {
         self.drain_mirror();
     }
 
-    /// Replace the targets, keyed by device name, and reconcile.
+    /// Replace the targets, keyed by device name, and reconcile. A controller
+    /// whose target changed reports [`ApplyState::Pending`] until the new
+    /// target is applied, also while a resync defers that apply.
     pub fn set_targets(&mut self, targets: BTreeMap<String, Target>) {
+        for assignment in self.assignments.values_mut() {
+            if self.targets.get(&assignment.label) != targets.get(&assignment.label) {
+                assignment.state = None;
+            }
+        }
         self.targets = targets;
         self.presence
             .retain(|label, _| self.targets.contains_key(label));

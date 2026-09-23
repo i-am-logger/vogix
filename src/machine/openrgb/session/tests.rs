@@ -687,6 +687,56 @@ fn an_active_mode_skips_updatemode_unless_forced_and_leds_are_always_sent() {
 }
 
 #[test]
+fn a_changed_target_is_pending_until_applied_even_while_a_resync_defers_it() {
+    let mut session = v6_ready(
+        &[(7, testkit::ene_dram(ProtocolVersion::V6, 2))],
+        targets(&[("dram-rgb", target("ENE DRAM", "Static", RED))]),
+    );
+    sent(&mut session);
+    feed(&mut session, &[server::ok(7, PacketId::UpdateLeds)]);
+    sent(&mut session);
+    read_back(&mut session, 7, &applied_dram(RED));
+    assert_eq!(session.device_reports()[0].state, DeviceState::Confirmed);
+
+    // A list change starts a resync; the new colour cannot be applied
+    // before it commits, and the report must not keep RED's confirmation.
+    feed(&mut session, &[server::device_list_updated()]);
+    assert_eq!(
+        ids(&sent(&mut session)),
+        [(PacketId::RequestControllerCount, 0)]
+    );
+    session.set_targets(targets(&[("dram-rgb", target("ENE DRAM", "Static", BLUE))]));
+    assert!(
+        sent(&mut session).is_empty(),
+        "the apply waits for the commit"
+    );
+    let report = &session.device_reports()[0];
+    assert_eq!(report.state, DeviceState::Pending);
+    assert_eq!(report.controllers[0].state, ApplyState::Pending);
+
+    feed(
+        &mut session,
+        &[
+            server::count_v6(&[7]),
+            server::ok(0, PacketId::RequestControllerCount),
+        ],
+    );
+    assert_eq!(ids(&sent(&mut session)), [(PacketId::UpdateLeds, 7)]);
+    feed(&mut session, &[server::ok(7, PacketId::UpdateLeds)]);
+    sent(&mut session);
+    read_back(&mut session, 7, &applied_dram(BLUE));
+    assert_eq!(session.device_reports()[0].state, DeviceState::Confirmed);
+
+    // During the next resync, the same target again keeps its confirmation.
+    feed(&mut session, &[server::device_list_updated()]);
+    session.set_targets(targets(&[("dram-rgb", target("ENE DRAM", "Static", BLUE))]));
+    assert_eq!(
+        session.device_reports()[0].controllers[0].state,
+        ApplyState::Confirmed
+    );
+}
+
+#[test]
 fn a_mode_specific_apply_reads_back_after_the_mode_ack() {
     let mut session = v6_ready(
         &[(9, testkit::govee(ProtocolVersion::V6))],
