@@ -38,6 +38,8 @@
 # - a theme change and five rapid ones land as the last; identical bytes are
 #   not republished; a user without state applies their configured theme on
 #   their first refresh; another user's apply does not reach the machine;
+# - with history.json immutable, a theme set whose commit fails publishes
+#   nothing;
 # - a hot-added hidraw node of the probe's ids re-runs it; SIGHUP and
 #   vogix-machine-resume.service make both owners re-apply;
 # - `vogix machine inspect` lists the controllers and captures their raw
@@ -375,6 +377,36 @@ pkgs.testers.nixosTest {
         assert "Machine surfaces follow 'vogix'" in out, out
         assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
         assert published()["theme"]["name"] == "nordic"
+        settled("nordic")
+
+    # rename() onto an immutable history.json fails with EPERM, so a
+    # command's side effects run and its history write fails.
+    STATE = "/home/vogix/.local/state/vogix"
+    HISTORY = f"{STATE}/history.json"
+    CHATTR = "${pkgs.e2fsprogs}/bin/chattr"
+
+
+    def state_theme():
+        state = machine.succeed(f"cat {STATE}/state.toml")
+        return next(line.split('"')[1] for line in state.splitlines() if line.startswith("current_theme = "))
+
+
+    def fails_at_history(command):
+        rc, out = machine.execute(f"su - vogix -c '{command} 2>&1'")
+        print(out)
+        assert rc != 0, (command, rc, out)
+
+
+    with subtest("a theme set whose commit fails publishes nothing"):
+        inode = machine.succeed(f"stat -c %i {PALETTE}").strip()
+        machine.succeed(f"{CHATTR} +i {HISTORY}")
+        fails_at_history("vogix theme set -t desert")
+        assert state_theme() == "nordic", state_theme()
+        assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
+        assert published()["theme"]["name"] == "nordic", published()
+        machine.succeed(f"{CHATTR} -i {HISTORY} && rm -f {HISTORY}.tmp")
+        machine.succeed("su - vogix -c 'vogix theme refresh'")
+        assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
         settled("nordic")
 
     with subtest("a hidraw node of the probe's USB ids re-runs it"):
