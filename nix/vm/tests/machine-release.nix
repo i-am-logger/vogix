@@ -291,6 +291,8 @@ pkgs.testers.nixosTest {
         # owner's configured theme; nordic, published next, differs from it.
         assert build_console == sysfs_palette(), (build_console, sysfs_palette())
         assert build_console != theme_console("nordic-night"), build_console
+        # console.colors is the palette the owner's theme package ships.
+        assert build_console == theme_console("yoga-night"), build_console
         active_vt = machine.succeed("cat /sys/class/tty/tty0/active").strip()
         out = machine.succeed("vogix machine status")
         print(out)

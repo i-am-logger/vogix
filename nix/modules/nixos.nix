@@ -11,9 +11,7 @@
 #
 # NOTE: User configuration (config.toml, app configs) is handled by
 # the home-manager module at ~/.local/state/vogix/
-{ vogix16Themes
-, liquidctlSrc
-}:
+{ liquidctlSrc }:
 
 { config
 , lib
@@ -34,11 +32,6 @@ let
 
   cfg = config.vogix;
 
-  # Import vogix16 themes for console colors
-  vogix16Import = import ./vogix16-import.nix {
-    inherit lib vogix16Themes;
-  };
-
   # The home-manager users with programs.vogix.enable.
   homeManagerUsers = import ./lib/vogix-users.nix { inherit config options lib; };
 
@@ -55,27 +48,12 @@ let
     then config.home-manager.users.${owner}.programs.vogix
     else null;
 
-  # Helper: Convert theme colors (base16 format) to console.colors array
-  mkConsoleColors =
-    themeColors:
-    map (c: builtins.replaceStrings [ "#" ] [ "" ] c) [
-      themeColors.base00 # black (ANSI 0)
-      themeColors.base08 # red (ANSI 1)
-      themeColors.base0B # green (ANSI 2)
-      themeColors.base0A # yellow (ANSI 3)
-      themeColors.base0D # blue (ANSI 4)
-      themeColors.base0E # magenta (ANSI 5)
-      themeColors.base0C # cyan (ANSI 6)
-      themeColors.base05 # white (ANSI 7)
-      themeColors.base03 # bright black (ANSI 8)
-      themeColors.base08 # bright red (ANSI 9)
-      themeColors.base0B # bright green (ANSI 10)
-      themeColors.base0A # bright yellow (ANSI 11)
-      themeColors.base0D # bright blue (ANSI 12)
-      themeColors.base0E # bright magenta (ANSI 13)
-      themeColors.base0C # bright cyan (ANSI 14)
-      themeColors.base07 # bright white (ANSI 15)
-    ];
+  # console.colors takes "rrggbb"; the console palette is "#rrggbb".
+  toConsoleColors = map (lib.removePrefix "#");
+
+  # The console palette mapping (templates/<scheme>/console.palette.vogix),
+  # the one the owner's theme packages and the runtime render use.
+  consolePalette = import ./lib/console-palette.nix { inherit lib; };
 in
 {
   imports = [
@@ -193,31 +171,12 @@ in
       );
     })
 
-    # Auto-detect console colors from home-manager if enabled
-    (
-      let
-        selectedThemeName = if hmVogixCfg != null then hmVogixCfg.appearance.theme else null;
-        selectedPolarity = if hmVogixCfg != null then hmVogixCfg.appearance.variant else null;
-
-        loadedTheme =
-          if selectedThemeName != null && vogix16Import.themes ? ${selectedThemeName} then
-            vogix16Import.themes.${selectedThemeName}
-          else
-            null;
-
-        selectedVariantName =
-          if loadedTheme != null then loadedTheme.defaults.${selectedPolarity} or selectedPolarity else null;
-
-        themeColors =
-          if loadedTheme != null && selectedVariantName != null then
-            loadedTheme.variants.${selectedVariantName}.colors or null
-          else
-            null;
-      in
-      mkIf (cfg.autoFromHomeManager && cfg.theme == null && cfg.variant == null && themeColors != null) {
-        console.colors = mkConsoleColors themeColors;
-      }
-    )
+    # The machine owner's console palette, the one their theme package ships
+    # and vogix-machine applies once a palette is published: the VT colours
+    # from early boot on.
+    (mkIf (cfg.autoFromHomeManager && cfg.theme == null && cfg.variant == null && hmVogixCfg != null) {
+      console.colors = toConsoleColors hmVogixCfg.consolePalette;
+    })
 
     # Explicit theme/variant configuration for console
     (mkIf (cfg.theme != null && cfg.variant != null) {
@@ -227,7 +186,7 @@ in
           variantName = loadedTheme.defaults.${cfg.variant} or cfg.variant;
           themeColors = loadedTheme.variants.${variantName}.colors;
         in
-        mkConsoleColors themeColors;
+        toConsoleColors (consolePalette.palette (loadedTheme.scheme or "vogix16") themeColors);
     })
 
     # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)

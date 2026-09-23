@@ -82,7 +82,6 @@
     {
       # NixOS module (console colors, security wrappers, hardware)
       nixosModules.default = import ./nix/modules/nixos.nix {
-        vogix16Themes = inputs.vogix16-themes;
         liquidctlSrc = inputs.liquidctl-src;
       };
 
@@ -234,6 +233,14 @@
           };
           machineContract = import ./nix/checks/machine-contract.nix {
             inherit pkgs nixpkgs home-manager self unfreePackageNames;
+            # The theme sources the home-manager module renders into
+            # config.toml's [theme_sources].
+            schemeSources = {
+              vogix16 = inputs.vogix16-themes;
+              base16 = "${inputs.tinted-schemes}/base16";
+              base24 = "${inputs.tinted-schemes}/base24";
+              ansi16 = "${inputs.iterm2-schemes}/ansi16";
+            };
           };
         in
         {
@@ -848,6 +855,13 @@
           # that rendered machine.json and a palette the owner's CLI
           # published, and refuses each with a field the schema lacks.
           machine-contract-validate = machineContract.validate;
+
+          # The VT palette the system is built with is the one the runtime
+          # applies, for a theme of each scheme: the machine owner's
+          # console.colors, their theme package's console/palette and
+          # `vogix theme refresh`'s render of templates/<scheme>/console.palette.vogix
+          # (nix/checks/machine-contract.nix).
+          console-palette = machineContract.console;
 
           # The machine surfaces as the NixOS module declares them, fed by
           # the declared owner's real CLI: vogix-machine (the kernel VT

@@ -49,6 +49,9 @@ let
   # Import vogix16-specific utilities
   vogix16Lib = import ../lib/vogix16.nix { inherit lib; };
 
+  # The console palette mapping (templates/<scheme>/console.palette.vogix)
+  consolePaletteLib = import ../lib/console-palette.nix { inherit lib; };
+
   # Import color utilities
   colorLib = import ../lib/colors.nix { inherit lib; };
   inherit (colorLib) hexToLuminance;
@@ -518,6 +521,9 @@ in
 
       # Expose semantic color API for application modules
       programs.vogix.colors = vogix16Lib.semanticColors selectedColors;
+
+      # The selected variant's VT palette, for the NixOS console.colors
+      programs.vogix.consolePalette = consolePaletteLib.palette (selectedTheme.scheme or "vogix16") selectedColors;
 
       # Greeter runtime follow: ride the existing post-switch apply hook
       # (warn-only by design — a broken greeter sync never fails a theme

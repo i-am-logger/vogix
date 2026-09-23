@@ -1,4 +1,4 @@
-# The machine surfaces' NixOS side, checked two ways:
+# The machine surfaces' NixOS side, checked three ways:
 #
 # - `contract`, at evaluation (it throws while the check is instantiated,
 #   so `nix flake check --no-build` runs it): what the module renders into
@@ -7,35 +7,44 @@
 #   refuses;
 # - `validate`, a build: `vogix machine validate`, the loader the owner
 #   units run, accepts the rendered machine.json and a palette the owner's
-#   CLI published, and rejects either one with a field its schema lacks.
+#   CLI published, and rejects either one with a field its schema lacks;
+# - `console`, a build: for a theme of each scheme, the machine owner's
+#   evaluated console.colors, the console/palette their theme package ships
+#   and `vogix theme refresh`'s render of the scheme's console template are
+#   one palette.
 { pkgs
 , nixpkgs
 , home-manager
 , self
 , unfreePackageNames
+, schemeSources
 }:
 
 let
   inherit (pkgs) lib;
   inherit (pkgs.stdenv.hostPlatform) system;
 
-  hmUser = name: theme: {
-    imports = [ self.homeManagerModules.default ];
-    home = {
-      username = name;
-      homeDirectory = "/home/${name}";
-      stateVersion = "24.11";
-    };
-    programs.vogix = {
-      enable = true;
-      appearance = {
-        inherit theme;
-        variant = "night";
-        prebuiltThemes = [ theme ];
+  # `selection` is a theme name, at its night variant, or { theme; variant; }.
+  hmUser = name: selection:
+    let
+      inherit (if builtins.isString selection then { theme = selection; variant = "night"; } else selection) theme variant;
+    in
+    {
+      imports = [ self.homeManagerModules.default ];
+      home = {
+        username = name;
+        homeDirectory = "/home/${name}";
+        stateVersion = "24.11";
       };
-      enableDaemon = false;
+      programs.vogix = {
+        enable = true;
+        appearance = {
+          inherit theme variant;
+          prebuiltThemes = [ theme ];
+        };
+        enableDaemon = false;
+      };
     };
-  };
 
   # A host with home-manager, whose vogix users are `users` (name → theme).
   host = { users ? { t = "yoga"; }, extra ? { } }:
@@ -299,6 +308,90 @@ let
 
   inherit (self.packages.${system}) vogix;
 
+  # The VT palette the system is built with is the one the runtime applies,
+  # for a theme of each scheme: the machine owner's evaluated console.colors
+  # equals the console/palette their theme package ships (what the owner's
+  # CLI publishes and vogix-machine applies) and the runtime's own render of
+  # templates/<scheme>/console.palette.vogix by `vogix theme refresh`.
+  consoleThemes = {
+    vogix16 = { theme = "nordic"; variant = "night"; };
+    base16 = { theme = "dracula"; variant = "default"; };
+    base24 = { theme = "argonaut"; variant = "default"; };
+    ansi16 = { theme = "aardvark-blue"; variant = "default"; };
+  };
+  consoleCase = scheme: selection:
+    let
+      inherit (selection) theme variant;
+      hostConfig = (host { users.t = selection; }).config;
+      themeVariant = "${theme}-${variant}";
+      # config.toml's parts the refresh reads: the default theme, its
+      # scheme, the templates and the theme sources.
+      manifest = pkgs.writeText "vogix-${themeVariant}-config.toml" ''
+        [default]
+        theme = "${theme}"
+        variant = "${variant}"
+
+        [templates]
+        path = "${../../templates}"
+        hash = "console-palette"
+
+        [theme_sources]
+        ${lib.concatStrings (lib.mapAttrsToList (name: path: "${name} = \"${path}\"\n") schemeSources)}
+        [themes."${theme}"]
+        scheme = "${scheme}"
+        variants = ["${variant}"]
+      '';
+    in
+    ''
+      check ${scheme} ${theme} ${variant} \
+        '${lib.concatStringsSep " " hostConfig.console.colors}' \
+        ${hostConfig.home-manager.users.t.xdg.dataFile."vogix/themes/${themeVariant}".source} \
+        ${manifest}
+    '';
+
+  console = pkgs.runCommand "vogix-console-palette" { nativeBuildInputs = [ vogix ]; } ''
+    # scheme, theme, variant, console.colors, theme package, config.toml
+    check() {
+      scheme=$1 theme=$2 variant=$3 colors=$4 package=$5 manifest=$6
+      name="$scheme $theme-$variant"
+      home="$PWD/$theme-$variant"
+      mkdir -p "$home/.local/state/vogix" "$home/.local/share/vogix/themes" "$home/.cache"
+      cp "$manifest" "$home/.local/state/vogix/config.toml"
+      ln -s "$package" "$home/.local/share/vogix/themes/$theme-$variant"
+      HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_DATA_HOME="$home/.local/share" \
+        XDG_CACHE_HOME="$home/.cache" vogix theme refresh --quiet
+
+      # shellcheck disable=SC2086 # one word per colour
+      printf '#%s\n' $colors | tr A-F a-f > "$home/evaluated"
+      grep -v '^$' "$package/console/palette" | tr A-F a-f > "$home/package"
+      grep -v '^$' "$home/.cache/vogix/themes/console-palette/$scheme/$theme/$variant/console.palette" \
+        | tr A-F a-f > "$home/rendered"
+      test "$(wc -l < "$home/package")" -eq 16
+      agree=1
+      if ! diff -u "$home/package" "$home/evaluated"; then
+        echo "$name: console.colors is not the theme package's console/palette"
+        agree=0
+      fi
+      if ! diff -u "$home/package" "$home/rendered"; then
+        echo "$name: the runtime render of the console template is not the theme package's console/palette"
+        agree=0
+      fi
+      if [ "$agree" = 1 ]; then
+        echo "$name: console.colors, the theme package and the runtime render agree"
+      else
+        failed="$failed $scheme"
+      fi
+    }
+    failed=""
+
+    ${lib.concatStrings (lib.mapAttrsToList consoleCase consoleThemes)}
+    if [ -n "$failed" ]; then
+      echo "the console palettes disagree for:$failed"
+      exit 1
+    fi
+    touch $out
+  '';
+
   validate = pkgs.runCommand "vogix-machine-contract-validate"
     {
       nativeBuildInputs = [ vogix pkgs.jq ];
@@ -339,5 +432,5 @@ let
   '';
 in
 {
-  inherit contract validate;
+  inherit contract validate console;
 }

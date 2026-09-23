@@ -373,8 +373,11 @@ machine owner's vogix CLI (theme set / undo / redo / refresh)
   defaults to the first home-manager user, by name, with
   `programs.vogix.enable`, and must be one of those users. The build-time
   console colours, the Plymouth theme and the greeter's palette follow the
-  same user. The machine surfaces exist when `vogix.enable` is set and the
-  owner is not `null`; declaring devices without both fails evaluation.
+  same user; the console colours are the owner's theme package's
+  `console/palette`, so the VT keeps its colours when `vogix-machine` applies
+  the published palette of the same theme. The machine surfaces exist when
+  `vogix.enable` is set and the owner is not `null`; declaring devices
+  without both fails evaluation.
 - The drop zone `/var/lib/vogix/machine` belongs to the machine owner (mode
   0755), so only the owner can publish into it. Once a theme change is
   committed (for a refresh, once its side effects ran), the owner's CLI

@@ -195,6 +195,17 @@ in
       description = "Semantic color API for the selected theme and variant. Used by application modules.";
     };
 
+    consolePalette = mkOption {
+      type = types.listOf types.str;
+      internal = true;
+      readOnly = true;
+      description = ''
+        The selected theme variant's 16 VT colours, ANSI 0-15, as "#rrggbb":
+        the console palette its theme package ships. The NixOS module sets the
+        machine owner's console.colors from it.
+      '';
+    };
+
     themeApply = mkOption {
       type = types.attrsOf types.str;
       default = { };
