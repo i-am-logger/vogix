@@ -180,6 +180,7 @@ pub struct Frame {
 impl Frame {
     /// Header plus payload bytes. Fails only when the payload exceeds
     /// [`MAX_PACKET_SIZE`].
+    #[cfg(test)]
     pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         let size = payload_size(self.payload.len())?;
         let header = Header {
@@ -282,6 +283,7 @@ impl Framer {
     }
 
     /// Bytes held that do not yet form a complete packet.
+    #[cfg(test)]
     pub fn buffered(&self) -> usize {
         self.buf.len() - self.start
     }
@@ -591,6 +593,7 @@ impl Writer {
         self.buf.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
     }
@@ -636,6 +639,7 @@ impl Writer {
     }
 
     /// A string with a `u32` length prefix that counts the terminating NUL.
+    #[cfg(test)]
     pub fn string_u32(
         &mut self,
         text: &WireString,

@@ -12,8 +12,6 @@ pub mod console;
 pub mod exit;
 pub mod local;
 pub mod notify;
-// The OpenRGB SDK client has no caller in this build.
-#[allow(dead_code)]
 pub mod openrgb;
 pub mod palette;
 pub mod publish;

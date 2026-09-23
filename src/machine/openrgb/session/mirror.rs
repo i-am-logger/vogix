@@ -451,6 +451,7 @@ impl Mirror {
     }
 
     /// Every pending event, oldest first.
+    #[cfg(test)]
     pub fn drain_events(&mut self) -> Vec<MirrorEvent> {
         self.events.drain(..).collect()
     }
@@ -498,6 +499,7 @@ impl Mirror {
     }
 
     /// The current list generation, bumped by every `DEVICE_LIST_UPDATED`.
+    #[cfg(test)]
     pub fn generation(&self) -> u64 {
         self.generation
     }

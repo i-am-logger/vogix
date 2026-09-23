@@ -207,9 +207,6 @@ impl UnblockSignals for Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interest {
     Read,
-    // Waiting for writability serves the OpenRGB client, which has no
-    // caller in this build.
-    #[allow(dead_code)]
     ReadWrite,
 }
 

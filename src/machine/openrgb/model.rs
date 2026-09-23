@@ -143,10 +143,14 @@ macro_rules! wire_flags {
             /// Every named flag, for `Debug`.
             const NAMED: &'static [(&'static str, Self)] = &[$((stringify!($flag), Self::$flag)),*];
 
+            // Every flag type gets the same operations, and each uses the ones its
+            // wire field needs, so each of these four is unused by some type.
+            #[allow(dead_code)]
             pub const fn from_bits(bits: u32) -> Self {
                 Self(bits)
             }
 
+            #[allow(dead_code)]
             pub const fn bits(self) -> u32 {
                 self.0
             }
@@ -157,10 +161,12 @@ macro_rules! wire_flags {
             }
 
             /// Some bit of `other` is set.
+            #[allow(dead_code)]
             pub const fn intersects(self, other: Self) -> bool {
                 self.0 & other.0 != 0
             }
 
+            #[allow(dead_code)]
             pub const fn union(self, other: Self) -> Self {
                 Self(self.0 | other.0)
             }
@@ -409,6 +415,7 @@ impl ZoneType {
         }
     }
 
+    #[cfg(test)]
     pub const fn to_wire(self) -> u32 {
         match self {
             Self::Single => 0,
@@ -496,6 +503,7 @@ impl AckStatus {
         }
     }
 
+    #[cfg(test)]
     pub const fn to_wire(self) -> u32 {
         match self {
             Self::Ok => 0,
@@ -568,6 +576,7 @@ impl UpdateReason {
         }
     }
 
+    #[cfg(test)]
     pub const fn to_wire(self) -> u32 {
         match self {
             Self::UpdateLeds => 0,

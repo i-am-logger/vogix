@@ -111,6 +111,7 @@ pub enum Writes {
 }
 
 impl Plan {
+    #[cfg(test)]
     pub fn path(&self) -> ColourPath {
         match self.writes {
             Writes::PerLed { .. } => ColourPath::PerLed,
