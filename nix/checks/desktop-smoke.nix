@@ -425,12 +425,6 @@ pkgs.runCommand "vogix-desktop-smoke"
   for cell in counter:RUN-1 slow:SLOW-1; do
     await "custom/''${cell%:*}'s first run" sh -c "[ \"\$(vogix desktop custom status ''${cell%:*})\" = ''${cell#*:} ]"
   done
-  # The player changes state under the shell.
-  playerctl pause
-  await "the player to pause" sh -c '[ "$(playerctl status)" = Paused ]'
-  playerctl play
-  await "the player to play again" sh -c '[ "$(playerctl status)" = Playing ]'
-  echo "media $(playerctl status 2>&1)" >> $R
   v bar-hide-left bar hide left
   v bar-show bar show
   v bar-toggle bar toggle
@@ -587,14 +581,20 @@ pkgs.runCommand "vogix-desktop-smoke"
   kill $MPVPID 2>/dev/null
 
   # State run, with the scanline texture on: the window title, the mode
-  # cell's table and then its loss, and the restored cards' texture and
-  # arrival times.
+  # cell's table and then its loss, the restored cards' texture and
+  # arrival times, and the media cell following a player.
   cp $TMPDIR/scanlines.json $XDG_STATE_HOME/vogix/desktop.json
   cp $inputJsonPath $XDG_STATE_HOME/vogix/input.json
   echo normal > $XDG_STATE_HOME/vogix/current-mode
+  mpv --no-config --really-quiet --idle=no --loop=inf --ao=null --vo=null \
+    --script=${pkgs.mpvScripts.mpris}/share/mpv/scripts/mpris.so \
+    av://lavfi:sine=frequency=440 > $TMPDIR/mpv-state.log 2>&1 &
+  MPVPID=$!
+  await "the state run's player to play" sh -c '[ "$(playerctl status)" = Playing ]'
   waiting "the state probe to exit"
   ${desktopEnv} qs -p $TMPDIR/state > $TMPDIR/qs-state.log 2>&1
   echo "STATE-EXIT $?" >> $R
+  kill $MPVPID 2>/dev/null
 
   # Rejection run: a schema-1 desktop.json is refused, loudly, without
   # taking the shell down.
@@ -661,7 +661,6 @@ pkgs.runCommand "vogix-desktop-smoke"
 
   r() { grep -qxF -- "$1" $TMPDIR/result || { echo "missing result line: $1"; exit 1; }; }
   r ALIVE
-  r 'media Playing'
   r 'status shell: running'
   r 'status bar: top:shown bottom:shown left:shown right:shown'
   r 'bar-hide-left top:shown bottom:shown left:hidden right:shown'
@@ -763,7 +762,8 @@ pkgs.runCommand "vogix-desktop-smoke"
   grep -q 'FIT bottom media [0-9]' $TMPDIR/qs-geometry.log
   # The window title from hyprctl; the mode label from input.json, then
   # the bare mode once input.json cannot be read; the texture on both
-  # restored cards, and the times they arrived at in the first run.
+  # restored cards, and the times they arrived at in the first run; the
+  # media cell playing, paused and playing again with its player.
   r 'STATE-EXIT 0'
   grep -q 'STATE window-title smoke window title$' $TMPDIR/qs-state.log
   grep -q 'STATE mode-label NRM-SMOKE$' $TMPDIR/qs-state.log
@@ -772,6 +772,9 @@ pkgs.runCommand "vogix-desktop-smoke"
   times=$(jq -r 'map(.at | tostring) | join(",")' $TMPDIR/notifications-1.json)
   grep -q "STATE card-times $times\$" $TMPDIR/qs-state.log \
     || { echo "the restored cards carry" $(grep -o 'STATE card-times .*' $TMPDIR/qs-state.log) "; they arrived at $times"; exit 1; }
+  grep -q 'STATE media-playing true$' $TMPDIR/qs-state.log
+  grep -q 'STATE media-paused false$' $TMPDIR/qs-state.log
+  grep -q 'STATE media-resumed true$' $TMPDIR/qs-state.log
   r SCHEMA1-ALIVE
   r 'schema1 top:off bottom:off left:off right:off'
   grep -q 'desktop.json schema 1 is not supported' $TMPDIR/qs-schema1.log

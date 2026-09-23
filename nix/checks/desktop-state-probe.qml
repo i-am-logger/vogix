@@ -21,11 +21,15 @@ pragma ComponentBehavior: Bound
 //   runs carries the live scanline texture.
 // - card-times: the arrival times the restored cards carry, in order (the
 //   smoke compares them with the state file its first run wrote).
+// - media-playing, media-paused, media-resumed: the real media cell shows
+//   the player (an mpv the smoke started) playing, then paused and
+//   playing again as `playerctl` pauses and resumes it.
 import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Bar.widgets
 import qs.Components
+import qs.Services
 import qs.Vogix
 import "Bar"
 import "Notifications"
@@ -38,10 +42,16 @@ ShellRoot {
     // check → the value it passed with; a check absent here has not.
     property var passed: ({})
     readonly property list<string> checks:
-        ["window-title", "mode-label", "mode-label-after-failure", "card-scanlines", "card-times"]
+        ["window-title", "mode-label", "mode-label-after-failure", "card-scanlines", "card-times",
+            "media-playing", "media-paused", "media-resumed"]
     // The mode checks run in order: the table must show before its file
     // goes away.
     property int modeStage: 0
+    // The media checks run in order, each once the `playerctl` call before
+    // it has returned: 0 playing, 1 paused, 2 resumed.
+    property int mediaStage: 0
+    property var mediaPlayer: null
+    property int mediaNext: 0
 
     function widget(name: string): Item {
         for (let i = 0; i < section.children.length; i++) {
@@ -90,6 +100,8 @@ ShellRoot {
         const mode = root.widget("mode");
         const cards = popups.visiblePopups.length;
         const lit = root.liveOverlays(popups.contentItem);
+        const media = root.widget("media");
+        const playing = media?.playing ?? false;
 
         if (title !== null && title.text === "smoke window title")
             root.pass("window-title", title.text);
@@ -108,6 +120,17 @@ ShellRoot {
         if (cards >= 2)
             root.pass("card-times", popups.visiblePopups.map(p => p.at).join(","));
 
+        if (root.mediaStage === 0 && playing && Media.active?.isPlaying) {
+            root.pass("media-playing", playing);
+            root.mediaPlayer = Media.active;
+            root.control("pause", 1);
+        } else if (root.mediaStage === 1 && !playing) {
+            root.pass("media-paused", playing);
+            root.control("play", 2);
+        } else if (root.mediaStage === 2 && playing) {
+            root.pass("media-resumed", playing);
+        }
+
         const open = root.checks.filter(c => root.passed[c] === undefined);
         if (open.length === 0) {
             Qt.exit(0);
@@ -117,7 +140,10 @@ ShellRoot {
                 "mode-label": "label '" + (mode?.modeLabel ?? "") + "'",
                 "mode-label-after-failure": "label '" + (mode?.modeLabel ?? "") + "', mode '" + Mode.mode + "'",
                 "card-scanlines": lit + " live scanline overlays on " + cards + " cards",
-                "card-times": cards + " cards"
+                "card-times": cards + " cards",
+                "media-playing": "playing " + playing + ", " + Media.players.length + " players",
+                "media-paused": "playing " + playing,
+                "media-resumed": "playing " + playing
             };
             const waiting = open.map(c => c + ": " + seen[c]).join("; ");
             if (waiting !== root.waitingFor) {
@@ -145,6 +171,24 @@ ShellRoot {
         }
     }
 
+    // `playerctl <verb>` on the player the media checks follow; the next
+    // stage starts once it has returned.
+    function control(verb: string, next: int): void {
+        root.mediaStage = -1;
+        root.mediaNext = next;
+        mediaCtl.command = ["playerctl", "-p", String(root.mediaPlayer.dbusName).replace(/^org\.mpris\.MediaPlayer2\./, ""), verb];
+        mediaCtl.running = true;
+    }
+
+    Process {
+        id: mediaCtl
+
+        onRunningChanged: {
+            if (!running)
+                root.mediaStage = root.mediaNext;
+        }
+    }
+
     // The notification cards, restored from the state file.
     Popups {
         id: popups
@@ -157,7 +201,7 @@ ShellRoot {
         Section {
             id: section
 
-            names: ["window", "mode"]
+            names: ["window", "mode", "media"]
             axis: BarAxis {
                 edge: "top"
                 thickness: 96
