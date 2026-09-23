@@ -23,9 +23,12 @@
 #   exited keeps the cell on and starts nvidia-smi again once it has;
 # - launched as the unit launches it, quickshell writes no DEBUG records.
 #
-# Every step waits for an event: a status the shell reports, a process
-# exit, the shell's client on the PipeWire daemon. None waits a fixed
-# time, and the run's overall timeout is the only bound.
+# Every run of the shell ends as the unit's stop ends it: every process
+# it started is signalled with it and must exit. Every step waits for an
+# event: a status the shell reports, a process exit, the shell's client on
+# the PipeWire daemon. None waits a fixed time, and the run's overall
+# timeout is the only bound; a run that reaches it fails, naming the step
+# it was waiting for or, once it is done, the processes still running.
 #
 # No session manager runs, so nothing links the streams: the taps and the
 # playback stream sit connected and idle, which is all a lifecycle test
@@ -104,8 +107,9 @@ let
 
   # nvidia-smi's utilization loop, one reading a second. SIGTERM is
   # recorded in $XDG_RUNTIME_DIR/nvidia-smi-term, and the exit waits for a
-  # line on the $XDG_RUNTIME_DIR/nvidia-smi-release FIFO: a stop the shell
-  # asked for, not finished until the run says so.
+  # line from $XDG_RUNTIME_DIR/nvidia-smi-release. While that is a FIFO, a
+  # stop the shell asked for is not finished until the run writes the
+  # line; once it is a file holding one, a stop goes through at once.
   nvidiaSmi = pkgs.writeShellScriptBin "nvidia-smi" ''
     trap 'touch "$XDG_RUNTIME_DIR/nvidia-smi-term"; read -r _ < "$XDG_RUNTIME_DIR/nvidia-smi-release"; exit 0' TERM
     while :; do
@@ -114,6 +118,10 @@ let
       wait $!
     done
   '';
+
+  # Ending a run of the shell as its unit's stop does, and the verdict on
+  # cage's exit (shell-runs.nix).
+  shellRuns = import ./shell-runs.nix { inherit pkgs; };
 
   # A daemon with no hardware (pipewire-daemon.nix): one null sink,
   # published as the default the way a session manager would.
@@ -148,6 +156,9 @@ let
     # What the run waits for, and the last answer it had: reported if the
     # overall timeout ends the run.
     waiting() { echo "$*" > "$TMPDIR/awaiting"; }
+    # A run of the shell ends as its unit's stop ends it, with everything
+    # it started (end_run).
+    . ${shellRuns}
     meters() { qs -p "$qml" ipc call meters status 2>&1; }
     # Polls `meters status` every 0.5 s until it contains $1; the status
     # that matched is left in $TMPDIR/matched.
@@ -236,7 +247,7 @@ let
     idle="spectrum:idle scope:idle vu-out:idle"
 
     # Launched as the unit launches it (desktop.detailedLogs = false).
-    qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs.log" 2>&1 &
+    VOGIX_SHELL_RUN=qs.log qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs.log" 2>&1 &
     QSPID=$!
 
     # 1. Before PipeWire, and with PipeWire but nothing playing: idle.
@@ -349,7 +360,7 @@ let
     # card. Hiding the cell's bar stops nvidia-smi; the bar is shown again
     # while that nvidia-smi has not exited yet, and once it exits a new
     # one runs and the cell stays on.
-    kill $QSPID
+    end_run qs.log
     wait $QSPID
     nvsys=$TMPDIR/nvsys
     card=$nvsys/devices/pci0000:00/0000:01:00.0
@@ -366,7 +377,7 @@ let
     done
     PATH=${nvidiaSmi}/bin:$PATH bwrap "''${binds[@]}" --dev-bind /dev /dev --proc /proc \
       --ro-bind $nvsys /sys --die-with-parent -- \
-      qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs-gpu.log" 2>&1 &
+      env VOGIX_SHELL_RUN=qs-gpu.log qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs-gpu.log" 2>&1 &
     QSPID=$!
     await "stats:gpu,uptime"
     await_stats '"hasGpu":true'
@@ -395,8 +406,15 @@ let
     done
     await_stats '"hasGpu":true'
 
-    kill $QSPID $PWPID $PLAYPID 2>/dev/null
-    wait
+    # The GPU run ends as the unit's stop ends it, nvidia-smi's stop no
+    # longer held.
+    rm "$XDG_RUNTIME_DIR/nvidia-smi-release"
+    echo > "$XDG_RUNTIME_DIR/nvidia-smi-release"
+    end_run qs-gpu.log
+    wait $QSPID
+    kill $PWPID $PLAYPID 2>/dev/null
+    waiting "PipeWire and the playback stream to exit"
+    wait $PWPID $PLAYPID
     note done
   '';
 in
@@ -424,10 +442,15 @@ pkgs.runCommand "vogix-desktop-taps"
   cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
   cp $desktopJsonPath $XDG_STATE_HOME/vogix/desktop.json
 
-  # The run's one bound. A step whose event never comes holds the run
-  # until here, and the result names it.
+  # The run's one bound, and a run that reaches it fails. A step whose
+  # event never comes holds the run until here, and the result names the
+  # step. A process the run leaves running holds cage here too
+  # (shell-runs.nix). At the bound only cage is signalled (--foreground),
+  # so what is still running is still here to be named.
+  . ${shellRuns}
+  cage_status=0
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
-    timeout -k 10 600 cage -- ${inner} || true
+    timeout --foreground -k 10 600 cage -- ${inner} || cage_status=$?
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── qs.log (vogix lines):"; grep -h vogix $TMPDIR/qs.log $TMPDIR/qs-gpu.log || true
@@ -443,13 +466,14 @@ pkgs.runCommand "vogix-desktop-taps"
     exit 1
   fi
   if grep -q '^FAIL' $TMPDIR/result || ! grep -qx done $TMPDIR/result; then
-    grep -qx done $TMPDIR/result \
-      || echo "── the run stopped waiting for $(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
+    grep -qx done $TMPDIR/result || stopped_short $cage_status 600
     echo "── qs.log:"; cat $TMPDIR/qs.log
     echo "── qs-gpu.log:"; cat $TMPDIR/qs-gpu.log || true
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
+  # Done, and cage returned with it.
+  cage_verdict $cage_status 600 || exit 1
   test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 36
   touch $out
 ''
