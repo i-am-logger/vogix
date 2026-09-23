@@ -52,6 +52,7 @@ use super::session::{
 };
 use super::wire::RgbColor;
 use crate::machine::config::{MachineConfig, OpenRgbEndpoint};
+use crate::machine::exit::OwnerExit;
 use crate::machine::notify::{Notification, Notifier, StatusLine};
 use crate::machine::palette::{MachinePalette, PALETTE_FILE, PaletteError};
 use crate::machine::reactor::{
@@ -69,27 +70,6 @@ use std::net::TcpStream;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 
-/// How the owner ended; [`OwnerExit::code`] is its exit status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OwnerExit {
-    /// Stopped by SIGTERM or SIGINT.
-    Stopped,
-    /// OpenRGB refused the connection or closed it.
-    ServerUnavailable,
-    /// The machine config or the drop zone cannot be used.
-    Misconfigured,
-}
-
-impl OwnerExit {
-    pub const fn code(self) -> i32 {
-        match self {
-            Self::Stopped => 0,
-            Self::ServerUnavailable => 75,
-            Self::Misconfigured => 78,
-        }
-    }
-}
-
 /// Run the owner until it stops; see the module docs. An `Err` is an
 /// unexpected failure of the owner's own fds (signalfd, inotify, poll).
 pub fn serve(config_path: &Path) -> io::Result<OwnerExit> {
@@ -101,7 +81,7 @@ pub fn serve(config_path: &Path) -> io::Result<OwnerExit> {
         Ok(config) => config,
         Err(e) => {
             error!("{e}");
-            return Ok(OwnerExit::Misconfigured);
+            return Ok(OwnerExit::Config);
         }
     };
     let Some(endpoint) = config.openrgb.clone() else {
@@ -109,21 +89,21 @@ pub fn serve(config_path: &Path) -> io::Result<OwnerExit> {
             "{} declares no OpenRGB endpoint (openrgb is null): vogix-openrgb has nothing to drive",
             config_path.display()
         );
-        return Ok(OwnerExit::Misconfigured);
+        return Ok(OwnerExit::Config);
     };
     let zone = config.drop_zone.as_path().to_path_buf();
     let mut watch = match DropZoneWatch::new(&zone, OsStr::new(PALETTE_FILE)) {
         Ok(watch) => watch,
         Err(e) => {
             error!("cannot watch the drop zone {}: {e}", zone.display());
-            return Ok(OwnerExit::Misconfigured);
+            return Ok(OwnerExit::Config);
         }
     };
     let mut owner = match Owner::new(config, endpoint) {
         Ok(owner) => owner,
         Err(e) => {
             error!("{}: {e}", config_path.display());
-            return Ok(OwnerExit::Misconfigured);
+            return Ok(OwnerExit::Config);
         }
     };
 
@@ -581,7 +561,7 @@ impl Owner {
                     error!("cannot connect to OpenRGB at {host}:{port}: {e}");
                 }
                 self.stream = None;
-                self.exit = Some(OwnerExit::ServerUnavailable);
+                self.exit = Some(OwnerExit::TempFail);
             }
         }
     }
@@ -625,7 +605,7 @@ impl Owner {
             None => error!("OpenRGB closed the connection"),
             Some(e) => error!("OpenRGB closed the connection: {e}"),
         }
-        self.exit.get_or_insert(OwnerExit::ServerUnavailable);
+        self.exit.get_or_insert(OwnerExit::TempFail);
     }
 
     /// Log what the session did, and close the connection when it may close.
@@ -693,7 +673,7 @@ impl Owner {
                  be followed",
                 self.zone().display()
             );
-            self.exit.get_or_insert(OwnerExit::Misconfigured);
+            self.exit.get_or_insert(OwnerExit::Config);
             if let Some(session) = self.session.as_mut() {
                 session.begin_shutdown();
             }
@@ -804,13 +784,6 @@ mod tests {
 
     fn name(s: &str) -> DeviceName {
         s.parse().unwrap()
-    }
-
-    #[test]
-    fn exit_codes_are_the_sysexits_the_units_expect() {
-        assert_eq!(OwnerExit::Stopped.code(), 0);
-        assert_eq!(OwnerExit::ServerUnavailable.code(), 75);
-        assert_eq!(OwnerExit::Misconfigured.code(), 78);
     }
 
     #[test]
@@ -1113,7 +1086,7 @@ mod tests {
         // The server closing that connection ends the owner with 75.
         drop(second);
         lo.deliver(&mut owner);
-        assert_eq!(owner.finished(), Some(OwnerExit::ServerUnavailable));
+        assert_eq!(owner.finished(), Some(OwnerExit::TempFail));
     }
 
     #[test]
@@ -1147,7 +1120,7 @@ mod tests {
         assert_eq!(owner.finished(), None, "the handshake is not written yet");
         owner.flush();
         owner.settle();
-        assert_eq!(owner.finished(), Some(OwnerExit::Misconfigured));
+        assert_eq!(owner.finished(), Some(OwnerExit::Config));
     }
 
     #[test]
@@ -1157,6 +1130,6 @@ mod tests {
         drop(lo.listener);
         owner.connect();
         assert!(owner.stream.is_none());
-        assert_eq!(owner.finished(), Some(OwnerExit::ServerUnavailable));
+        assert_eq!(owner.finished(), Some(OwnerExit::TempFail));
     }
 }

@@ -9,9 +9,12 @@ pub enum OwnerExit {
     Stopped,
     /// The machine config, the drop zone or the unit's environment is
     /// unusable, and a restart would meet the same: status 78 (`EX_CONFIG`).
+    /// The OpenRGB owner also ends so when the drop zone is removed.
     Config,
-    /// An event source failed or the drop zone went away; a fresh start
-    /// rebuilds them: status 75 (`EX_TEMPFAIL`).
+    /// A fresh start can succeed: status 75 (`EX_TEMPFAIL`). The local owner
+    /// ends so when an event source fails or the drop zone is removed or
+    /// moved; the OpenRGB owner when OpenRGB refuses or closes the
+    /// connection.
     TempFail,
 }
 

@@ -14,10 +14,11 @@
 use crate::cli::{MachineCommands, ServeCommands};
 use crate::errors::{Result, VogixError};
 use crate::machine::config::{ConfigError, MACHINE_CONFIG_PATH, MachineConfig, Provider};
+use crate::machine::exit::OwnerExit;
 use crate::machine::local;
 use crate::machine::openrgb::inspect;
 use crate::machine::openrgb::model::{ClientName, ProtocolVersion};
-use crate::machine::openrgb::owner::{self, OwnerExit};
+use crate::machine::openrgb::owner;
 use crate::machine::openrgb::session::MirrorConfig;
 use crate::machine::palette::{MachinePalette, PALETTE_FILE, PaletteError};
 use crate::machine::status::{OwnerUnit, StatusError, StatusFile, SurfaceStatus};
