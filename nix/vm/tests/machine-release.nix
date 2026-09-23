@@ -53,8 +53,9 @@
 #   and the restarts, finding no zone, exit 78 and stay failed; re-creating
 #   the zone recovers;
 # - openrgb restarted: vogix-openrgb stops cleanly first and starts again
-#   with the server, re-confirming; openrgb killed: the owner exits 75 and
-#   both come back; the server never refused a connection;
+#   with the server, re-confirming; openrgb killed: the owner logs one
+#   more "[ERROR] OpenRGB closed the connection" and exits 75 once more,
+#   and both come back; the server never refused a connection;
 # - a switch to maxProtocol 5 restarts both owners with the new
 #   machine.json; vogix-openrgb speaks protocol 5 to the protocol 6 server;
 # - after a reboot: vogix-machine is ready before systemd-user-sessions, so
@@ -552,8 +553,17 @@ pkgs.testers.nixosTest {
         assert "vogix-openrgb.service: Deactivated successfully" in journal_text, journal_text
         assert "refused" not in journal_text, journal_text
 
+    def closed_lines():
+        return sum(
+            1 for line in journal("vogix-openrgb").splitlines()
+            if line.startswith("[ERROR] OpenRGB closed the connection")
+        )
+
+
     with subtest("a killed openrgb closes the connection: vogix-openrgb exits 75 and both come back"):
         second = invocation("vogix-openrgb.service")
+        tempfail = count(journal("vogix-openrgb"), "status=75/TEMPFAIL")
+        closed = closed_lines()
         machine.succeed("systemctl reset-failed vogix-openrgb.service")
         machine.succeed("systemctl kill -s KILL openrgb.service")
         machine.wait_until_succeeds(
@@ -561,9 +571,11 @@ pkgs.testers.nixosTest {
             " && systemctl is-active vogix-openrgb.service"
         )
         settled("nordic")
-        journal_text = machine.succeed("journalctl -b -u vogix-openrgb.service")
-        assert "OpenRGB closed the connection" in journal_text, journal_text
-        assert "status=75/TEMPFAIL" in journal_text, journal_text
+        # This kill's evidence: one more error line (the debug line of a
+        # stopping owner does not count) and one more exit 75.
+        journal_text = journal("vogix-openrgb")
+        assert closed_lines() == closed + 1, journal_text
+        assert count(journal_text, "status=75/TEMPFAIL") == tempfail + 1, journal_text
         assert "refused" not in journal_text, journal_text
 
     with subtest("a switch to maxProtocol 5 restarts both owners with the new machine.json"):
