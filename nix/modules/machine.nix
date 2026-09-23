@@ -73,8 +73,10 @@ let
   };
   machineJsonFile = config.environment.etc."vogix/machine.json".source;
 
+  # The check runs where the system is built, so with the build platform's
+  # vogix (the same loader, built for that platform).
   machineJsonValid = pkgs.runCommand "vogix-machine-json-valid" { } ''
-    ${vogix} machine validate ${machineJsonFile}
+    ${pkgs.buildPackages.vogix}/bin/vogix machine validate ${machineJsonFile}
     touch $out
   '';
 

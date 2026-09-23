@@ -216,6 +216,24 @@ let
       && lib.hasInfix (builtins.unsafeDiscardStringContext "${machineJsonFile}") (builtins.unsafeDiscardStringContext drv.buildCommand))
     cfg.system.checks;
 
+  # A cross-built system runs that check with a vogix the build platform
+  # executes, not the target's.
+  crossTarget = if system == "x86_64-linux" then "aarch64-linux" else "x86_64-linux";
+  crossBuilt = host {
+    extra.nixpkgs = {
+      hostPlatform = lib.mkForce crossTarget;
+      buildPlatform = system;
+    };
+  };
+  crossCheck = lib.findFirst (drv: lib.getName drv == "vogix-machine-json-valid") null crossBuilt.config.system.checks;
+  plainText = builtins.unsafeDiscardStringContext;
+  validatedOnBuildPlatform =
+    crossBuilt.pkgs.stdenv.hostPlatform.system == crossTarget
+    && crossCheck != null
+    && crossCheck.system == system
+    && lib.hasInfix (plainText "${crossBuilt.pkgs.buildPackages.vogix}/bin/vogix machine validate") (plainText crossCheck.buildCommand)
+    && !(lib.hasInfix (plainText "${crossBuilt.pkgs.vogix}") (plainText crossCheck.buildCommand));
+
   # The owner: by default the first vogix user by name; the console
   # colours follow whoever it is.
   ownerFollowed =
@@ -304,6 +322,7 @@ let
     assert resumeWired || throw "vogix-machine-resume.service does not reload both owners after every sleep";
     assert dropZone || throw "the drop zone is not a tmpfiles directory owned by the machine owner";
     assert validatedAtBuild || throw "the system build does not validate machine.json with the Rust loader";
+    assert validatedOnBuildPlatform || throw "a system cross-built for ${crossTarget} on ${system} validates machine.json with a vogix the build platform cannot run";
     assert ownerFollowed || throw "the machine owner default or the owner-following console colours are wrong";
     assert endpointFollows || throw "vogix.openrgb.client.maxProtocol or the OpenRGB server port does not reach machine.json";
     assert unitsFollowDevices || throw "the machine owner units do not exist exactly when they have something to own";
