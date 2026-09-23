@@ -232,6 +232,9 @@
             inherit pkgs home-manager self;
             vogix16Themes = inputs.vogix16-themes;
           };
+          machineContract = import ./nix/checks/machine-contract.nix {
+            inherit pkgs nixpkgs home-manager self unfreePackageNames;
+          };
         in
         {
           # Pure-Nix unit tests for the config generators (appearance,
@@ -756,6 +759,20 @@
           # nixpkgs OpenRGB failing that unit's start; the module wiring
           # and its readiness assertion are checked at instantiation.
           openrgb-readiness = import ./nix/vm/tests/openrgb-readiness.nix { inherit pkgs self; };
+
+          # The NixOS machine module at evaluation (nix/checks/machine-contract.nix):
+          # machine.json for the dram-rgb, keychron-k2-he and kraken-elite
+          # modules, the owner units and when each exists, the machine
+          # owner's default and the console colours following it, and the
+          # declarations the module refuses (an OpenRGB server without
+          # readiness, a command outside the store, a non-vogix owner, the
+          # removed vogix.hardware.themeApply, ill-typed devices).
+          machine-contract = machineContract.contract;
+
+          # `vogix machine validate`, the owner units' own loader, accepts
+          # that rendered machine.json and a palette the owner's CLI
+          # published, and refuses each with a field the schema lacks.
+          machine-contract-validate = machineContract.validate;
 
           # The machine surfaces as the NixOS module declares them, fed by
           # the declared owner's real CLI: vogix-machine (the kernel VT
