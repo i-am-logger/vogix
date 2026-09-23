@@ -823,7 +823,9 @@ pkgs.testers.nixosTest {
             d.poll("vogix desktop meters",
                    lambda o: o.endswith("spectrum:off scope:off vu-out:off vu-mic:off stats:none"), 5,
                    "a locked session samples nothing")
-            d.poll(taps(), lambda o: o == "", 3, "no tap process left while locked")
+            # A tap reads off only once quickshell has reaped it.
+            left = d.run(taps()).strip()
+            assert left == "", f"the meters read off while these taps run: {left}"
             d.m.screenshot("locked")
         finally:
             d.unlock()

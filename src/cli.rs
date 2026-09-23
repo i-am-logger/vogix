@@ -195,9 +195,10 @@ pub enum DesktopCommands {
     Status,
     /// What the HUD samples right now, one word per source, e.g.
     /// "spectrum:running scope:idle vu-out:on vu-mic:on stats:cpu,uptime".
-    /// A tap is off (no visible widget), idle (nothing playing), waiting
-    /// for PipeWire or a default sink, running, retrying after an exit, or
-    /// parked after repeated failures; a VU monitor is off, idle or on;
+    /// A tap is running, stopping (asked to stop, its process not exited
+    /// yet), off (no visible widget), idle (nothing playing), waiting for
+    /// PipeWire or a default sink, retrying after an exit, or parked after
+    /// repeated failures; a VU monitor is off, idle or on;
     /// stats lists the samplers running, or none
     Meters,
     /// The readings behind the stat cells, as one JSON object: cpu, memory,

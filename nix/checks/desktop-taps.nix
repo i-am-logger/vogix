@@ -7,6 +7,8 @@
 # - with nothing playing — PipeWire down or up — no tap is launched;
 # - a playback stream starts both taps and the output VU, and they stop
 #   when it ends;
+# - a source reads off, idle or waiting only once its tap process is gone:
+#   a tap that cannot exit yet reads stopping;
 # - the shell's own taps and VU monitors never light the privacy cell's
 #   microphone flag; another program's capture stream does, until it ends;
 # - a tap that dies is relaunched;
@@ -15,6 +17,10 @@
 #   come back when it is shown;
 # - a PipeWire restart stops the taps and brings them back;
 # - launched as the unit launches it, quickshell writes no DEBUG records.
+#
+# Every step waits for an event: a status the shell reports, a process
+# exit, the shell's client on the PipeWire daemon. None waits a fixed
+# time, and the run's overall timeout is the only bound.
 #
 # No session manager runs, so nothing links the streams: the taps and the
 # playback stream sit connected and idle, which is all a lifecycle test
@@ -141,24 +147,69 @@ let
     export QS_PIPEWIRE_IMMEDIATE_RECONNECT=1
     out=$TMPDIR/result
     note() { echo "$*" >> "$out"; }
+    # What the run waits for, and the last answer it had: reported if the
+    # overall timeout ends the run.
+    waiting() { echo "$*" > "$TMPDIR/awaiting"; }
     meters() { qs -p "$qml" ipc call meters status 2>&1; }
-    # Polls `meters status` every 0.5 s until it contains $1, for up to $2 s.
+    # Polls `meters status` every 0.5 s until it contains $1; the status
+    # that matched is left in $TMPDIR/matched.
     await() {
-      local tries=$(( $2 * 2 )) s=""
-      while [ "$tries" -gt 0 ]; do
+      local s
+      waiting "meters: $1"
+      while :; do
         s=$(meters)
-        case "$s" in *"$1"*) note "ok: $1"; return 0 ;; esac
+        case "$s" in *"$1"*) echo "$s" > "$TMPDIR/matched"; note "ok: $1"; return 0 ;; esac
+        echo "$s" > "$TMPDIR/last"
         sleep 0.5
-        tries=$(( tries - 1 ))
       done
-      note "FAIL: no '$1' within $2 s (last: $s)"
-      return 1
     }
-    # Fails the step if any tap process is alive.
+    # Polls `privacy status` every 0.5 s until it is $1.
+    await_privacy() {
+      local s
+      waiting "privacy: $1"
+      while :; do
+        s=$(qs -p "$qml" ipc call privacy status 2>&1)
+        [ "$s" = "$1" ] && { note "ok: privacy $1"; return 0; }
+        echo "$s" > "$TMPDIR/last"
+        sleep 0.5
+      done
+    }
+    # Polls the process table every 0.5 s until exactly one process named
+    # $1 runs, other than $2 if given, and prints its PID. A tap takes its
+    # name once bash has exec'd into it, and one that has exited but is
+    # not reaped yet still counts.
+    tap_pid() {
+      local p
+      waiting "one $1 other than ''${2:-none}"
+      while :; do
+        p=$(pgrep -x "$1")
+        if [ -n "$p" ] && [ "$(echo "$p" | wc -l)" -eq 1 ] && [ "$p" != "''${2:-}" ]; then
+          echo "$p"
+          return 0
+        fi
+        echo "$p" > "$TMPDIR/last"
+        sleep 0.5
+      done
+    }
+    # The shell is a client of the running daemon, so the daemon is up and
+    # the shell's connection to it too. Polls every 0.5 s.
+    await_shell_on_pw() {
+      waiting "the shell on PipeWire"
+      until pw-cli ls Client 2>/dev/null | grep -qF "pipewire.sec.pid = \"$QSPID\""; do
+        sleep 0.5
+      done
+      note "ok: the shell is on PipeWire"
+    }
+    # The tap processes, as the process table lists them (zombies too).
+    taps() { ps -o pid=,stat=,comm= -C cava,pw-record; }
+    # No tap process exists. Called once the shell reports its sources
+    # off, idle or waiting, which it does only after quickshell has reaped
+    # the taps: there is nothing left to wait for.
     notaps() {
-      sleep 1
-      if pgrep -x cava > /dev/null || pgrep -x pw-record > /dev/null; then
-        note "FAIL: a tap is running: $1"
+      local left
+      left=$(taps)
+      if [ -n "$left" ]; then
+        note "FAIL: a tap is running: $1:" $left
       else
         note "ok: no taps: $1"
       fi
@@ -172,108 +223,112 @@ let
       pw-play --raw --format=s16 --rate=48000 --channels=2 /dev/zero >> "$TMPDIR/pipewire.log" 2>&1 &
       PLAYPID=$!
     }
-    # Polls `privacy status` every 0.5 s until it is $1, for up to $2 s.
-    await_privacy() {
-      local tries=$(( $2 * 2 )) s=""
-      while [ "$tries" -gt 0 ]; do
-        s=$(qs -p "$qml" ipc call privacy status 2>&1)
-        [ "$s" = "$1" ] && { note "ok: privacy $1"; return 0; }
-        sleep 0.5
-        tries=$(( tries - 1 ))
-      done
-      note "FAIL: privacy not '$1' within $2 s (last: $s)"
-      return 1
-    }
     running="spectrum:running scope:running vu-out:on"
     idle="spectrum:idle scope:idle vu-out:idle"
 
     # Launched as the unit launches it (desktop.detailedLogs = false).
     qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs.log" 2>&1 &
     QSPID=$!
-    sleep 3
 
     # 1. Before PipeWire, and with PipeWire but nothing playing: idle.
-    await "$idle vu-mic:on" 10
+    await "$idle vu-mic:on"
     notaps "before PipeWire"
     startpw
-    sleep 2
-    await "$idle vu-mic:on" 10
+    await_shell_on_pw
+    await "$idle vu-mic:on"
     notaps "nothing playing"
 
     # 2. Playback starts both taps and the output VU.
     play
-    await "$running" 20
+    await "$running"
 
     # 2b. The taps (cava, the scope's pw-record) and the peak monitors
     # capture the output monitor, not a microphone: with all of them
     # running the privacy cell's microphone flag stays off. Another
     # program's capture stream turns it on, and its end turns it off.
-    await_privacy "mic:off screencast:off" 5
+    await_privacy "mic:off screencast:off"
     pw-cat --record --raw --format=s16 --rate=48000 --channels=2 /dev/null >> "$TMPDIR/pipewire.log" 2>&1 &
     CAPPID=$!
-    await_privacy "mic:on screencast:off" 10
+    await_privacy "mic:on screencast:off"
     kill $CAPPID
     wait $CAPPID
-    await_privacy "mic:off screencast:off" 10
-    cava1=$(pgrep -x cava) pw1=$(pgrep -x pw-record)
+    await_privacy "mic:off screencast:off"
+    cava1=$(tap_pid cava) pw1=$(tap_pid pw-record)
 
-    # 3. A tap that dies comes back as a new process.
+    # 3. A tap that dies comes back as a new process: once both have
+    # exited, the shell starts each again.
     kill $cava1 $pw1
-    sleep 0.5
-    await "$running" 10
-    cava2=$(pgrep -x cava) pw2=$(pgrep -x pw-record)
+    waiting "cava $cava1 and pw-record $pw1 to exit"
+    waitpid --exited $cava1 $pw1
+    cava2=$(tap_pid cava "$cava1")
+    pw2=$(tap_pid pw-record "$pw1")
+    await "$running"
     note "pids: cava $cava1 -> $cava2, pw-record $pw1 -> $pw2"
-    if [ -n "$cava2" ] && [ "$cava2" != "$cava1" ] && [ -n "$pw2" ] && [ "$pw2" != "$pw1" ]; then
-      note "ok: relaunched"
-    else
-      note "FAIL: not relaunched"
-    fi
+    note "ok: relaunched"
 
     # 4. No default sink: the taps wait; one appears: they start.
     pw-metadata -n default -d 0 default.audio.sink >> "$TMPDIR/pipewire.log" 2>&1
-    await "spectrum:waiting scope:waiting" 10
+    await "spectrum:waiting scope:waiting"
     notaps "no default sink"
     pw-metadata -n default 0 default.audio.sink '{ "name": "taps-sink" }' Spa:String:JSON >> "$TMPDIR/pipewire.log" 2>&1
-    await "$running" 10
+    await "$running"
 
     # 5. Every source runs while its bar is shown; hiding an edge stops
     # exactly that edge's sources, hiding all stops everything, and
     # showing them again brings it all back.
-    await "$running vu-mic:on stats:cpu,uptime" 5
+    await "$running vu-mic:on stats:cpu,uptime"
     qs -p "$qml" ipc call bar hide bottom > /dev/null
-    await "spectrum:running scope:off vu-out:off vu-mic:off stats:uptime" 5
-    sleep 1
-    if pgrep -x pw-record > /dev/null || ! pgrep -x cava > /dev/null; then
-      note "FAIL: hiding the bottom bar did not stop exactly the scope tap"
+    await "spectrum:running scope:off vu-out:off vu-mic:off stats:uptime"
+    if pgrep -x pw-record > /dev/null; then
+      note "FAIL: hiding the bottom bar left the scope tap:" $(taps)
     else
+      tap_pid cava > /dev/null
       note "ok: bottom hidden"
     fi
     qs -p "$qml" ipc call bar hide all > /dev/null
-    await "spectrum:off scope:off vu-out:off vu-mic:off stats:none" 5
+    await "spectrum:off scope:off vu-out:off vu-mic:off stats:none"
     notaps "all bars hidden"
     qs -p "$qml" ipc call bar unhide all > /dev/null
-    await "$running vu-mic:on stats:cpu,uptime" 10
+    await "$running vu-mic:on stats:cpu,uptime"
 
-    # 6. Playback ends: back to idle, no taps.
+    # 6. Playback ends: back to idle, no taps. The taps are frozen first
+    # (SIGSTOP keeps the shell's SIGTERM pending), so they cannot exit:
+    # once the shell has seen the playback end (the output VU is idle),
+    # the spectrum and the scope read stopping, and idle only once their
+    # taps are thawed and gone.
+    cava6=$(tap_pid cava) pw6=$(tap_pid pw-record)
+    kill -STOP $cava6 $pw6
     kill $PLAYPID
     wait $PLAYPID
-    await "$idle" 10
+    await "vu-out:idle"
+    s=$(cat "$TMPDIR/matched")
+    if [ "$(ps -o stat= -p "$cava6,$pw6" | cut -c1 | tr -d '\n')" != TT ]; then
+      note "FAIL: the taps are not both frozen:" $(taps)
+    else
+      case "$s" in
+        *"spectrum:stopping scope:stopping vu-out:idle"*) note "ok: stopping while the taps cannot exit" ;;
+        *) note "FAIL: '$s' while both taps are frozen:" $(taps) ;;
+      esac
+    fi
+    kill -CONT $cava6 $pw6
+    await "$idle"
     notaps "playback ended"
 
     # 7. A PipeWire restart: everything stops with it and returns with it.
     play
-    await "$running" 10
+    await "$running"
     kill $PWPID
     wait $PWPID $PLAYPID
-    await "$idle" 10
+    await "$idle"
     notaps "PipeWire stopped"
     startpw
-    sleep 1
+    await_shell_on_pw
     play
-    await "$running" 20
+    await "$running"
 
     kill $QSPID $PWPID $PLAYPID 2>/dev/null
     wait
+    note done
   '';
 in
 pkgs.runCommand "vogix-desktop-taps"
@@ -284,6 +339,7 @@ pkgs.runCommand "vogix-desktop-taps"
     pkgs.pipewire
     pkgs.cava
     pkgs.procps
+    pkgs.util-linux
   ];
   qml = qsPkgs.vogix-desktop-qml;
   inherit themeJson desktopJson;
@@ -298,8 +354,10 @@ pkgs.runCommand "vogix-desktop-taps"
   cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
   cp $desktopJsonPath $XDG_STATE_HOME/vogix/desktop.json
 
+  # The run's one bound. A step whose event never comes holds the run
+  # until here, and the result names it.
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
-    cage -- ${inner} || true
+    timeout -k 10 600 cage -- ${inner} || true
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── qs.log (vogix lines):"; grep 'vogix' $TMPDIR/qs.log || true
@@ -314,11 +372,13 @@ pkgs.runCommand "vogix-desktop-taps"
     echo "script errors in qs.log"
     exit 1
   fi
-  if grep -q '^FAIL' $TMPDIR/result; then
+  if grep -q '^FAIL' $TMPDIR/result || ! grep -qx done $TMPDIR/result; then
+    grep -qx done $TMPDIR/result \
+      || echo "── the run stopped waiting for $(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
     echo "── qs.log:"; cat $TMPDIR/qs.log
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 25
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 29
   touch $out
 ''

@@ -42,11 +42,14 @@ Scope {
     // The last line the tap wrote to stderr, quoted when it exits.
     property string _lastError: ""
 
-    // off: nothing wants it · waiting: wanted, PipeWire or a default sink
-    // is missing · running · retrying: a relaunch is scheduled · parked.
+    // running · stopping: asked to stop, not exited yet · off: nothing
+    // wants it · waiting: wanted, PipeWire or a default sink is missing ·
+    // retrying: a relaunch is scheduled · parked. The process counts until
+    // quickshell has reaped it, so every state but the first two means no
+    // tap process exists.
     function status(): string {
         if (proc.running)
-            return "running";
+            return root._stopping ? "stopping" : "running";
         if (root.parked)
             return "parked";
         if (retry.running)

@@ -242,9 +242,11 @@ vogix desktop vu                         # {"out":[-6,-6],"mic":-12,"stepDb":1}
 ```
 
 `meters` reports each data source the HUD can run. The spectrum and scope taps
-are `off` (no visible widget), `idle` (nothing playing), `waiting` (for
-PipeWire or a default sink), `running`, `retrying` (after an exit) or
-`parked` (after repeated failures). The VU monitors are `off`, `idle` or `on`.
+are `running`, `stopping` (asked to stop, the process not exited yet), `off`
+(no visible widget), `idle` (nothing playing), `waiting` (for PipeWire or a
+default sink), `retrying` (after an exit) or `parked` (after repeated
+failures). Every state but `running` and `stopping` means no tap process
+exists. The VU monitors are `off`, `idle` or `on`.
 `stats` lists the running samplers (cpu, memory, net, disk, gpu, uptime, temp,
 fans, mounts), or `none`.
 

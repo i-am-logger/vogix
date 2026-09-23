@@ -32,9 +32,13 @@ Singleton {
     readonly property int bars: spectrumConf.bars ?? 16
     readonly property bool active: (spectrumConf.enable ?? true) && refs > 0
 
-    // off: no visible widget (or the spectrum is disabled) · idle:
-    // visible, nothing playing · otherwise the tap's own state.
+    // The tap's own state while its process exists (running, or stopping
+    // until it has exited) · off: no visible widget (or the spectrum is
+    // disabled) · idle: visible, nothing playing · otherwise the tap's
+    // state.
     function status(): string {
+        if (tap.running)
+            return tap.status();
         if (!root.active)
             return "off";
         if (!Audio.playing)
