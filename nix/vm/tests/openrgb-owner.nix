@@ -287,6 +287,20 @@ pkgs.testers.runNixOSTest {
         mode = machine.succeed(f"stat -c %a {STATUS}").strip()
         assert mode == "644", mode
 
+    with subtest("vogix machine status reads the owner's status and exits 0"):
+        # The config declares OpenRGB devices only, so vogix-openrgb is the
+        # one owner unit expected; an absent device is not a problem.
+        out = machine.succeed("vogix machine status")
+        print(out)
+        assert "owner:    vogix (drop zone /var/lib/vogix/machine)" in out, out
+        assert "palette:  vogix16 nordic dark" in out, out
+        assert "vogix-openrgb.service: ready" in out, out
+        assert "server:   protocol 6" in out and "5 controllers" in out, out
+        assert "  dram: confirmed (3 controllers)" in out, out
+        assert "  govee: confirmed (1 controller)" in out, out
+        assert "  keychron-k2-he: absent" in out, out
+        assert "vogix-machine.service" not in out and "problems:" not in out, out
+
     with subtest("a published theme change lands"):
         publish("gruvbox")
         settled("gruvbox")
