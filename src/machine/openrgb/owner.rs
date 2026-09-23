@@ -749,6 +749,7 @@ impl Owner {
 #[cfg(test)]
 mod tests {
     use super::super::session::ControllerReport;
+    use super::super::testkit::RefusingPort;
     use super::*;
 
     fn config() -> MachineConfig {
@@ -1022,10 +1023,15 @@ mod tests {
         }
 
         fn owner(&self) -> Owner {
+            self.owner_at(self.listener.local_addr().unwrap().port())
+        }
+
+        /// An owner whose endpoint is `port` on loopback.
+        fn owner_at(&self, port: u16) -> Owner {
             let mut config = config();
             config.drop_zone = self.zone.path().to_path_buf().try_into().unwrap();
             let endpoint = config.openrgb.as_mut().unwrap();
-            endpoint.port = self.listener.local_addr().unwrap().port();
+            endpoint.port = port;
             let endpoint = endpoint.clone();
             Owner::new(config, endpoint).unwrap()
         }
@@ -1125,9 +1131,9 @@ mod tests {
 
     #[test]
     fn a_refused_connect_ends_the_owner_with_75() {
+        let refusing = RefusingPort::new();
         let lo = Loopback::new();
-        let mut owner = lo.owner();
-        drop(lo.listener);
+        let mut owner = lo.owner_at(refusing.port());
         owner.connect();
         assert!(owner.stream.is_none());
         assert_eq!(owner.finished(), Some(OwnerExit::TempFail));

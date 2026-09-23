@@ -410,14 +410,18 @@ mod tests {
         fs::rename(&tmp, dir.join(name)).unwrap();
     }
 
+    /// SIGCHLD is left out: other tests' children raise it for the whole
+    /// process, so one read here may be theirs. tests/machine_reactor_signals.rs
+    /// reads a real SIGCHLD in a process of its own.
     #[test]
     fn a_blocked_signal_is_read_from_the_signalfd_and_coalesces() {
-        let signals = SignalFd::new(&[Signal::Hangup, Signal::Terminate, Signal::Child]).unwrap();
+        let signals =
+            SignalFd::new(&[Signal::Hangup, Signal::Terminate, Signal::Interrupt]).unwrap();
         assert!(signals.drain().unwrap().is_empty());
 
         raise_on_this_thread(Signal::Hangup);
         raise_on_this_thread(Signal::Hangup);
-        raise_on_this_thread(Signal::Child);
+        raise_on_this_thread(Signal::Interrupt);
         let mut set = PollSet::new();
         set.add(signals.as_fd(), Interest::Read, "signals");
         let ready = set.wait().unwrap();
@@ -426,7 +430,7 @@ mod tests {
 
         let delivered = signals.drain().unwrap();
         assert!(delivered.contains(Signal::Hangup));
-        assert!(delivered.contains(Signal::Child));
+        assert!(delivered.contains(Signal::Interrupt));
         assert!(!delivered.contains(Signal::Terminate));
         assert!(signals.drain().unwrap().is_empty(), "drained to empty");
     }

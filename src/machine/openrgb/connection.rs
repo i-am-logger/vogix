@@ -69,7 +69,9 @@ pub fn write_available<S: Write>(stream: &mut S, pending: &[u8]) -> io::Result<u
 
 #[cfg(test)]
 mod tests {
+    use super::super::testkit::RefusingPort;
     use super::*;
+    use std::net::Shutdown;
     use std::os::unix::net::UnixStream;
 
     #[test]
@@ -85,12 +87,15 @@ mod tests {
         assert_eq!(got, b"hello, world");
     }
 
+    /// The peers close with shutdown(2), which acts on the socket itself: a
+    /// child another test forks holds a copy of every fd until its exec, so
+    /// dropping the last fd here does not always close the socket at once.
     #[test]
     fn an_orderly_close_is_reported_after_the_last_bytes() {
         let (mut a, mut b) = UnixStream::pair().unwrap();
         a.set_nonblocking(true).unwrap();
         b.write_all(b"last").unwrap();
-        drop(b);
+        b.shutdown(Shutdown::Both).unwrap();
         let mut got = Vec::new();
         let mut buf = [0u8; 64];
         let peer = read_available(&mut a, &mut buf, |chunk| got.extend_from_slice(chunk));
@@ -111,20 +116,28 @@ mod tests {
     fn a_write_to_a_closed_peer_is_an_error_not_a_signal() {
         let (mut a, b) = UnixStream::pair().unwrap();
         a.set_nonblocking(true).unwrap();
-        drop(b);
+        // shutdown(2), not a drop: see the orderly-close test.
+        b.shutdown(Shutdown::Both).unwrap();
         let err = write_available(&mut a, b"more").unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[test]
     fn a_refused_loopback_connect_fails_at_once() {
-        // Bind then drop a listener: nothing listens on that port now.
-        let port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let err = connect(Ipv4Addr::LOCALHOST, port).unwrap_err();
+        let port = RefusingPort::new();
+        let err = connect(Ipv4Addr::LOCALHOST, port.port()).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
+    }
+
+    #[test]
+    fn a_refusing_port_refuses_while_a_copy_of_its_socket_lives_and_cannot_be_taken() {
+        let port = RefusingPort::new();
+        // What a child forked by another test holds until its exec.
+        let copy = port.socket().try_clone_to_owned().unwrap();
+        let err = connect(Ipv4Addr::LOCALHOST, port.port()).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
+        let err = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port.port())).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AddrInUse);
+        drop(copy);
     }
 }

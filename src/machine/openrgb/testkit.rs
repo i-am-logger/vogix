@@ -1,7 +1,7 @@
 //! Test support for the OpenRGB client: the server-side block layout (so tests
 //! can build description payloads), builders for the frames a server sends,
-//! controller fixtures, a seeded generator of arbitrary controllers, and an
-//! allocation probe.
+//! controller fixtures, a seeded generator of arbitrary controllers, an
+//! allocation probe, and a loopback port that refuses connections.
 //!
 //! The frame builders script byte streams for the state-machine tests in
 //! `session`; they are not a server and prove nothing about protocol
@@ -15,6 +15,9 @@ use super::model::{
     ZoneType, ZoneV6,
 };
 use super::wire::{Frame, PacketId, RgbColor, WireString, Writer};
+use std::io;
+use std::net::Ipv4Addr;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
 /// Largest-allocation probe: a global allocator that, while armed on the
 /// current thread, records the largest single allocation or reallocation size
@@ -714,5 +717,53 @@ pub fn arbitrary_controller(version: ProtocolVersion, seed: u64) -> ControllerDe
             display_name: rng.string(12),
             configuration: rng.string(24),
         }),
+    }
+}
+
+/// A loopback TCP port that refuses every connection while this value lives.
+///
+/// The port is held by a socket that is bound and never listens, without
+/// `SO_REUSEADDR`: a connect to it is refused, and nothing else can bind the
+/// port meanwhile. A listener that is bound and then dropped gives neither: a
+/// child another test forks holds a copy of the listening socket until its
+/// exec, which keeps the port accepting, and once the socket is closed any
+/// other bind may take the port.
+pub struct RefusingPort {
+    socket: OwnedFd,
+    port: u16,
+}
+
+impl RefusingPort {
+    pub fn new() -> Self {
+        // SAFETY: plain socket(2) call.
+        let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+        assert!(fd >= 0, "socket: {}", io::Error::last_os_error());
+        // SAFETY: socket returned a fresh fd that nothing else owns.
+        let socket = unsafe { OwnedFd::from_raw_fd(fd) };
+        // SAFETY: an all-zero sockaddr_in is valid; the fields are then set.
+        let mut addr: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+        addr.sin_family = libc::AF_INET as libc::sa_family_t;
+        addr.sin_addr.s_addr = u32::from(Ipv4Addr::LOCALHOST).to_be();
+        let mut len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+        // SAFETY: `addr` is a valid sockaddr_in of the length given.
+        let rc = unsafe { libc::bind(socket.as_raw_fd(), (&raw const addr).cast(), len) };
+        assert_eq!(rc, 0, "bind: {}", io::Error::last_os_error());
+        // SAFETY: `addr` and `len` are valid for writes of a sockaddr_in.
+        let rc =
+            unsafe { libc::getsockname(socket.as_raw_fd(), (&raw mut addr).cast(), &raw mut len) };
+        assert_eq!(rc, 0, "getsockname: {}", io::Error::last_os_error());
+        Self {
+            socket,
+            port: u16::from_be(addr.sin_port),
+        }
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// The socket holding the port.
+    pub fn socket(&self) -> BorrowedFd<'_> {
+        self.socket.as_fd()
     }
 }
