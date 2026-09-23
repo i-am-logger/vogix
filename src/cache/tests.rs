@@ -40,6 +40,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
     Config {
         default_theme: "test-theme".to_string(),
         default_variant: "dark".to_string(),
+        default_scheme: crate::scheme::Scheme::Vogix16,
         apps: HashMap::new(),
         hooks: Default::default(),
         templates: Some(TemplatesConfig {
@@ -108,6 +109,7 @@ theme[temp_end]="{{ colors.danger }}"
     Config {
         default_theme: "test-theme".to_string(),
         default_variant: "dark".to_string(),
+        default_scheme: crate::scheme::Scheme::Vogix16,
         apps: HashMap::new(),
         hooks: Default::default(),
         templates: Some(TemplatesConfig {

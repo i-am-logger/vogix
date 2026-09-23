@@ -5,7 +5,7 @@ use crate::state::State;
 
 /// Handle the `status` command - display current theme/variant/scheme
 pub fn handle_status() -> Result<()> {
-    let state = State::load()?;
+    let (_, state) = State::load_with_config()?;
     state.save()?;
 
     println!(

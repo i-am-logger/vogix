@@ -90,8 +90,8 @@ pub fn handle_daemon() -> Result<()> {
     // (e.g. a switch that updates vogix itself), it lands in a Hyprland whose
     // screen_shader was just reset by the config reload, so restore it here.
     // reapply_existing_shader respects ShaderState (no-op / disable when off).
-    match (Config::load(), State::load()) {
-        (Ok(config), Ok(state)) => {
+    match State::load_with_config() {
+        Ok((config, state)) => {
             if let Err(e) = reapply_existing_shader(&config, &state) {
                 warn!("Applying shader on daemon start failed: {}", e);
             }
@@ -277,8 +277,8 @@ pub fn handle_daemon() -> Result<()> {
                 info!("Compositor event ({}), saving + re-applying shader", event);
                 handle_session_save("autosave").ok();
                 last_save = Instant::now();
-                match (Config::load(), State::load()) {
-                    (Ok(config), Ok(state)) => {
+                match State::load_with_config() {
+                    Ok((config, state)) => {
                         if let Err(e) = reapply_existing_shader(&config, &state) {
                             error!("Re-applying shader after config reload failed: {}", e);
                         }
@@ -365,13 +365,8 @@ fn hex_to_hypr_rgb(hex: &str) -> String {
 /// async-on-the-critical-path mistake is exactly what broke momentary mode.
 /// Best-effort: any failure (no theme_sources, hyprctl missing) is silently skipped.
 pub(crate) fn apply_mode_border(mode: &str) {
-    let config = match crate::config::Config::load() {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let state = match State::load() {
-        Ok(s) => s,
-        Err(_) => return,
+    let Ok((config, state)) = State::load_with_config() else {
+        return;
     };
     let colors = match crate::commands::shader::load_current_theme_colors(&config, &state) {
         Ok(c) => c,
@@ -467,7 +462,7 @@ impl ModeTracker {
         // and leaves state.toml stuck at whatever the last CLI invocation set.
         // Done before the log write because state.toml is the source of truth
         // other code reads — getting it right matters more than the trace line.
-        if let Err(e) = State::save_current_mode(&next) {
+        if let Err(e) = Config::load().and_then(|config| State::save_current_mode(&config, &next)) {
             warn!("modes: state.toml current_mode sync failed: {}", e);
         }
 

@@ -92,8 +92,7 @@ pub fn load_current_theme_colors(
 
 /// Show shader status and current parameters.
 pub fn handle_shader_status() -> Result<()> {
-    let config = Config::load()?;
-    let state = State::load()?;
+    let (config, state) = State::load_with_config()?;
 
     let params = resolve_shader_params(&config, &state);
     let status = match &state.shader {

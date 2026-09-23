@@ -384,10 +384,7 @@ impl Router {
                     .collect(),
             );
         }
-        let (config, state) = (
-            crate::config::Config::load().ok()?,
-            crate::state::State::load().ok()?,
-        );
+        let (config, state) = crate::state::State::load_with_config().ok()?;
         crate::commands::shader::load_current_theme_colors(&config, &state).ok()
     }
 

@@ -4,8 +4,9 @@
 # running headless under systemd.
 #
 # The machine owner is declared: `vogix`, whose real CLI publishes the
-# palette. `other`, a second vogix user and the first by name (the default
-# owner without that declaration), must not reach the machine.
+# palette. `other`, a second vogix user configured with desert and the first
+# by name (the default owner without that declaration), must not reach the
+# machine.
 # The module renders machine.json from:
 # - OpenRGB devices: `dram` (every "ENE DRAM" controller, Direct, base01),
 #   `govee` ("Govee", Static, base0D), and keychron-k2-he from its hardware
@@ -35,7 +36,8 @@
 #   observers showing the colours; STATUS=, both status files and `vogix
 #   machine status` agree;
 # - a theme change and five rapid ones land as the last; identical bytes are
-#   not republished; another user's apply does not reach the machine;
+#   not republished; a user without state applies their configured theme on
+#   their first refresh; another user's apply does not reach the machine;
 # - a hot-added hidraw node of the probe's ids re-runs it; SIGHUP and
 #   vogix-machine-resume.service make both owners re-apply;
 # - `vogix machine inspect` lists the controllers and captures their raw
@@ -103,6 +105,7 @@ pkgs.testers.nixosTest {
         username = lib.mkForce "other";
         homeDirectory = lib.mkForce "/home/other";
       };
+      programs.vogix.appearance.theme = lib.mkForce "desert";
     };
 
     vogix = {
@@ -345,8 +348,23 @@ pkgs.testers.nixosTest {
         assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
         assert len(recorded()) == runs, recorded()
 
+    with subtest("a user without state applies their configured theme first"):
+        other_state = "/home/other/.local/state/vogix"
+        # home-manager seeded current-theme at the configured theme.
+        seeded = machine.succeed(f"readlink {other_state}/current-theme").strip()
+        assert seeded.rsplit("/", 1)[-1].startswith("desert-"), seeded
+        machine.fail(f"test -e {other_state}/state.toml")
+        machine.succeed("su - other -c 'vogix theme refresh'")
+        applied = machine.succeed(f"readlink {other_state}/current-theme").strip()
+        assert applied == seeded, (seeded, applied)
+        out = machine.succeed("su - other -c 'vogix theme status'")
+        assert "scheme:  vogix16" in out and "theme:   desert" in out, out
+        state = machine.succeed(f"cat {other_state}/state.toml")
+        assert 'current_theme = "desert"' in state, state
+        assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
+
     with subtest("another user's apply does not reach the machine"):
-        out = machine.succeed("su - other -c 'vogix theme set -t desert 2>&1'")
+        out = machine.succeed("su - other -c 'vogix theme set -t matrix 2>&1'")
         assert "Machine surfaces follow 'vogix'" in out, out
         assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
         assert published()["theme"]["name"] == "nordic"

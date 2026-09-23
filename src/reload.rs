@@ -358,6 +358,7 @@ mod tests {
         Config {
             default_theme: "test".to_string(),
             default_variant: "dark".to_string(),
+            default_scheme: crate::scheme::Scheme::Vogix16,
             apps,
             hooks,
             templates: None,

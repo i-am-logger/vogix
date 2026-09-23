@@ -169,8 +169,7 @@ fn run(cli: &Cli) -> Result<()> {
 /// Route state-mutating commands through the praxis engine.
 /// Flow: load state → resolve action → engine.next() → save history → save state → side effects
 fn run_with_engine(command: &Commands) -> Result<()> {
-    let state = state::State::load()?;
-    let config = config::Config::load()?;
+    let (config, state) = state::State::load_with_config()?;
 
     // Translate CLI command to VogixAction (variant resolution happens here)
     let action = cli_to_action(command, &state, &config)?;
@@ -249,8 +248,7 @@ fn run_with_engine(command: &Commands) -> Result<()> {
 
 /// Undo last theme change — restore previous state from history
 fn handle_theme_undo() -> Result<()> {
-    let state = state::State::load()?;
-    let config = config::Config::load()?;
+    let (config, state) = state::State::load_with_config()?;
     let mut hist = history::History::load()?;
 
     match hist.undo(&state) {
@@ -285,8 +283,7 @@ fn handle_theme_undo() -> Result<()> {
 
 /// Redo last undone theme change
 fn handle_theme_redo() -> Result<()> {
-    let state = state::State::load()?;
-    let config = config::Config::load()?;
+    let (config, state) = state::State::load_with_config()?;
     let mut hist = history::History::load()?;
 
     match hist.redo(&state) {

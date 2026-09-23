@@ -16,6 +16,10 @@ fn test_parse_valid_manifest() {
 theme = "nordic"
 variant = "light"
 
+[themes."nordic"]
+scheme = "vogix16"
+variants = ["light", "night"]
+
 [apps.alacritty]
 config_path = "/home/user/.config/alacritty/alacritty.toml"
 reload_method = "touch"
@@ -27,30 +31,33 @@ reload_signal = "USR1"
 process_name = "btop"
 "##;
 
-    let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
+    let config = Config::from_manifest(manifest).unwrap();
 
-    // Extract values like Config::load() does
-    let default_theme = manifest_value
-        .get("default")
-        .and_then(|d| d.get("theme"))
-        .and_then(|t| t.as_str())
-        .unwrap_or("yoga");
+    assert_eq!(config.default_theme, "nordic");
+    assert_eq!(config.default_variant, "light");
+    assert_eq!(config.default_scheme, Scheme::Vogix16);
+    assert!(config.apps.contains_key("alacritty"));
+    assert!(config.apps.contains_key("btop"));
+}
 
-    let default_variant = manifest_value
-        .get("default")
-        .and_then(|d| d.get("variant"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("dark");
+#[test]
+fn the_default_scheme_is_the_default_theme_s_own() {
+    let manifest = r##"
+[default]
+theme = "catppuccin"
+variant = "frappe"
 
-    assert_eq!(default_theme, "nordic");
-    assert_eq!(default_variant, "light");
+[themes."catppuccin"]
+scheme = "base24"
+variants = ["frappe", "latte"]
 
-    let apps_table = manifest_value
-        .get("apps")
-        .and_then(|a| a.as_table())
-        .unwrap();
-    assert!(apps_table.contains_key("alacritty"));
-    assert!(apps_table.contains_key("btop"));
+[themes."yoga"]
+scheme = "vogix16"
+variants = ["day", "night"]
+"##;
+
+    let config = Config::from_manifest(manifest).unwrap();
+    assert_eq!(config.default_scheme, Scheme::Base24);
 }
 
 #[test]
@@ -61,30 +68,18 @@ config_path = "/home/user/.config/alacritty/alacritty.toml"
 reload_method = "touch"
 "##;
 
-    let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
-
-    let default_theme = manifest_value
-        .get("default")
-        .and_then(|d| d.get("theme"))
-        .and_then(|t| t.as_str())
-        .unwrap_or("yoga");
-
-    let default_variant = manifest_value
-        .get("default")
-        .and_then(|d| d.get("variant"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("dark");
+    let config = Config::from_manifest(manifest).unwrap();
 
     // Should fall back to defaults
-    assert_eq!(default_theme, "yoga");
-    assert_eq!(default_variant, "dark");
+    assert_eq!(config.default_theme, "yoga");
+    assert_eq!(config.default_variant, "dark");
+    assert_eq!(config.default_scheme, Scheme::Vogix16);
 }
 
 #[test]
 fn test_parse_invalid_toml() {
     let invalid_manifest = "this is not valid toml {{{";
-    let result: std::result::Result<toml::Value, _> = toml::from_str(invalid_manifest);
-    assert!(result.is_err());
+    assert!(Config::from_manifest(invalid_manifest).is_err());
 }
 
 #[test]

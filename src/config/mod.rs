@@ -17,6 +17,7 @@ mod tests;
 mod types;
 
 use crate::errors::{Result, VogixError};
+use crate::scheme::Scheme;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -28,8 +29,12 @@ pub use types::{AppMetadata, ApplyHook, ShaderConfig, TemplatesConfig, ThemeSour
 /// Main configuration loaded from runtime manifest
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
+    /// `[default].theme`: the theme a user without state starts from.
     pub default_theme: String,
+    /// `[default].variant`, resolved to a variant name.
     pub default_variant: String,
+    /// The default theme's scheme, from its `[themes."<name>"]` entry.
+    pub default_scheme: Scheme,
     pub apps: HashMap<String, AppMetadata>,
     /// User apply hooks from `[hooks]`, by name.
     pub hooks: BTreeMap<String, ApplyHook>,
@@ -43,6 +48,7 @@ impl Default for Config {
         Config {
             default_theme: "yoga".to_string(),
             default_variant: "dark".to_string(),
+            default_scheme: Scheme::default(),
             apps: HashMap::new(),
             hooks: BTreeMap::new(),
             templates: None,
@@ -62,8 +68,12 @@ impl Config {
             return Ok(Config::default());
         }
 
-        let contents = fs::read_to_string(&manifest_path)?;
-        let manifest: toml::Value = toml::from_str(&contents).map_err(VogixError::TomlParse)?;
+        Self::from_manifest(&fs::read_to_string(&manifest_path)?)
+    }
+
+    /// The configuration a manifest's text describes.
+    pub fn from_manifest(contents: &str) -> Result<Self> {
+        let manifest: toml::Value = toml::from_str(contents).map_err(VogixError::TomlParse)?;
 
         // Extract config from manifest structure
         let default_theme = manifest
@@ -79,6 +89,19 @@ impl Config {
             .and_then(|v| v.as_str())
             .unwrap_or("dark")
             .to_string();
+
+        let default_scheme = crate::theme::themes_from_manifest(&manifest)
+            .into_iter()
+            .find(|theme| theme.name == default_theme)
+            .map(|theme| theme.scheme)
+            .unwrap_or_else(|| {
+                log::warn!(
+                    "config.toml: the default theme '{default_theme}' has no [themes] entry; \
+                     taking its scheme as {}",
+                    Scheme::default()
+                );
+                Scheme::default()
+            });
 
         // Parse app metadata from [apps] section
         let apps = Self::parse_apps(&manifest);
@@ -98,6 +121,7 @@ impl Config {
         Ok(Config {
             default_theme,
             default_variant,
+            default_scheme,
             apps,
             hooks,
             templates,

@@ -17,7 +17,7 @@ use crate::errors::{Result, VogixError};
 use std::path::PathBuf;
 
 // Re-export public API
-pub use discovery::discover_themes;
+pub use discovery::{discover_themes, themes_from_manifest};
 pub use loader::load_theme_colors;
 pub use query::{filter_by_scheme, get_theme};
 

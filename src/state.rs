@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::errors::{Result, VogixError};
 use crate::scheme::Scheme;
 use pr4xis::engine::Situation;
@@ -97,6 +98,8 @@ impl State {
     }
 }
 
+/// A fixed state for tests; a user's first state is `State::initial`.
+#[cfg(test)]
 impl Default for State {
     fn default() -> Self {
         State {
@@ -111,15 +114,38 @@ impl Default for State {
 }
 
 impl State {
-    /// Load state from the default state file location
-    pub fn load() -> Result<Self> {
-        Self::load_from(&Self::default_state_path()?)
+    /// The state of a user who has no state file: the configured default
+    /// theme (`[default]` in config.toml) in its scheme, the shader following
+    /// the config, the base mode.
+    pub fn initial(config: &Config) -> Self {
+        State {
+            current_scheme: config.default_scheme,
+            current_theme: config.default_theme.clone(),
+            current_variant: config.default_variant.clone(),
+            last_applied: None,
+            shader: ShaderState::Auto,
+            current_mode: default_mode(),
+        }
     }
 
-    /// Load state from a specific path, with migration from old format
-    pub fn load_from(state_path: &Path) -> Result<Self> {
+    /// Load state from the default state file location; without one, the
+    /// config's initial state.
+    pub fn load(config: &Config) -> Result<Self> {
+        Self::load_from(&Self::default_state_path()?, config)
+    }
+
+    /// The user's config, and their state loaded against it.
+    pub fn load_with_config() -> Result<(Config, Self)> {
+        let config = Config::load()?;
+        let state = Self::load(&config)?;
+        Ok((config, state))
+    }
+
+    /// Load state from a specific path, with migration from old format;
+    /// without a file there, the config's initial state.
+    pub fn load_from(state_path: &Path, config: &Config) -> Result<Self> {
         if !state_path.exists() {
-            return Ok(State::default());
+            return Ok(State::initial(config));
         }
 
         let contents = fs::read_to_string(state_path)?;
@@ -210,13 +236,15 @@ impl State {
     /// torn writes. The brief window where a mode update could clobber a theme
     /// update is acceptable — both end states are valid; only `last_applied`
     /// might briefly read stale.
-    pub fn save_current_mode(mode: &str) -> Result<()> {
-        let path = Self::default_state_path()?;
-        let mut state = if path.exists() {
-            Self::load_from(&path)?
-        } else {
-            Self::default()
-        };
+    ///
+    /// Without a state file, the mode is written onto the config's initial
+    /// state.
+    pub fn save_current_mode(config: &Config, mode: &str) -> Result<()> {
+        Self::save_current_mode_to(&Self::default_state_path()?, config, mode)
+    }
+
+    fn save_current_mode_to(path: &Path, config: &Config, mode: &str) -> Result<()> {
+        let mut state = Self::load_from(path, config)?;
 
         if state.current_mode == mode {
             return Ok(()); // no-op, avoid pointless write
@@ -230,7 +258,7 @@ impl State {
         let contents = toml::to_string_pretty(&state).map_err(VogixError::TomlSerialize)?;
         let tmp = path.with_extension("toml.tmp");
         fs::write(&tmp, contents)?;
-        fs::rename(&tmp, &path)?;
+        fs::rename(&tmp, path)?;
         Ok(())
     }
 
@@ -299,7 +327,7 @@ mod tests {
         };
 
         state.save_to(&state_path).unwrap();
-        let loaded = State::load_from(&state_path).unwrap();
+        let loaded = State::load_from(&state_path, &Config::default()).unwrap();
 
         assert_eq!(loaded.current_scheme, Scheme::Base16);
         assert_eq!(loaded.current_theme, "rose-pine");
@@ -324,7 +352,7 @@ shader_intensity = 0.4
         )
         .unwrap();
 
-        let loaded = State::load_from(&state_path).unwrap();
+        let loaded = State::load_from(&state_path, &Config::default()).unwrap();
         assert_eq!(loaded.current_theme, "yoga");
         assert!(loaded.shader.is_on());
         assert_eq!(loaded.shader.params(), Some((0.4, 1.0, 1.0)));
@@ -345,7 +373,7 @@ shader_enabled = false
         )
         .unwrap();
 
-        let loaded = State::load_from(&state_path).unwrap();
+        let loaded = State::load_from(&state_path, &Config::default()).unwrap();
         assert_eq!(loaded.shader, ShaderState::Off);
     }
 
@@ -363,7 +391,7 @@ current_variant = "night"
         )
         .unwrap();
 
-        let loaded = State::load_from(&state_path).unwrap();
+        let loaded = State::load_from(&state_path, &Config::default()).unwrap();
         assert_eq!(loaded.shader, ShaderState::Auto);
     }
 
@@ -390,12 +418,83 @@ current_variant = "night"
         assert!(!state.is_terminal());
     }
 
+    /// A config.toml as home-manager renders it, its default theme `theme`
+    /// at `variant`, declaring a vogix16 `desert` and a base16 `dracula`.
+    fn rendered_config(theme: &str, variant: &str) -> Config {
+        Config::from_manifest(&format!(
+            r#"
+[default]
+theme = "{theme}"
+variant = "{variant}"
+
+[themes."desert"]
+scheme = "vogix16"
+variants = ["day", "night"]
+day = {{ polarity = "light", order = 0 }}
+night = {{ polarity = "dark", order = 1 }}
+
+[themes."dracula"]
+scheme = "base16"
+variants = ["dracula"]
+dracula = {{ polarity = "dark", order = 0 }}
+"#
+        ))
+        .unwrap()
+    }
+
     #[test]
-    fn test_state_load_missing_returns_default() {
+    fn a_missing_state_file_starts_at_the_configured_default_theme() {
         let temp_dir = TempDir::new().unwrap();
         let nonexistent_path = temp_dir.path().join("nonexistent/state.toml");
-        let loaded = State::load_from(&nonexistent_path).unwrap();
+        let loaded =
+            State::load_from(&nonexistent_path, &rendered_config("desert", "day")).unwrap();
+        assert_eq!(
+            loaded,
+            State {
+                current_scheme: Scheme::Vogix16,
+                current_theme: "desert".to_string(),
+                current_variant: "day".to_string(),
+                last_applied: None,
+                shader: ShaderState::Auto,
+                current_mode: "app".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn the_first_state_takes_the_default_theme_s_scheme() {
+        let temp_dir = TempDir::new().unwrap();
+        let loaded = State::load_from(
+            &temp_dir.path().join("state.toml"),
+            &rendered_config("dracula", "dracula"),
+        )
+        .unwrap();
+        assert_eq!(loaded.current_scheme, Scheme::Base16);
+        assert_eq!(loaded.current_theme, "dracula");
+        assert_eq!(loaded.current_variant, "dracula");
+    }
+
+    #[test]
+    fn a_state_file_wins_over_the_configured_default_theme() {
+        let temp_dir = TempDir::new().unwrap();
+        let state_path = temp_dir.path().join("state.toml");
+        State::default().save_to(&state_path).unwrap();
+        let loaded = State::load_from(&state_path, &rendered_config("desert", "day")).unwrap();
         assert_eq!(loaded.current_theme, "yoga");
+        assert_eq!(loaded.current_variant, "night");
+    }
+
+    #[test]
+    fn a_mode_saved_without_a_state_file_lands_on_the_configured_default_theme() {
+        let temp_dir = TempDir::new().unwrap();
+        let state_path = temp_dir.path().join("state.toml");
+        State::save_current_mode_to(&state_path, &rendered_config("desert", "night"), "normal")
+            .unwrap();
+        // Read back under a different default, so only the file answers.
+        let saved = State::load_from(&state_path, &Config::default()).unwrap();
+        assert_eq!(saved.current_theme, "desert");
+        assert_eq!(saved.current_variant, "night");
+        assert_eq!(saved.current_mode, "normal");
     }
 
     #[test]

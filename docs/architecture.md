@@ -125,6 +125,10 @@ already in place (templates, the `current-theme` swap, app reloads, apply
 hooks, the screen shader, the mode border, the machine palette publish) and
 records nothing. Nothing else needs replaying after a reboot: the selection
 lives in `state.toml` and the app configs resolve through `current-theme`.
+A user without a `state.toml` is at the theme home-manager configured:
+`[default]` in `config.toml` (`programs.vogix.appearance.theme` and
+`variant`) in the scheme of that theme's `[themes."<name>"]` entry, the
+theme `current-theme` was created at.
 What does not survive a reboot is restored by the unit that owns it:
 
 - **The desktop session's compositor state** (the screen shader, the mode

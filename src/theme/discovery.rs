@@ -25,7 +25,11 @@ pub fn discover_themes() -> Result<Vec<ThemeInfo>> {
 /// Parse themes from a TOML manifest string
 pub fn parse_themes_from_manifest(content: &str) -> Result<Vec<ThemeInfo>> {
     let manifest: toml::Value = content.parse().map_err(VogixError::TomlParse)?;
+    Ok(themes_from_manifest(&manifest))
+}
 
+/// The themes of a parsed manifest's `[themes]` table, sorted by name.
+pub fn themes_from_manifest(manifest: &toml::Value) -> Vec<ThemeInfo> {
     let mut themes = Vec::new();
 
     if let Some(themes_table) = manifest.get("themes").and_then(|v| v.as_table()) {
@@ -99,7 +103,7 @@ pub fn parse_themes_from_manifest(content: &str) -> Result<Vec<ThemeInfo>> {
     }
 
     themes.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(themes)
+    themes
 }
 
 #[cfg(test)]
