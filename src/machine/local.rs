@@ -308,8 +308,9 @@ impl LocalOwner {
             };
     }
 
-    /// Run every command device that does not hold its slot's colour (and
-    /// is not already running for it), plus those `force` names.
+    /// Run every command device that does not end on its slot's colour (the
+    /// colour of its run in flight or queued, else the colour it holds), plus
+    /// those `force` names.
     fn reconcile_devices(&mut self, force: Force) {
         let names: Vec<DeviceName> = self.tracks.keys().cloned().collect();
         for name in names {
@@ -329,7 +330,9 @@ impl LocalOwner {
         let Some(colour) = self.palette.as_ref().and_then(|p| p.slot(&track.slot)) else {
             return;
         };
-        if !forced && (track.holds == Some(colour) || track.pending == Some(colour)) {
+        // The colour the device ends on: the run in flight or queued, else
+        // the last run that succeeded.
+        if !forced && track.pending.or(track.holds) == Some(colour) {
             return;
         }
         track.failure = None;
@@ -696,6 +699,33 @@ mod tests {
         assert_eq!(device_state(&owner).state, SurfaceState::Pending);
         finish_run(&mut owner);
         assert_eq!(log_lines(dir.path()), ["3b4252", "333333"]);
+        assert_eq!(device_state(&owner).state, SurfaceState::Confirmed);
+    }
+
+    #[test]
+    fn a_palette_back_at_the_held_colour_during_a_run_reruns_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut owner = LocalOwner::new(config(dir.path(), false), dir.path().join("tty0"));
+        owner.accept(Ok(palette(NORD1, false)));
+        owner.reconcile_devices(Force::None);
+        finish_run(&mut owner);
+        assert_eq!(device_state(&owner).state, SurfaceState::Confirmed);
+
+        // The device holds NORD1; a run for DESERT1 starts, and the palette
+        // is back at NORD1 before that run is reaped.
+        owner.accept(Ok(palette(DESERT1, false)));
+        owner.reconcile_devices(Force::None);
+        let (running, _) = owner.tracks[&ring()].running.unwrap();
+        owner.accept(Ok(palette(NORD1, false)));
+        owner.reconcile_devices(Force::None);
+        assert_eq!(
+            device_state(&owner).detail.as_deref(),
+            Some(format!("pid {running} applying #333333; #3b4252 next").as_str())
+        );
+        wait_exited(running);
+        owner.reap();
+        finish_run(&mut owner);
+        assert_eq!(log_lines(dir.path()), ["3b4252", "333333", "3b4252"]);
         assert_eq!(device_state(&owner).state, SurfaceState::Confirmed);
     }
 
