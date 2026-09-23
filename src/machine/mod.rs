@@ -8,5 +8,7 @@
 //! built from.
 
 pub mod config;
+pub mod notify;
 pub mod palette;
+pub mod status;
 pub mod types;
