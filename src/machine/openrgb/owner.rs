@@ -1000,7 +1000,7 @@ mod tests {
     // The tests below drive the owner's own connection handling over real
     // loopback sockets whose far end is a test-held listener writing scripted
     // bytes. They are not evidence of protocol compatibility with OpenRGB; the
-    // openrgb-owner VM check is.
+    // machine-release VM check is.
 
     /// The handshake the owner sends first: REQUEST_PROTOCOL_VERSION (16-byte
     /// header and a u32) then a REQUEST_CONTROLLER_COUNT header.

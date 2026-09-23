@@ -1,7 +1,7 @@
 //! Tests on controller payloads captured from the real OpenRGB server.
 //!
 //! `tests/fixtures/openrgb/v6` and `v5` hold what `vogix machine inspect
-//! --capture` wrote in the `openrgb-owner` VM check: vogix's OpenRGB build
+//! --capture` wrote in the `machine-release` VM check: vogix's OpenRGB build
 //! serving a DDP device ("ENE DRAM Wire"), two Debug DRAM sticks ("ENE DRAM"),
 //! a Debug keyboard with key and underglow matrix zones, and a Govee device,
 //! after the owner applied the palette nordic — base01 #3b4252 to every

@@ -1,9 +1,11 @@
 # NixOS module for Vogix
 #
 # Provides system-level integration:
-# - Console colors (TTY) from vogix theme
+# - Console colors (TTY) from the machine owner's vogix theme
 # - Security wrappers for console theme switching (chvt, setvtrgb)
-# - Hardware modules (Kraken Elite, Keychron, OpenRGB)
+# - Machine surfaces (machine.nix): the VT palette, LEDs and command devices
+#   following the machine owner's published palette
+# - Hardware modules (Kraken Elite, Keychron, DRAM RGB, OpenRGB)
 # - The desktop shell's system side (lock PAM service, lock handler, and
 #   the UPower / power-profiles D-Bus services while a user runs the shell)
 #
@@ -28,8 +30,6 @@ let
     mkEnableOption
     types
     literalExpression
-    attrNames
-    filterAttrs
     ;
 
   cfg = config.vogix;
@@ -39,28 +39,21 @@ let
     inherit lib vogix16Themes;
   };
 
-  # Find home-manager users with vogix enabled (for auto-detection)
-  homeManagerUsers =
-    if options ? home-manager then
-      attrNames
-        (
-          filterAttrs (_name: userCfg: userCfg.programs.vogix.enable or false) (
-            config.home-manager.users or { }
-          )
-        )
-    else
-      [ ];
-
-  firstVogixUser = if homeManagerUsers != [ ] then builtins.head homeManagerUsers else null;
+  # The home-manager users with programs.vogix.enable.
+  homeManagerUsers = import ./lib/vogix-users.nix { inherit config options lib; };
 
   # Whether any of those users runs the vogix desktop shell.
   desktopInUse = builtins.any
     (user: config.home-manager.users.${user}.programs.vogix.desktop.enable or false)
     homeManagerUsers;
 
-  # Get vogix config from first user for console colors auto-detection
+  # The machine owner's vogix configuration: the source of the console
+  # colours, the plymouth splash and the greeter palette.
+  inherit (cfg.machine) owner;
   hmVogixCfg =
-    if firstVogixUser != null then config.home-manager.users.${firstVogixUser}.programs.vogix else null;
+    if owner != null && builtins.elem owner homeManagerUsers
+    then config.home-manager.users.${owner}.programs.vogix
+    else null;
 
   # Helper: Convert theme colors (base16 format) to console.colors array
   mkConsoleColors =
@@ -88,6 +81,7 @@ in
   imports = [
     ./hardware
     ./openrgb.nix
+    ./machine.nix
   ];
 
   options.vogix = {
@@ -98,8 +92,8 @@ in
       default = true;
       description = ''
         Automatically configure console colors from home-manager vogix configuration.
-        When enabled, will use the theme from the first home-manager user
-        with programs.vogix.enable = true.
+        When enabled, uses the theme of the machine owner
+        (vogix.machine.owner).
       '';
     };
 
@@ -122,11 +116,11 @@ in
     };
 
     plymouth = {
-      enable = mkEnableOption "the vogix plymouth boot splash (text-only script theme from the first vogix user's palette)";
+      enable = mkEnableOption "the vogix plymouth boot splash (text-only script theme from the machine owner's palette)";
     };
 
     greeter = {
-      enable = mkEnableOption "the vogix SDDM greeter (SDDM under a Hyprland Lua compositor, themed from the first vogix user's palette)";
+      enable = mkEnableOption "the vogix SDDM greeter (SDDM under a Hyprland Lua compositor, themed from the machine owner's palette)";
 
       compositor = mkOption {
         type = types.enum [ "hyprland" "weston" ];
@@ -248,7 +242,7 @@ in
     })
 
     # The boot splash: a text-only plymouth script theme from the same
-    # first-user palette the console and greeter use — boot, login and
+    # owner palette the console and greeter use — boot, login and
     # session are color-continuous with no recolored bitmaps anywhere.
     # Build-time like console.colors (a theme switch reaches it at the
     # next rebuild); mkDefault everywhere so a host keeps the last word.
@@ -272,7 +266,7 @@ in
     ))
 
     # The greeter surface: SDDM with the vogix QML theme, its [General]
-    # palette rendered from the FIRST vogix user's semantic colors — the
+    # palette rendered from the machine owner's semantic colors — the
     # console.colors precedent, so every scheme (not just vogix16) reaches
     # the greeter; never a re-render from theme files at this layer. The
     # opt-in runtime follow (`vogix greeter sync`, programs.vogix.greeter

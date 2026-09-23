@@ -3,7 +3,6 @@
 let
   inherit (lib)
     mkIf
-    mkDefault
     ;
 
   cfg = config.vogix.hardware.keychron-k2-he;
@@ -24,18 +23,19 @@ in
     # udev rules for hidraw + DFU access
     services.udev.packages = mkIf cfg.udev.enable [ udevRules ];
 
-    # Auto-enable OpenRGB (Keychron uses QMK OpenRGB protocol)
-    vogix.openrgb.enable = mkDefault true;
-
-    # Register as QMK OpenRGB device
+    # OpenRGB detects the keyboard through its QMK OpenRGB protocol support.
     vogix.openrgb.qmkDevices = [
       { name = "Keychron K2 HE"; vid = "0x3434"; pid = "0x0E20"; }
     ];
 
-    # Theme apply: set keyboard color from vogix palette on theme change.
-    # Slot is configurable because base01 is too dark to read through the keycaps;
-    # base0D (accent) is the new default — see options.nix for rationale.
-    vogix.hardware.themeApply.keychron-k2-he =
-      "openrgb -d 'Keychron K2 HE' -m static -c {{${cfg.colorSlot}}}";
+    # The backlight shows the slot's colour in the keyboard's Static mode,
+    # set by vogix-openrgb.service.
+    vogix.hardware.devices.keychron-k2-he = {
+      slot = cfg.colorSlot;
+      provider.openrgb = {
+        nameContains = "Keychron K2 HE";
+        mode = "Static";
+      };
+    };
   };
 }

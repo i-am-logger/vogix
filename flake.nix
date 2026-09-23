@@ -757,21 +757,19 @@
           # and its readiness assertion are checked at instantiation.
           openrgb-readiness = import ./nix/vm/tests/openrgb-readiness.nix { inherit pkgs self; };
 
-          # vogix-openrgb (`vogix machine serve openrgb`) against that real
-          # server with Debug, DDP and Govee devices: the published palette
-          # lands (observed on OpenRGB's own DDP and Govee wire output),
-          # confirmed at protocol 6 and sent at protocol 5; theme changes,
-          # SIGHUP, openrgb restarts and a killed server; `vogix machine
-          # inspect` captures the raw controller payloads into $out/capture.
-          openrgb-owner = import ./nix/vm/tests/openrgb-owner.nix { inherit pkgs self; };
-
-          # `vogix machine serve local` under a hardened root Type=notify
-          # unit, fed by the owner's real CLI publish: the kernel VT palette
-          # follows (sysfs checked, no VT switch), a command device runs with
-          # its slot colour and re-runs on a hidraw hot-add and SIGHUP,
-          # another user's apply and a planted palette are refused, and after
-          # a reboot the palette is applied before systemd-user-sessions.
-          machine-local = import ./nix/vm/tests/machine-local.nix testArgs;
+          # The machine surfaces as the NixOS module declares them, fed by
+          # the declared owner's real CLI: vogix-machine (the kernel VT
+          # palette, sysfs checked with no VT switch; a command device re-run
+          # on a hidraw hot-add) and vogix-openrgb against the real OpenRGB
+          # server with Debug, DDP and Govee devices (colours observed on
+          # OpenRGB's own DDP and Govee wire output, confirmed at protocol 6
+          # and sent at protocol 5 after a switch); theme changes, another
+          # user's apply, a planted palette, SIGHUP and the resume unit,
+          # openrgb restarts and a killed server, and a reboot that applies
+          # the palette before systemd-user-sessions. `vogix machine inspect`
+          # captures the raw controller payloads into $out/capture and the
+          # published palette into $out/published (tests/fixtures).
+          machine-release = import ./nix/vm/tests/machine-release.nix testArgs;
         }
       );
 

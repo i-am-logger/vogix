@@ -26,9 +26,20 @@ in
     # udev rules for liquidctl device access
     services.udev.packages = mkIf cfg.liquidctl.enable [ pkgs.liquidctl ];
 
-    # Theme apply: set ring colors from vogix palette on theme change
-    vogix.hardware.themeApply = lib.optionalAttrs cfg.rgb.ring.enable {
-      kraken-ring = "liquidctl --match kraken set ring color fixed {{base01}}";
+    # The ring shows the slot's colour: vogix-machine.service runs liquidctl
+    # at boot, on every published palette, and whenever the cooler's hidraw
+    # node (NZXT 1e71:3012) appears again.
+    vogix.hardware.devices = mkIf cfg.rgb.ring.enable {
+      kraken-ring = {
+        slot = cfg.rgb.ring.colorSlot;
+        provider.command = {
+          argv = [ "${pkgs.liquidctl}/bin/liquidctl" "--match" "kraken" "set" "ring" "color" "fixed" "{{color}}" ];
+          hotplug.hidraw = {
+            vendorId = "1e71";
+            productId = "3012";
+          };
+        };
+      };
     };
 
     # Auto-initialize on boot

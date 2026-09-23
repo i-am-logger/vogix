@@ -49,7 +49,8 @@ in
         devices vogix drives. openrgb.service runs as Type=notify, so it is
         active exactly when its SDK port accepts connections, and its
         package defaults to vogix's OpenRGB build, which sends that
-        notification. Hardware modules that drive OpenRGB devices enable it.
+        notification. Declaring a vogix.hardware.devices entry with the
+        openrgb provider enables it.
       '';
     };
 
@@ -58,9 +59,11 @@ in
       default = 6;
       description = ''
         Highest OpenRGB SDK protocol version the vogix client offers the
-        server; the session runs at the lower of this and the server's
-        version. 5 is the protocol of the OpenRGB 1.0 release candidates;
-        6 is that of vogix's OpenRGB build.
+        server (vogix-openrgb.service, and `vogix machine inspect` by
+        default; it is written into /etc/vogix/machine.json); the session
+        runs at the lower of this and the server's version. 5 is the
+        protocol of the OpenRGB 1.0 release candidates; 6 is that of vogix's
+        OpenRGB build.
       '';
     };
 
