@@ -7,8 +7,10 @@ pragma ComponentBehavior: Bound
 // A run starts when the cell becomes live and its last result is older
 // than its `interval` (or it has none), once the result reaches that age
 // while live, when a `watch` file changes, after the cell's click action
-// finishes, and on `vogix desktop custom refresh`. A watch change or a
-// refresh that arrives while the cell is not live, and a run cut short by
+// finishes, on `vogix desktop custom refresh`, and when a reload changes
+// its `command`, `output` or `stream`; a reload that changes its
+// `interval` re-times the next run. A watch change, a refresh or such a
+// reload that arrives while the cell is not live, and a run cut short by
 // its bar leaving the screen, leave the result stale: the command runs as
 // soon as the cell is live again. A trigger during a one-shot run queues
 // exactly one re-run, so a burst of file changes costs one more run, never
@@ -117,9 +119,9 @@ Scope {
             Quickshell.execDetached(["sh", "-c", "kill -TERM -- \"-$1\"", "sh", String(pid)]);
     }
 
-    // A changed command or a cell leaving the screen ends the current run
-    // without counting it as a failure; a changed command starts the new
-    // one.
+    // A redefined command or a cell leaving the screen ends the current
+    // run without counting it as a failure; a redefined command starts
+    // again.
     function _stop(thenRun: bool): void {
         root._queued = thenRun;
         if (proc.running) {
@@ -242,9 +244,28 @@ Scope {
         }
     }
 
-    onCommandChanged: {
-        if (active)
-            _stop(true);
+    // A reload that changes how the command runs or reads replaces the
+    // current run, or, while no bar showing the cell is live, leaves the
+    // result stale.
+    function _redefined(): void {
+        if (root.active)
+            root._stop(true);
+        else
+            root._stale = true;
+    }
+
+    onCommandChanged: _redefined()
+    onJsonChanged: _redefined()
+    onStreamChanged: _redefined()
+
+    // A changed interval re-times the next run from the current result.
+    onIntervalSecChanged: {
+        if (!root.active || proc.running)
+            return;
+        if (root._due())
+            root.trigger();
+        else
+            root._schedule();
     }
 
     // setsid: sh leads a new process group, which every process it starts

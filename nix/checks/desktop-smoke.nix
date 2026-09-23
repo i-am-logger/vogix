@@ -81,9 +81,10 @@ let
     # Custom cells over every trigger but a click: first show (text, json,
     # a stream, a stream through a pipeline), a watched file's creation
     # and change, the IPC refresh, the timer (one cell due every 2 s, one
-    # hourly) and a parked bar's return. The top bar's pulse, due every
-    # 2 s like the ticker, is the clock a parked rail is watched against.
-    # @RT@ becomes the runtime dir once the file is in place.
+    # hourly), a parked bar's return and a reload that redefines a cell.
+    # The top bar's pulse, due every 2 s like the ticker, is the clock a
+    # parked rail is watched against. @RT@ becomes the runtime dir once
+    # the file is in place.
     custom = {
       smoke = { title = "SMK"; command = "echo SMOKE-42"; };
       gauge = {
@@ -110,11 +111,18 @@ let
       # A stream behind a pipeline, the shape of a `journalctl -f | grep`
       # producer: neither stage is the `sh` a stop signals.
       piped = { command = "tail -f @RT@/smoke-piped | grep --line-buffered PIPED-"; stream = true; };
+      # Redefined by a reload: a new command for a cell on a parked rail,
+      # and an interval for a live cell that had none.
+      renamed = { command = "echo OLD-1"; };
+      later = {
+        command = "n=$(cat @RT@/smoke-later 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-later; echo LATER-$n";
+      };
     };
     bars = {
-      top.layout.center = pin.bars.top.layout.center ++ extras "horizontal" ++ [ "custom/smoke" "custom/gauge" "custom/pulse" ];
+      top.layout.center = pin.bars.top.layout.center ++ extras "horizontal"
+        ++ [ "custom/smoke" "custom/gauge" "custom/pulse" "custom/later" ];
       right.layout.center = pin.bars.right.layout.center ++ extras "vertical"
-        ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" "custom/piped" ];
+        ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" "custom/piped" "custom/renamed" ];
     };
   };
   desktopJson = builtins.toJSON fixture;
@@ -409,7 +417,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   # which would move the counts the counter and the hourly cell are
   # checked by. (The 2 s ticker and pulse are counted only from a known
   # point.)
-  for cell in smoke gauge watched; do
+  for cell in smoke gauge watched renamed later; do
     vnext custom-$cell 'inactive|pending' custom status $cell
   done
   vuntil custom-stream '^S-2$' custom status stream
@@ -506,6 +514,18 @@ pkgs.runCommand "vogix-desktop-smoke"
   v reload-unpiped reload
   ipcuntil custom-piped-removed 'unknown custom cell: piped' custom status piped
   await "the removed cell's pipeline to exit" none_running 'smoke-piped|PIPED-'
+  # A reload that redefines cells: a new command for a cell on the parked
+  # rail, which runs once the rail is back, and an interval for a live
+  # cell that had none, which runs it again.
+  v park-right-redefine bar hide right
+  jq '.custom.renamed.command = "echo NEW-1" | .custom.later.interval = 1' \
+    $XDG_STATE_HOME/vogix/desktop.json > $TMPDIR/redefined.json
+  mv $TMPDIR/redefined.json $XDG_STATE_HOME/vogix/desktop.json
+  v reload-redefined reload
+  await "the new interval to run custom/later again" sh -c "[ \$(cat $XDG_RUNTIME_DIR/smoke-later) -ge 2 ]"
+  v custom-redefined-parked custom status renamed
+  v unpark-right-redefine bar show right
+  vuntil custom-redefined '^NEW-1$' custom status renamed
   vnext keyboard 'device:- layouts:- active:- caps:unknown' keyboard
   # The input engine's lock document, handled as the engine does:
   # written tmp + rename, rewritten the same way, removed on stop. The
@@ -700,6 +720,12 @@ pkgs.runCommand "vogix-desktop-smoke"
   r 'custom-piped PIPED-1'
   r 'custom-piped-pipelines 1'
   r 'custom-piped-removed unknown custom cell: piped'
+  # Redefined by a reload: the parked cell keeps its result until its rail
+  # is back, then runs its new command.
+  r 'custom-renamed OLD-1'
+  r 'custom-later LATER-1'
+  r 'custom-redefined-parked OLD-1'
+  r 'custom-redefined NEW-1'
   # A name desktop.json does not define is the caller's error.
   r 'custom-undefined [ERROR] config error: unknown custom cell: undefined'
   r 'keyboard device:vogix-input layouts:de,us active:de caps:unknown'
