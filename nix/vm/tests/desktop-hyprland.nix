@@ -20,7 +20,8 @@
 #   session-restore     the session's start runs vogix-theme-restore once,
 #                       after graphical-session.target, and it succeeds
 #   mode-border         the input engine paints the mode's border colour
-#                       at session start, read back from the compositor
+#                       when it starts against a running compositor, read
+#                       back from the compositor
 #   mode-border-stall   an engine started while the compositor has not
 #                       answered yet still paints it, once it answers
 #   mode-border-reload  a config reload resets the border; the engine
@@ -489,11 +490,18 @@ pkgs.testers.nixosTest {
 
 
     def gate_mode_border(d: Desktop) -> None:
-        # Hyprland's own default is white and the config sets no border, so
-        # the mode's colour is there only if the engine's write landed.
-        want = mode_border(d)
-        d.poll(GET_BORDER, lambda o: border_colour(o) == want, 5,
-               f"the active border is the mode's colour {want}")
+        # Every theme apply also paints the mode's border, the session
+        # start's vogix-theme-restore included, so the colour at session
+        # start does not tell whether the engine painted it. Over a
+        # sentinel border, the engine alone restarts against the running
+        # compositor: only its startup paint can bring the mode's colour
+        # back.
+        want, sentinel = mode_border(d), "123456"
+        set_active_border(d, sentinel)
+        d.poll(GET_BORDER, lambda o: border_colour(o) == "ff" + sentinel, 5, "the sentinel border is set")
+        d.run("systemctl --user restart vogix-input")
+        d.poll(GET_BORDER, lambda o: border_colour(o) == want, 10,
+               f"the restarted engine paints the mode's colour {want}")
 
 
     def gate_mode_border_stall(d: Desktop) -> None:
