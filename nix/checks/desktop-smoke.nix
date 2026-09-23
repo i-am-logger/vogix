@@ -7,17 +7,18 @@
 #
 # The layout is the shipped default (desktop-json.pin.json) plus every
 # registry widget that default leaves out, so each widget the shell ships
-# instantiates here, and custom cells covering each of their triggers.
+# instantiates here, and custom cells covering every trigger but a click
+# (the bars do not map under cage, so nothing can be clicked).
 # Host tools the shell reads (hyprctl, systemctl, tailscale) are fixtures
 # answering the way the real tools do, and a real MPRIS player (mpv)
-# plays on the session bus. Every log the runs write passes a
-# gate: no script error, binding problem, failed component, failed spawn
-# or warning of the shell's own beyond the exact lines a fixture provokes.
+# plays on the session bus. Every log the shell writes here passes a gate:
+# no script error, binding problem, failed component, failed spawn or
+# warning of the shell's own beyond the exact lines a fixture provokes.
 #
 # Compositor-, PipeWire- and NetworkManager-dependent behaviour is out of
-# reach here (cage has no layer-shell, session lock or idle protocol):
-# desktop-hyprland covers it on a real Hyprland session, and desktop-taps
-# covers the taps against a real PipeWire.
+# reach here (cage offers no layer-shell or session lock, and neither
+# daemon runs): desktop-hyprland covers it on a real Hyprland session, and
+# desktop-taps covers the taps against a real PipeWire.
 { pkgs, qsPkgs, home-manager, hmModule }:
 
 let
@@ -70,13 +71,14 @@ let
     [ "top" "bottom" "left" "right" ];
 
   fixture = lib.recursiveUpdate pin {
-    # One mount every host has and one no host has: the mounts cell comes
-    # up for the first and has no entry for the second.
+    # One mount every host has and one no host has: the mounts cell gauges
+    # the first unless the root is RAM-backed, and has no entry for the
+    # second.
     meters.mounts = [ "/" "/vogix-smoke-absent" ];
-    # Custom cells over every trigger: first show (text, json, a stream),
-    # a watched file's creation and change, the IPC refresh, and the
-    # timer (one cell due every 2 s, one hourly). @RT@ becomes the
-    # runtime dir once the file is in place.
+    # Custom cells over every trigger but a click: first show (text, json,
+    # a stream), a watched file's creation and change, the IPC refresh,
+    # the timer (one cell due every 2 s, one hourly) and a parked bar's
+    # return. @RT@ becomes the runtime dir once the file is in place.
     custom = {
       smoke = { title = "SMK"; command = "echo SMOKE-42"; };
       gauge = {
@@ -149,7 +151,8 @@ let
     };
   };
 
-  # The input engine's mode table for the mode cell, and its current mode.
+  # The input engine's mode table (input.json) for the mode cell; the state
+  # run writes the current mode beside it.
   inputJson = builtins.toJSON {
     modeColors.normal = { slot = "active"; label = "NRM-SMOKE"; };
   };
