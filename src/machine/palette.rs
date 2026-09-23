@@ -9,7 +9,7 @@
 //! fields.
 
 use super::config::MAX_MACHINE_FILE_BYTES;
-use super::types::{Label, Rgb, SchemaV1, SlotName};
+use super::types::{Label, Rgb, SchemaV1, SlotName, escape_controls};
 use crate::fsutil;
 use crate::scheme::Scheme;
 use serde::{Deserialize, Serialize};
@@ -63,11 +63,10 @@ pub enum PaletteError {
     TooLarge { path: PathBuf, size: u64, max: u64 },
     #[error("cannot read {path}: {source}")]
     Io { path: PathBuf, source: io::Error },
-    #[error("{path}: {source}")]
-    Invalid {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
+    /// `reason` is the parser's message with its control characters
+    /// escaped: it quotes the file's own keys and values.
+    #[error("{path}: {reason}")]
+    Invalid { path: PathBuf, reason: String },
 }
 
 impl MachinePalette {
@@ -131,9 +130,9 @@ impl MachinePalette {
                 io_err(path, e)
             }
         })?;
-        serde_json::from_slice(&bytes).map_err(|source| PaletteError::Invalid {
+        serde_json::from_slice(&bytes).map_err(|e| PaletteError::Invalid {
             path: path.to_path_buf(),
-            source,
+            reason: escape_controls(&e.to_string()).into_owned(),
         })
     }
 
@@ -315,6 +314,26 @@ mod tests {
         let mut v = published();
         v["schema"] = json!(0);
         invalid(v, "schema 0 is not supported");
+    }
+
+    #[test]
+    fn a_rejection_quoting_the_file_carries_no_control_character() {
+        // serde quotes a rejected key or variant as the file decodes it.
+        let mut v = published();
+        v["\u{1b}]52;c;eA==\u{7}\u{1b}[2K\n<0>x"] = json!(1);
+        let mut w = published();
+        w["theme"]["scheme"] = json!("x\u{1b}[2Jy");
+        for (v, escaped) in [
+            (
+                v,
+                "unknown field `\\u{1b}]52;c;eA==\\u{7}\\u{1b}[2K\\n<0>x`",
+            ),
+            (w, "unknown variant `x\\u{1b}[2Jy`"),
+        ] {
+            let err = load(v).expect_err("must be rejected").to_string();
+            assert!(!err.contains(char::is_control), "{err:?}");
+            assert!(err.contains(escaped), "{err} lacks {escaped}");
+        }
     }
 
     #[test]

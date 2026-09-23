@@ -22,6 +22,7 @@ use crate::machine::openrgb::owner;
 use crate::machine::openrgb::session::MirrorConfig;
 use crate::machine::palette::{MachinePalette, PALETTE_FILE, PaletteError};
 use crate::machine::status::{OwnerUnit, StatusError, StatusFile, SurfaceStatus};
+use crate::machine::types::escape_controls;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -119,8 +120,9 @@ fn status_report(config_path: &Path, status_path: impl Fn(OwnerUnit) -> PathBuf)
             return report;
         }
         Err(e) => {
-            report.problems.push(e.to_string());
+            let e = escape_controls(&e.to_string()).into_owned();
             let _ = writeln!(report.text, "machine config: {e}");
+            report.problems.push(e);
             return with_problem_list(report);
         }
     };
@@ -144,6 +146,7 @@ fn status_report(config_path: &Path, status_path: impl Fn(OwnerUnit) -> PathBuf)
             let _ = writeln!(out, "palette:  none published yet");
         }
         Err(e) => {
+            let e = escape_controls(&e.to_string()).into_owned();
             let _ = writeln!(out, "palette:  rejected: {e}");
             report
                 .problems
@@ -167,7 +170,7 @@ fn status_report(config_path: &Path, status_path: impl Fn(OwnerUnit) -> PathBuf)
                     status
                         .problems()
                         .into_iter()
-                        .map(|p| format!("{}: {p}", unit.unit_name())),
+                        .map(|p| format!("{}: {}", unit.unit_name(), escape_controls(&p))),
                 );
             }
             Err(StatusError::Absent { path }) => {
@@ -182,6 +185,7 @@ fn status_report(config_path: &Path, status_path: impl Fn(OwnerUnit) -> PathBuf)
                     .push(format!("{} is not running", unit.unit_name()));
             }
             Err(e) => {
+                let e = escape_controls(&e.to_string()).into_owned();
                 let _ = writeln!(report.text, "{}: {e}", unit.unit_name());
                 report
                     .problems
@@ -206,7 +210,7 @@ fn describe_status(out: &mut String, unit: OwnerUnit, status: &StatusFile) {
     let _ = write!(out, "{}: {}", unit.unit_name(), status.phase);
     match &status.detail {
         Some(detail) => {
-            let _ = writeln!(out, " ({detail})");
+            let _ = writeln!(out, " ({})", escape_controls(detail));
         }
         None => {
             let _ = writeln!(out);
@@ -222,7 +226,7 @@ fn describe_status(out: &mut String, unit: OwnerUnit, status: &StatusFile) {
     if let Some(protocol) = status.protocol {
         let _ = write!(out, "  server:   protocol {protocol}");
         if let Some(name) = &status.server_name {
-            let _ = write!(out, ", {name}");
+            let _ = write!(out, ", {}", escape_controls(name));
         }
         if let Some(count) = status.controller_count {
             let _ = write!(out, ", {count} controllers");
@@ -243,7 +247,7 @@ fn describe_surface(out: &mut String, name: &str, surface: &SurfaceStatus) {
         let _ = write!(out, " ({n} controller{})", if n == 1 { "" } else { "s" });
     }
     if let Some(detail) = &surface.detail {
-        let _ = write!(out, " — {detail}");
+        let _ = write!(out, " — {}", escape_controls(detail));
     }
     let _ = writeln!(out);
 }
@@ -582,6 +586,52 @@ mod tests {
             "vogix-machine.service: kraken-ring: error: exit status: 1"
         );
         assert!(report.text.contains("problems:\n  - "), "{}", report.text);
+    }
+
+    #[test]
+    fn text_from_the_palette_and_the_status_files_prints_without_control_characters() {
+        let host = Host::new(CONFIG);
+        // A key serde quotes in its rejection, with an OSC 52 clipboard
+        // write, a line erase and a forged line after a newline.
+        host.publish(r#"{"schema": 1, "\u001b]52;c;eA==\u0007\u001b[2K\nFORGED palette": 1}"#);
+        let mut faulted = StatusFile::new(OwnerUnit::Openrgb, Phase::Faulted);
+        faulted.detail = Some("bad magic\u{1b}[2K\nFORGED detail".into());
+        faulted.protocol = Some(6);
+        faulted.server_name = Some("OpenRGB\u{1b}]0;title\u{7}".into());
+        host.write_status(&faulted);
+        let mut local = ready(OwnerUnit::Local);
+        local.devices.insert(
+            "kraken-ring".parse().unwrap(),
+            SurfaceStatus {
+                state: SurfaceState::Error,
+                controllers: None,
+                detail: Some("exit status: 1\u{1b}[31m\nFORGED surface".into()),
+            },
+        );
+        host.write_status(&local);
+
+        let report = host.report();
+        let text = &report.text;
+        assert!(
+            !text.contains(|c: char| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+        assert!(
+            !text.lines().any(|line| line.starts_with("FORGED")),
+            "{text}"
+        );
+        assert_eq!(report.problems.len(), 3, "{text}");
+        for problem in &report.problems {
+            assert!(!problem.contains(char::is_control), "{problem:?}");
+        }
+        for escaped in [
+            "unknown field `\\u{1b}]52;c;eA==\\u{7}\\u{1b}[2K\\nFORGED palette`",
+            "vogix-openrgb.service: faulted (bad magic\\u{1b}[2K\\nFORGED detail)",
+            "server:   protocol 6, OpenRGB\\u{1b}]0;title\\u{7}",
+            "kraken-ring: error — exit status: 1\\u{1b}[31m\\nFORGED surface",
+        ] {
+            assert!(text.contains(escaped), "{text} lacks {escaped}");
+        }
     }
 
     #[test]

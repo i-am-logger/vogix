@@ -8,6 +8,7 @@
 
 use pr4xis_domains::natural::colors::Rgb as PraxisRgb;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
@@ -129,6 +130,24 @@ fn check_label(value: &str) -> Result<(), &'static str> {
         return Err("it contains a control character");
     }
     Ok(())
+}
+
+/// `text` with each control character written as its escape (`\n`,
+/// `\u{1b}`): text a file or a server supplied, printed as one line that
+/// carries no terminal control sequence.
+pub fn escape_controls(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(char::is_control) {
+        return Cow::Borrowed(text);
+    }
+    let mut escaped = String::with_capacity(text.len() + 8);
+    for c in text.chars() {
+        if c.is_control() {
+            escaped.extend(c.escape_default());
+        } else {
+            escaped.push(c);
+        }
+    }
+    Cow::Owned(escaped)
 }
 
 validated_string!(
@@ -317,6 +336,18 @@ mod tests {
         for bad in ["", "a\nb", "a\0b", "tab\there"] {
             assert!(bad.parse::<Label>().is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn escaped_text_keeps_printables_and_writes_controls_as_escapes() {
+        assert!(matches!(
+            escape_controls("unknown field `x`, expected ü"),
+            Cow::Borrowed("unknown field `x`, expected ü")
+        ));
+        assert_eq!(
+            escape_controls("a\u{1b}]52;c;eA==\u{7}\nb\tc\u{9b}2J\u{7f}"),
+            "a\\u{1b}]52;c;eA==\\u{7}\\nb\\tc\\u{9b}2J\\u{7f}"
+        );
     }
 
     #[test]
