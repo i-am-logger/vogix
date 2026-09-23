@@ -7,7 +7,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell.Io
 import qs.Panels
-import qs.Services
 import qs.Vogix
 
 ColumnLayout {

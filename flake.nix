@@ -542,7 +542,9 @@
           # modules. Two categories are disabled because quickshell's
           # published qmltypes cannot express them (PanelWindow is creatable
           # and `margins` is a real grouped property — both verified against
-          # the 0.3.1 sources); everything else must be clean.
+          # the 0.3.1 sources); everything else must be clean. Unused imports,
+          # which qmllint only mentions by default, are raised to warnings so
+          # they fail here too.
           desktop-qmllint =
             let
               qsPkgs = import nixpkgs {
@@ -565,7 +567,7 @@
               ln -s "$qml" lintroot/qs
               find $qml -name '*.qml' -print0 | xargs -0 qmllint \
                 -I "$qsQml" -I "$mmQml" -I "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml" -I "$PWD/lintroot" \
-                --uncreatable-type disable --unresolved-type disable \
+                --unused-imports warning --uncreatable-type disable --unresolved-type disable \
                 2>&1 | tee lint.out || true
               if grep -E 'Warning|Error' lint.out | grep -v 'grouped property scope margins'; then
                 echo "qmllint found real issues"; exit 1

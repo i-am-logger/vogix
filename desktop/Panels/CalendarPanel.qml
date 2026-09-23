@@ -4,7 +4,6 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import qs.Panels
-import qs.Services
 import qs.Vogix
 
 ColumnLayout {

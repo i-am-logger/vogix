@@ -4,7 +4,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell.Bluetooth
 import qs.Panels
-import qs.Services
 import qs.Vogix
 
 ColumnLayout {

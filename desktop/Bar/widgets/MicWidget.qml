@@ -2,7 +2,6 @@
 import QtQuick
 import Quickshell.Services.Pipewire
 import qs.Bar.widgets
-import qs.Services
 import qs.Vogix
 
 BarText {

@@ -8,7 +8,6 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Bar.widgets
 import qs.Components
-import qs.Services
 import qs.Vogix
 
 PanelWindow {
