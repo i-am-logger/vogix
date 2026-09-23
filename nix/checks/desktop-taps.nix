@@ -18,6 +18,9 @@
 # - a PipeWire restart stops the taps and brings them back;
 # - a reload that changes the spectrum's band count restarts cava on the
 #   new configuration;
+# - on a /sys with one NVIDIA card (bound by bwrap), hiding the GPU cell's
+#   bar stops nvidia-smi, and showing it again before that nvidia-smi has
+#   exited keeps the cell on and starts nvidia-smi again once it has;
 # - launched as the unit launches it, quickshell writes no DEBUG records.
 #
 # Every step waits for an event: a status the shell reports, a process
@@ -94,6 +97,23 @@ let
   # The same layout with a different band count: cava's configuration
   # changes on a reload.
   desktopBarsJson = builtins.toJSON (pkgs.lib.recursiveUpdate desktop { meters.spectrum.bars = 12; });
+  # The bottom bar with the GPU cell alone.
+  desktopGpuJson = builtins.toJSON (pkgs.lib.recursiveUpdate desktop {
+    bars.bottom.layout = { start = [ "stat-gpu" ]; center = [ ]; end = [ ]; };
+  });
+
+  # nvidia-smi's utilization loop, one reading a second. SIGTERM is
+  # recorded in $XDG_RUNTIME_DIR/nvidia-smi-term, and the exit waits for a
+  # line on the $XDG_RUNTIME_DIR/nvidia-smi-release FIFO: a stop the shell
+  # asked for, not finished until the run says so.
+  nvidiaSmi = pkgs.writeShellScriptBin "nvidia-smi" ''
+    trap 'touch "$XDG_RUNTIME_DIR/nvidia-smi-term"; read -r _ < "$XDG_RUNTIME_DIR/nvidia-smi-release"; exit 0' TERM
+    while :; do
+      echo 37
+      sleep 1 &
+      wait $!
+    done
+  '';
 
   # A daemon with no hardware (pipewire-daemon.nix): one null sink,
   # published as the default the way a session manager would.
@@ -137,6 +157,17 @@ let
       while :; do
         s=$(meters)
         case "$s" in *"$1"*) echo "$s" > "$TMPDIR/matched"; note "ok: $1"; return 0 ;; esac
+        echo "$s" > "$TMPDIR/last"
+        sleep 0.5
+      done
+    }
+    # Polls `stats status` every 0.5 s until it contains $1.
+    await_stats() {
+      local s
+      waiting "stats: $1"
+      while :; do
+        s=$(qs -p "$qml" ipc call stats status 2>&1)
+        case "$s" in *"$1"*) note "ok: stats $1"; return 0 ;; esac
         echo "$s" > "$TMPDIR/last"
         sleep 0.5
       done
@@ -314,6 +345,56 @@ let
     note "pids: cava $cava8 -> $cava9 on the new band count"
     note "ok: restarted on the reload"
 
+    # 9. The GPU cell's nvidia-smi, in a shell whose /sys holds one NVIDIA
+    # card. Hiding the cell's bar stops nvidia-smi; the bar is shown again
+    # while that nvidia-smi has not exited yet, and once it exits a new
+    # one runs and the cell stays on.
+    kill $QSPID
+    wait $QSPID
+    nvsys=$TMPDIR/nvsys
+    card=$nvsys/devices/pci0000:00/0000:01:00.0
+    mkdir -p $card/power $nvsys/bus/pci/drivers/nvidia $nvsys/class/drm/card0
+    ln -s ../../../bus/pci/drivers/nvidia $card/driver
+    ln -s ../../../devices/pci0000:00/0000:01:00.0 $nvsys/class/drm/card0/device
+    echo on > $card/power/control
+    echo 1 > $card/boot_vga
+    mkfifo "$XDG_RUNTIME_DIR/nvidia-smi-release"
+    cp "$desktopGpuJsonPath" "$XDG_STATE_HOME/vogix/desktop.json"
+    binds=()
+    for d in /*; do
+      case $d in /proc | /dev | /sys) ;; *) binds+=(--bind "$d" "$d") ;; esac
+    done
+    PATH=${nvidiaSmi}/bin:$PATH bwrap "''${binds[@]}" --dev-bind /dev /dev --proc /proc \
+      --ro-bind $nvsys /sys --die-with-parent -- \
+      qs -p "$qml" --no-detailed-logs > "$TMPDIR/qs-gpu.log" 2>&1 &
+    QSPID=$!
+    await "stats:gpu,uptime"
+    await_stats '"hasGpu":true'
+    nv1=$(tap_pid nvidia-smi)
+    qs -p "$qml" ipc call bar hide bottom > /dev/null
+    waiting "nvidia-smi $nv1 to be asked to stop"
+    until [ -e "$XDG_RUNTIME_DIR/nvidia-smi-term" ]; do sleep 0.5; done
+    qs -p "$qml" ipc call bar unhide bottom > /dev/null
+    await "stats:gpu,uptime"
+    echo > "$XDG_RUNTIME_DIR/nvidia-smi-release"
+    waiting "nvidia-smi $nv1 to exit"
+    waitpid --exited $nv1
+    # quickshell reaps it and then either starts nvidia-smi again or, the
+    # exit taken for a failure, turns the cell off.
+    waiting "a new nvidia-smi, or the GPU cell off"
+    while :; do
+      if pgrep -x nvidia-smi | grep -vqx "$nv1"; then
+        note "ok: nvidia-smi $nv1 -> $(pgrep -x nvidia-smi | grep -vx "$nv1")"
+        break
+      fi
+      if qs -p "$qml" ipc call stats status | grep -qF '"hasGpu":false'; then
+        note "FAIL: the GPU cell went off when the stopped nvidia-smi exited"
+        break
+      fi
+      sleep 0.5
+    done
+    await_stats '"hasGpu":true'
+
     kill $QSPID $PWPID $PLAYPID 2>/dev/null
     wait
     note done
@@ -328,10 +409,11 @@ pkgs.runCommand "vogix-desktop-taps"
     pkgs.cava
     pkgs.procps
     pkgs.util-linux
+    pkgs.bubblewrap
   ];
   qml = qsPkgs.vogix-desktop-qml;
-  inherit themeJson desktopJson desktopBarsJson;
-  passAsFile = [ "themeJson" "desktopJson" "desktopBarsJson" ];
+  inherit themeJson desktopJson desktopBarsJson desktopGpuJson;
+  passAsFile = [ "themeJson" "desktopJson" "desktopBarsJson" "desktopGpuJson" ];
 } ''
   export HOME=$TMPDIR/home
   export XDG_CONFIG_HOME=$HOME/.config
@@ -348,7 +430,7 @@ pkgs.runCommand "vogix-desktop-taps"
     timeout -k 10 600 cage -- ${inner} || true
 
   echo "── result:"; cat $TMPDIR/result || true
-  echo "── qs.log (vogix lines):"; grep 'vogix' $TMPDIR/qs.log || true
+  echo "── qs.log (vogix lines):"; grep -h vogix $TMPDIR/qs.log $TMPDIR/qs-gpu.log || true
   # --no-detailed-logs is accepted and keeps quickshell's DEBUG records
   # out of the log: about 3 KB of warnings for this run, against ~64 KB
   # with detailed logs on.
@@ -356,17 +438,18 @@ pkgs.runCommand "vogix-desktop-taps"
   echo "── detailed log: $(stat -c %s "$qslog") bytes"
   test "$(stat -c %s "$qslog")" -lt 16384
   # The QML behind the taps and the leases must run clean.
-  if grep -E 'TypeError|ReferenceError|Binding loop|Unable to assign' $TMPDIR/qs.log; then
-    echo "script errors in qs.log"
+  if grep -E 'TypeError|ReferenceError|Binding loop|Unable to assign' $TMPDIR/qs.log $TMPDIR/qs-gpu.log; then
+    echo "script errors in qs.log or qs-gpu.log"
     exit 1
   fi
   if grep -q '^FAIL' $TMPDIR/result || ! grep -qx done $TMPDIR/result; then
     grep -qx done $TMPDIR/result \
       || echo "── the run stopped waiting for $(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
     echo "── qs.log:"; cat $TMPDIR/qs.log
+    echo "── qs-gpu.log:"; cat $TMPDIR/qs-gpu.log || true
     echo "── pipewire.log:"; cat $TMPDIR/pipewire.log || true
     exit 1
   fi
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 31
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 36
   touch $out
 ''

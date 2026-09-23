@@ -43,6 +43,9 @@ Singleton {
     // The previous idle-residency reading and when it was taken.
     property real _gpuIdleMs: -1
     property real _gpuIdleAt: 0
+    // nvidia-smi was stopped because its last reader let go, and has not
+    // exited yet.
+    property bool _nvStopping: false
 
     // References per stat, taken and dropped through acquire/release by
     // the names below. A stat's samplers run only while it has one; when
@@ -195,6 +198,10 @@ Singleton {
 
     onGpuWantedChanged: {
         if (!gpuWanted) {
+            // nvidiaProc.running stays true until the process has exited,
+            // whether its binding has stopped it yet or not.
+            if (nvidiaProc.running)
+                _nvStopping = true;
             _gpuSamples = [];
             _gpuIdleMs = -1;
             _gpuIdleAt = 0;
@@ -678,8 +685,17 @@ Singleton {
         }
 
         onRunningChanged: {
-            // Stopped because the last reader let go: not a failure.
-            if (running || !root.gpuWanted || root.gpuSource !== Gpu.Source.NvidiaSmi)
+            if (running)
+                return;
+            // Stopped because the last reader let go: not a failure. A
+            // reader back before this exit set `running` on the live
+            // process, which quickshell answers by starting it again
+            // right after this handler.
+            if (root._nvStopping) {
+                root._nvStopping = false;
+                return;
+            }
+            if (!root.gpuWanted || root.gpuSource !== Gpu.Source.NvidiaSmi)
                 return;
             console.warn("SysStat: nvidia-smi exited; the GPU cell is off");
             root.gpuSource = Gpu.Source.None;
