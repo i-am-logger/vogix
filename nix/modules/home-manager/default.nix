@@ -359,6 +359,7 @@ in
             pkgs.hyprsunset # night light
             pkgs.power-profiles-daemon # powerprofilesctl: the power panel's profile row
             pkgs.dbus # dbus-monitor, dbus-send: NetworkBackend waits for NetworkManager
+            pkgs.util-linux # setsid: a custom cell's command runs as a process group of its own
           ]
           ++ lib.optional d.meters.spectrum.enable pkgs.cava
           ++ lib.optional d.weather.enable pkgs.wttrbar

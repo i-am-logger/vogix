@@ -79,11 +79,11 @@ let
     # second.
     meters.mounts = [ "/" "/vogix-smoke-absent" ];
     # Custom cells over every trigger but a click: first show (text, json,
-    # a stream), a watched file's creation and change, the IPC refresh,
-    # the timer (one cell due every 2 s, one hourly) and a parked bar's
-    # return. The top bar's pulse, due every 2 s like the ticker, is the
-    # clock a parked rail is watched against. @RT@ becomes the runtime
-    # dir once the file is in place.
+    # a stream, a stream through a pipeline), a watched file's creation
+    # and change, the IPC refresh, the timer (one cell due every 2 s, one
+    # hourly) and a parked bar's return. The top bar's pulse, due every
+    # 2 s like the ticker, is the clock a parked rail is watched against.
+    # @RT@ becomes the runtime dir once the file is in place.
     custom = {
       smoke = { title = "SMK"; command = "echo SMOKE-42"; };
       gauge = {
@@ -107,11 +107,14 @@ let
         command = "n=$(cat @RT@/smoke-pulse 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-pulse; echo PULSE-$n";
         interval = 2;
       };
+      # A stream behind a pipeline, the shape of a `journalctl -f | grep`
+      # producer: neither stage is the `sh` a stop signals.
+      piped = { command = "tail -f @RT@/smoke-piped | grep --line-buffered PIPED-"; stream = true; };
     };
     bars = {
       top.layout.center = pin.bars.top.layout.center ++ extras "horizontal" ++ [ "custom/smoke" "custom/gauge" "custom/pulse" ];
       right.layout.center = pin.bars.right.layout.center ++ extras "vertical"
-        ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" ];
+        ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" "custom/piped" ];
     };
   };
   desktopJson = builtins.toJSON fixture;
@@ -395,6 +398,8 @@ pkgs.runCommand "vogix-desktop-smoke"
     av://lavfi:sine=frequency=440 > $TMPDIR/mpv.log 2>&1 &
   MPVPID=$!
   await "the player to play" sh -c '[ "$(playerctl status)" = Playing ]'
+  # The line the piped cell's stream shows.
+  echo PIPED-1 > $XDG_RUNTIME_DIR/smoke-piped
   launch qs.log
   # The shell answers with the bar state once it has read desktop.json.
   vuntil status 'bar: top:' status
@@ -408,6 +413,7 @@ pkgs.runCommand "vogix-desktop-smoke"
     vnext custom-$cell 'inactive|pending' custom status $cell
   done
   vuntil custom-stream '^S-2$' custom status stream
+  vuntil custom-piped '^PIPED-1$' custom status piped
   for cell in counter:RUN-1 slow:SLOW-1; do
     await "custom/''${cell%:*}'s first run" sh -c "[ \"\$(vogix desktop custom status ''${cell%:*})\" = ''${cell#*:} ]"
   done
@@ -462,8 +468,10 @@ pkgs.runCommand "vogix-desktop-smoke"
   # counter run at once, and the hourly cell does not.
   await "the 2 s ticker to run twice" sh -c "[ \$(cat $XDG_RUNTIME_DIR/smoke-tick 2>/dev/null || echo 0) -ge 2 ]"
   v park-right bar hide right
-  # A run the parking cut short has exited.
-  await "the parked rail's commands to exit" none_running 'smoke-(tick|count|slow|watch)'
+  # A run the parking cut short has exited, and so has every process it
+  # started: both stages of the piped cell's pipeline, from this hide and
+  # from every earlier one.
+  await "the parked rail's commands to exit" none_running 'smoke-(tick|count|slow|watch|piped)|PIPED-'
   t0=$(count tick)
   s0=$(count slow)
   echo W-3 > $XDG_RUNTIME_DIR/smoke-watch
@@ -487,6 +495,17 @@ pkgs.runCommand "vogix-desktop-smoke"
   # going or would have counted.
   await "no hourly run in flight" none_running smoke-slow
   echo "custom-unparked-slow $s0 $(count slow)" >> $R
+  # Back on screen, the piped cell's stream runs as one pipeline.
+  piped_tail="tail -f $XDG_RUNTIME_DIR/smoke-piped"
+  await "the piped cell's pipeline back on screen" pgrep -xf "$piped_tail"
+  echo "custom-piped-pipelines $(pgrep -cxf "$piped_tail")" >> $R
+  # A reload that removes a cell ends every process its command started.
+  jq 'del(.custom.piped) | .bars.right.layout.center -= ["custom/piped"]' \
+    $XDG_STATE_HOME/vogix/desktop.json > $TMPDIR/unpiped.json
+  mv $TMPDIR/unpiped.json $XDG_STATE_HOME/vogix/desktop.json
+  v reload-unpiped reload
+  ipcuntil custom-piped-removed 'unknown custom cell: piped' custom status piped
+  await "the removed cell's pipeline to exit" none_running 'smoke-piped|PIPED-'
   vnext keyboard 'device:- layouts:- active:- caps:unknown' keyboard
   # The input engine's lock document, handled as the engine does:
   # written tmp + rename, rewritten the same way, removed on stop. The
@@ -676,6 +695,11 @@ pkgs.runCommand "vogix-desktop-smoke"
   test "$2" = "$3" || { echo "the hourly cell ran on coming back on screen: $2 -> $3"; exit 1; }
   r 'custom-unparked-watched W-3'
   r 'custom-unparked-counter RUN-3'
+  # The piped stream: shown, one pipeline after the hides, and gone with
+  # its cell.
+  r 'custom-piped PIPED-1'
+  r 'custom-piped-pipelines 1'
+  r 'custom-piped-removed unknown custom cell: piped'
   # A name desktop.json does not define is the caller's error.
   r 'custom-undefined [ERROR] config error: unknown custom cell: undefined'
   r 'keyboard device:vogix-input layouts:de,us active:de caps:unknown'

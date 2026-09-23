@@ -15,6 +15,11 @@ pragma ComponentBehavior: Bound
 // a pile-up. A `stream` command stays up while live and publishes every
 // line it prints; it starts again whenever the cell becomes live, and a
 // trigger relaunches it only once it has exited.
+//
+// A command runs as the leader of a process group of its own, and ending
+// a run (the cell leaving the screen, a changed command, the cell removed
+// from desktop.json) signals that group: every stage of a pipeline or
+// compound command ends with it, not only `sh`.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -101,6 +106,17 @@ Scope {
         due.restart();
     }
 
+    // SIGTERM to the running command's process group. quickshell signals
+    // only `sh` (SIGTERM on a stop, SIGKILL on destruction); the stages it
+    // started would outlive it, holding the command's pipe. The shell's
+    // own `kill` takes a group the same way everywhere; procps' `kill`
+    // refuses `--`.
+    function _endGroup(): void {
+        const pid = proc.processId;
+        if (typeof pid === "number" && pid > 0)
+            Quickshell.execDetached(["sh", "-c", "kill -TERM -- \"-$1\"", "sh", String(pid)]);
+    }
+
     // A changed command or a cell leaving the screen ends the current run
     // without counting it as a failure; a changed command starts the new
     // one.
@@ -108,6 +124,7 @@ Scope {
         root._queued = thenRun;
         if (proc.running) {
             root._stopping = true;
+            root._endGroup();
             proc.running = false;
         } else if (thenRun) {
             root._queued = false;
@@ -204,6 +221,12 @@ Scope {
             root.trigger();
     }
 
+    // The cell was removed from desktop.json while its command ran.
+    Component.onDestruction: {
+        if (proc.running)
+            root._endGroup();
+    }
+
     onActiveChanged: {
         if (active) {
             if (root.stream || root._stale || !root.hasResult || root._due())
@@ -224,9 +247,11 @@ Scope {
             _stop(true);
     }
 
+    // setsid: sh leads a new process group, which every process it starts
+    // joins (see _endGroup).
     Process {
         id: proc
-        command: ["sh", "-c", root.command]
+        command: ["setsid", "sh", "-c", root.command]
         stdout: SplitParser {
             onRead: line => root._read(line)
         }
