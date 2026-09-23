@@ -242,7 +242,7 @@ vogix/
 │   └── vm/
 │       ├── tests/              # NixOS VM suites (one flake check each)
 │       │   ├── lib.nix             # Shared test helpers
-│       │   ├── smoke.nix           # Binary, status, list, login shells, the session restore unit
+│       │   ├── smoke.nix           # Binary, status, list, login shells, vogix-machine, the session restore unit
 │       │   ├── architecture.nix    # Symlinks, runtime dirs
 │       │   ├── theme-switching.nix # Theme/variant switching
 │       │   ├── scheme-switching.nix # Cross-scheme, palette format

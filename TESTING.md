@@ -56,7 +56,7 @@ symlink.
 
 | Check | What it proves |
 |---|---|
-| `smoke` | Binary installs, `vogix theme status`/`theme list`, home-manager activation sets up the state directory and symlinks; `~/.profile` and `~/.bash_profile` do not name the vogix binary and a login shell (`su - vogix -c true`) leaves `current-theme` untouched (its inode, which every refresh replaces); `vogix-theme-restore.service` is a oneshot without `RemainAfterExit` wanted by `graphical-session.target`, and starting it refreshes the theme, logs `Applied:` to the user journal and leaves it inactive with `Result=success` |
+| `smoke` | Binary installs, `vogix theme status`/`theme list`, home-manager activation sets up the state directory and symlinks; `~/.profile` and `~/.bash_profile` do not name the vogix binary and a login shell (`su - vogix -c true`) leaves `current-theme` untouched (its inode, which every refresh replaces); `/etc/vogix/machine.json` names the owner and the drop zone, which belongs to the owner, `vogix-machine.service` is active, and nothing is published; `vogix-theme-restore.service` is a oneshot without `RemainAfterExit` wanted by `graphical-session.target`, and starting it refreshes the theme, logs `Applied:` to the user journal and leaves it inactive with `Result=success`, having published the owner's palette (`vogix`, mode 644) |
 | `architecture` | `~/.config` symlinks point at vogix-managed themed configs; runtime dirs are created |
 | `theme-switching` | `vogix theme set -t <name>` switches themes and rewrites app configs (alacritty, btop) with the right colors |
 | `scheme-switching` | All 4 schemes (vogix16, base16, base24, ansi16) work; palette format validation |

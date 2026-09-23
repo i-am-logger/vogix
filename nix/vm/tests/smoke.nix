@@ -1,8 +1,10 @@
 # Smoke tests - Quick sanity checks
 #
 # Tests: Binary exists, status command, list command, activation setup,
-# login shells running nothing from vogix, and the session's theme restore
-# unit. These should run fast and catch obvious failures early.
+# login shells running nothing from vogix, the machine module's machine.json,
+# drop zone and vogix-machine unit, and the session's theme restore unit,
+# whose refresh publishes the owner's palette. These should run fast and
+# catch obvious failures early.
 #
 { pkgs
 , vogix16Themes
@@ -94,6 +96,20 @@ testLib.mkTest "smoke" ''
   assert current_theme_inode() == inode, "a login shell replaced current-theme: it ran a theme refresh"
   print("✓ a login shell leaves current-theme untouched")
 
+  print("\n=== Test: Machine Surfaces From the NixOS Module ===")
+  # vogix.enable with one vogix user: that user is the machine owner, and the
+  # console is on, so vogix-machine owns the VT palette. Nothing has
+  # published yet: login shells publish nothing.
+  machine.succeed(
+      "${pkgs.jq}/bin/jq -e '.schema == 1 and .owner == \"vogix\" and .dropZone == \"/var/lib/vogix/machine\"'"
+      " /etc/vogix/machine.json"
+  )
+  assert machine.succeed("stat -c %U /var/lib/vogix/machine").strip() == "vogix"
+  machine.wait_for_unit("vogix-machine.service")
+  assert machine.succeed("systemctl is-active vogix-machine.service").strip() == "active"
+  machine.fail("test -e /var/lib/vogix/machine/palette.json")
+  print("✓ machine.json names the owner, the drop zone is theirs, vogix-machine is active, nothing is published")
+
   print("\n=== Test: Session Theme Restore Unit ===")
   units = "/home/vogix/.config/systemd/user"
   unit = machine.succeed(f"cat {units}/vogix-theme-restore.service")
@@ -119,6 +135,12 @@ testLib.mkTest "smoke" ''
   result = user_systemctl("show vogix-theme-restore.service -p Result -p ActiveState")
   assert "Result=success" in result and "ActiveState=inactive" in result, result
   print("✓ starting vogix-theme-restore applies the theme, logs 'Applied:' and leaves the unit inactive")
+
+  # The restore's refresh ran as the machine owner, so it published.
+  palette = "/var/lib/vogix/machine/palette.json"
+  assert machine.succeed(f"stat -c '%U %a' {palette}").strip() == "vogix 644"
+  machine.succeed(f"${pkgs.jq}/bin/jq -e '.theme.name == \"yoga\" and .theme.variant == \"night\"' {palette}")
+  print("✓ the restore published the owner's palette")
 
   print("\n" + "="*60)
   print("SMOKE TESTS PASSED!")
