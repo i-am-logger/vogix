@@ -61,6 +61,8 @@ nix build .#packages.aarch64-linux.vogix
 
 The package is built with nixpkgs' standard `rustPlatform.buildRustPackage` (`nix/packages/vogix.nix`) for a reproducible Rust build.
 
+Its source is a `lib.fileset` of exactly what the build and `cargo test` read: the Cargo files, `src/`, `tests/machine_reactor_signals.rs` and `tests/fixtures/`, `templates/`, `docs/cli.md`, the desktop shell files the tests pin and `nix/modules/desktop/desktop-json.pin.json`. An edit to any other file (docs, Nix modules, VM suites) leaves the package and every check built on it unchanged. A test that reads a new repository file (`include_str!`, `include_bytes!`, a path under `CARGO_MANIFEST_DIR`) needs that file added to the set; until then the Nix build fails where `cargo test` passes.
+
 ## Testing
 
 ### Unit Tests

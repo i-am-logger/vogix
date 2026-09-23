@@ -751,7 +751,9 @@
                         extraBackgrounds.yoga.night = [{
                           kind = "image";
                           name = "extra.png";
-                          path = ./README.md;
+                          # A copy of one file, not a path into this flake's
+                          # source, whose string would carry the whole tree.
+                          path = builtins.path { path = ./README.md; name = "extra.png"; };
                         }];
                       };
                       enableDaemon = false;

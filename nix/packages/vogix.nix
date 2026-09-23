@@ -12,7 +12,34 @@ rustPlatform.buildRustPackage {
   pname = cargoToml.package.name;
   inherit (cargoToml.package) version;
 
-  src = lib.cleanSource ../..;
+  # Exactly the files the build and its tests read, so an edit anywhere else
+  # (the docs, the Nix modules, the VM suites) leaves this derivation, and
+  # every one that uses it, unchanged.
+  src = lib.fileset.toSource {
+    root = ../..;
+    fileset = lib.fileset.unions [
+      ../../Cargo.toml
+      ../../Cargo.lock
+      ../../src
+      ../../tests/machine_reactor_signals.rs
+      # include_str!/include_bytes! fixtures and the captured OpenRGB payloads
+      ../../tests/fixtures
+      # The templates the template tests render and include
+      ../../templates
+      # Every example in it is parsed by a CLI test.
+      ../../docs/cli.md
+      # The shell sources the desktop and CLI tests pin: the widget
+      # registry and the components it names, the section, the panels
+      # service, the registry service and shell.qml
+      ../../desktop/Bar/widgets
+      ../../desktop/Bar/Section.qml
+      ../../desktop/Services/Panels.qml
+      ../../desktop/Services/WidgetRegistry.qml
+      ../../desktop/shell.qml
+      # The default desktop.json the home-manager module renders, pinned
+      ../../nix/modules/desktop/desktop-json.pin.json
+    ];
+  };
 
   cargoLock = {
     lockFile = ../../Cargo.lock;
