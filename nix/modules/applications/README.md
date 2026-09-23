@@ -83,6 +83,20 @@ Each application gets scheme-aware configuration with appropriate color mappings
 
 **Scheme-appropriate coloring**: Each scheme generator respects the philosophy of that scheme. The vogix16 scheme is minimal by design; base16/base24/ansi16 provide full color support per their standards.
 
+## Applications and Machine Surfaces
+
+A generator themes a per-user file that `current-theme` switches, and its
+`reloadMethod` tells running instances. Hardware that belongs to the machine
+(RGB LEDs, cooler rings) is not an application: it is a device in the NixOS
+option `vogix.hardware.devices`, applied by the machine owner units (see
+[the machine surfaces](../../../docs/architecture.md#9-machine-surfaces)).
+
+The `console` generator's `console/palette` is the palette the machine owner
+publishes for the VT: the machine owner unit `vogix-machine` writes it into the
+kernel for every VT. The generator's reload command acts only when the CLI runs
+on a text VT: it loads the palette into the kernel (`setvtrgb`) and switches
+away and back, so the VT it runs on shows the new colours at once.
+
 ## Adding New Application Modules
 
 When adding a new application:

@@ -169,6 +169,7 @@ vogix/
 │   │   ├── hypr.rs             # Dialect-aware Hyprland IPC
 │   │   ├── input.rs            # Input engine / keybindings
 │   │   ├── list.rs             # List themes
+│   │   ├── machine.rs          # `vogix machine` owners, status, validate, inspect
 │   │   ├── modes.rs            # Paradigms and modes
 │   │   ├── refresh.rs          # Refresh symlinks
 │   │   ├── session.rs          # Session save/restore/undo
@@ -176,6 +177,8 @@ vogix/
 │   │   ├── status.rs           # Show status
 │   │   └── theme_change.rs     # Theme/variant switching
 │   ├── input/                  # The input engine (router, evdev/uinput loop, schema, lock LEDs, …)
+│   ├── machine/                # Machine surfaces: config and palette loaders, publish, reactor,
+│   │                           #   command runner, VT palette, status; openrgb/ is the SDK client
 │   ├── cache/                  # Theme cache module
 │   │   ├── paths.rs            # Cache path management
 │   │   ├── renderer.rs         # Config rendering
@@ -194,6 +197,7 @@ vogix/
 │   │   └── types.rs            # Theme types
 │   ├── cli.rs                  # CLI definition (clap)
 │   ├── errors.rs               # Error handling
+│   ├── fsutil.rs               # Atomic writes of files other processes read
 │   ├── main.rs                 # Entry point
 │   ├── reload.rs               # Application reload mechanisms
 │   ├── scheme.rs               # Color scheme types
@@ -216,8 +220,10 @@ vogix/
 │   │   │   ├── btop.nix
 │   │   │   ├── vogix-desktop.nix # The desktop shell's theme.json
 │   │   │   └── ...
+│   │   ├── hardware/           # vogix.hardware.* modules (DRAM, Keychron, Kraken) and their devices
 │   │   ├── desktop/            # programs.vogix.desktop.* options, defaults,
 │   │   │                       #   and the pinned default desktop.json
+│   │   ├── openrgb.nix         # vogix.openrgb: the OpenRGB SDK server and its settings
 │   │   └── nixos.nix           # NixOS module
 │   ├── checks/                 # Desktop checks too large for flake.nix
 │   │   ├── desktop-smoke.nix   # The real shell under a headless compositor
@@ -228,6 +234,7 @@ vogix/
 │   │   └── pipewire-daemon.nix # A hardware-less PipeWire for the checks
 │   ├── packages/
 │   │   ├── vogix.nix           # Package definition
+│   │   ├── openrgb.nix         # vogix's OpenRGB build (notifies systemd when listening)
 │   │   └── vogix-desktop-qml.nix # The desktop shell's QML tree
 │   └── vm/
 │       ├── tests/              # NixOS VM suites (one flake check each)
@@ -244,7 +251,10 @@ vogix/
 │       │   ├── stress.nix          # Rapid switching
 │       │   ├── templates.nix       # Template architecture
 │       │   ├── input-engine.nix    # Input engine end-to-end
-│       │   └── desktop-hyprland.nix # The desktop shell under Hyprland
+│       │   ├── desktop-hyprland.nix # The desktop shell under Hyprland
+│       │   ├── openrgb-readiness.nix # openrgb.service readiness and settings
+│       │   ├── openrgb-owner.nix   # vogix-openrgb against the real OpenRGB server
+│       │   └── machine-local.nix   # vogix-machine: the VT palette and command devices
 │       ├── test-vm.nix         # VM configuration
 │       └── home.nix            # Test user config
 │
@@ -261,6 +271,8 @@ vogix/
 │   ├── Greeter/                # The SDDM greeter theme (its own package)
 │   └── data/                   # Shaders and the sysfs probe scripts
 ├── tests/desktop/              # desktop-logic: Qt Quick Test cases and probe fixtures
+├── tests/fixtures/             # Captured OpenRGB payloads, kernel uevents, theme and input fixtures
+├── tests/machine_reactor_signals.rs # The reactor's signalfd, outside the libtest harness
 │
 ├── docs/                       # Documentation
 │   ├── architecture.md         # System architecture

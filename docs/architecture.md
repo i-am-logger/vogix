@@ -2,13 +2,14 @@
 
 ## 1. Overview
 
-Vogix is a NixOS UX subsystem with three runtime parts:
+Vogix is a NixOS UX subsystem with four runtime parts:
 
 1. **Theme management** - runtime color-theme switching across 4 schemes (vogix16, base16, base24, ansi16) without a rebuild. Covered by sections 2-6 below.
 2. **Input engine** - an ontology-driven keyboard daemon (typed modes, dual-role CapsLock, selectable interaction paradigms). Covered by section 7.
 3. **Desktop shell** - a quickshell-rendered Hyprland shell (bars, notifications, lock, idle, launcher, panels, wallpaper) that the theme colors and the input engine feeds. Covered by section 8.
+4. **Machine surfaces** - the machine's shared, per-host state the theme colours: RGB LEDs, cooler rings and the kernel's VT palette, owned by system units that follow one user's theme. Covered by section 9.
 
-This document gives a high-level overview of all three.
+This document gives a high-level overview of all four.
 
 ## 2. Key Components
 
@@ -40,7 +41,10 @@ For detailed implementation of specific components, see the specialized document
     ├── btop/btop.conf
     └── console/palette
 
-~/.local/state/vogix/config.toml               # User manifest (home-manager-generated; the CLI never reads /etc/vogix)
+~/.local/state/vogix/config.toml               # User manifest (home-manager-generated)
+
+/etc/vogix/machine.json                        # Machine surfaces: owner, devices (NixOS module; section 9)
+/var/lib/vogix/machine/palette.json            # The machine owner's published palette (section 9)
 
 ~/.local/share/vogix/themes/                   # Theme packages (home-manager)
     ├── base16-catppuccin-mocha -> /nix/store/...
@@ -125,12 +129,13 @@ When a user runs `vogix theme set -t catppuccin -v mocha` or `vogix theme set -v
 6. **Application Generators** (`nix/modules/applications/`): Multi-scheme generators
 
 ### Runtime Components (Rust)
-1. **Commands** (`src/commands/`): cache, completions, daemon, desktop (the desktop shell's verbs and `desktop check`), greeter, hypr (dialect-aware Hyprland IPC), input, list, modes, refresh, session, shader, status, theme_change
+1. **Commands** (`src/commands/`): cache, completions, daemon, desktop (the desktop shell's verbs and `desktop check`), greeter, hypr (dialect-aware Hyprland IPC), input, list, machine (the machine owners, `status`, `validate`, `inspect`), modes, refresh, session, shader, status, theme_change
 2. **Theme Management** (`src/theme/`): discovery, loader (per-scheme), query, types
 3. **Template Rendering** (`src/template/`): Tera-based config rendering
 4. **Cache** (`src/cache/`): Theme cache paths and rendering
 5. **Input engine** (`src/input/`): device (pure Router + the evdev-grab/uinput loop), schema (input.json loader → praxis ModeGraph), paradigm (project a praxis BindingSet + topology into a ModeGraph), catalog (vogix-native paradigm BindingSets), hypr (compositor IPC + active-window stream), keys (chord ↔ praxis-Key codec), taphold (dual-role CapsLock detector), devfilter (keyboard-device selection), health (daemon liveness/diagnostics), locks (Caps/Num/Scroll Lock from the grabbed keyboards' LEDs, published for the desktop shell)
-6. **Core modules**: cli.rs, config/, errors.rs, reload.rs, scheme.rs, state.rs, symlink.rs
+6. **Machine surfaces** (`src/machine/`): the typed `machine.json` and `palette.json` loaders, the publish, the event reactor (signalfd, inotify, hidraw uevents), the command runner, the VT palette, the owners' status and systemd notifications, and `openrgb/`, the OpenRGB SDK client (wire format, codec, session state machine, device selection, the owner and the read-only inspector)
+7. **Core modules**: cli.rs, config/, errors.rs, fsutil.rs, reload.rs, scheme.rs, state.rs, symlink.rs
 
 ## 7. Input Engine
 
@@ -310,3 +315,281 @@ the unit's own `PATH`, gated on the surfaces that use them.
 `desktop-smoke`, `desktop-taps` and `desktop-backgrounds` run in the build
 sandbox; `desktop-hyprland` runs the shell in a real Hyprland session in a
 VM. [TESTING.md](../TESTING.md) describes each.
+
+## 9. Machine Surfaces
+
+Some of what a theme colours belongs to the machine rather than to a user:
+RGB LEDs behind the OpenRGB server (DRAM, keyboards), a cooler's LED ring
+driven by a command, and the kernel's VT palette, which every text console,
+a console greeter included, draws with. Each has exactly one owner, a system
+unit, and all of them follow one declared user, the **machine owner**. No
+user's `vogix` CLI drives the LEDs or the devices: the owner's CLI publishes
+one file, and the owner units apply it.
+
+```
+machine owner's vogix CLI (theme set / undo / redo / refresh)
+        │  writes, after the state commit
+        ▼
+/var/lib/vogix/machine/palette.json ──(inotify)──┬──────────────────────────────┐
+                                                 ▼                              ▼
+                            vogix-machine.service (root)        vogix-openrgb.service (DynamicUser)
+                            vogix machine serve local           vogix machine serve openrgb
+                            VT palette, command devices         OpenRGB SDK client ──▶ openrgb.service
+```
+
+### Ownership and the drop zone
+
+- `vogix.machine.owner` names the user the machine surfaces follow. It
+  defaults to the alphabetically first home-manager user with
+  `programs.vogix.enable`, and must be one of those users. The build-time
+  console colours, the Plymouth theme and the greeter's palette follow the
+  same user.
+- The drop zone `/var/lib/vogix/machine` belongs to the machine owner (mode
+  0755), so only the owner can publish into it. Once a theme change is
+  committed (for a refresh, once its side effects ran), the owner's CLI
+  writes `palette.json` there atomically: a temporary file renamed into
+  place, mode 0644. A palette identical to the published one is not
+  rewritten, so the owner units see no event. Another user's CLI publishes
+  nothing and logs `Machine surfaces follow '<owner>'`; on a host without
+  `/etc/vogix/machine.json` the CLI publishes nothing.
+- One user-side path writes the VT palette: a theme change run on a text VT
+  reloads the `console` app, which loads that user's console palette into
+  the kernel and switches VTs away and back, so the VT it runs on shows the
+  new colours at once. The kernel keeps that palette until `vogix-machine`
+  next applies the machine owner's: at the owner's next publish, a reload or
+  a restart.
+- The owner units open `palette.json` without following a symlink and
+  accept it only as a regular file owned by the drop zone's owner, at most
+  64 KiB, in schema 1 with no unknown field. A palette they reject is
+  logged as an error, keeps the last accepted palette in force, and makes
+  `vogix machine status` exit 1.
+- The drop zone is state: a host with an ephemeral root persists
+  `/var/lib/vogix/machine`, or the boot restore waits for the owner's next
+  apply.
+
+### The units
+
+| Unit | Runs | Owns | Exists when |
+|---|---|---|---|
+| `vogix-machine.service` | `vogix machine serve local` as root with `CAP_SYS_TTY_CONFIG` only, a closed device policy (`/dev/tty0`, hidraw, USB), no network; `Type=notify`, ordered before `systemd-user-sessions.service` | the VT palette and the command devices | `vogix.machine.console.enable`, or any command device |
+| `vogix-openrgb.service` | `vogix machine serve openrgb` as a dynamic user with no capabilities, loopback only; bound to, ordered after and upheld by `openrgb.service` | the OpenRGB controllers the openrgb devices select | any openrgb device |
+| `vogix-machine-resume.service` | a oneshot after suspend and hibernate that reloads the owners | the re-apply after a resume | either owner |
+| `openrgb.service` | vogix's OpenRGB build as `Type=notify`: active once its SDK server listens | the SDK server | `vogix.openrgb.enable`, which any openrgb device turns on |
+
+**The local owner.** At start it reads the kernel's VT palette, writes the
+published console colours only when they differ, and then sends `READY=1`,
+so gettys, a console greeter and every text console draw with the owner's
+current palette. It never switches VTs: a VT in graphics mode (the
+compositor's) shows the new palette at its next switch to a text VT. It then
+runs each command device with its slot's colour as the `{{color}}` argument:
+one run at a time per device, with changes during a run coalesced into one
+more run with the latest colour. The commands' own output goes to the unit's
+journal. A hidraw node with a device's declared USB ids appearing (a
+replug, a USB re-enumeration after a resume) runs that device again, and a
+device whose last run failed runs again on the next published palette.
+
+**The OpenRGB owner.** It connects once `openrgb.service` is active, which
+is before the server's device detection, and applies each device's slot
+colour to every controller whose name contains the device's `nameContains`
+(ignoring case), in the mode named `mode` (the mode's exact name, ignoring
+case; an unknown mode is an error that lists the controller's modes). A
+controller is applied as it registers during detection, and every
+controller once more when detection completes. A per-LED mode gets the
+colour on every LED, a mode with mode-specific colours gets it as the mode
+colour, and brightness, speed and direction stay as the server reports
+them. At SDK protocol 6 each write is acknowledged and read back
+(`confirmed`); at protocol 5 there is no read-back (`sent`). A device that
+matches no controller is reported `absent`, which is not an error: at
+protocol 6 with a warning naming the controllers present once detection
+completes, at protocol 5 (which has no detection notifications) with a line
+each time it appears or goes.
+
+### Events
+
+Every wait in the owner units is an event: `poll(2)` with no timeout over
+the drop zone's inotify, a signalfd, the SDK socket and kernel uevents.
+Nothing sleeps, retries on a timer or times out.
+
+- **Boot.** `vogix-machine` applies the VT palette before user sessions
+  start, then runs the command devices. `openrgb.service` becoming active
+  starts `vogix-openrgb`.
+- **A theme change** (`theme set`, `undo`, `redo`, `refresh`, from any
+  terminal, the bar, the launcher or a keybinding) by the machine owner
+  publishes; both owners re-read the palette and re-apply what changed.
+  Rapid changes coalesce.
+- **OpenRGB stopped or restarted.** `vogix-openrgb` stops with it and is
+  started again once the server is active. A crashed server closes the
+  connection: `vogix-openrgb` logs `OpenRGB closed the connection`, exits
+  75, and comes back with the server's own restart.
+- **A device appearing.** OpenRGB's device-list updates re-apply; a
+  matching hidraw node re-runs a command device.
+- **Resume from suspend or hibernate.** `vogix-machine-resume` reloads both
+  owners (`SIGHUP`): a forced re-apply of every device, the VT palette
+  compared again.
+- **A NixOS switch that changes `/etc/vogix/machine.json`** restarts both
+  owners, which re-apply; what is already current is not rewritten.
+
+### Declaring devices
+
+Devices are declared on the NixOS side, keyed by a device name that every
+log line, `STATUS=` line and `vogix machine status` uses:
+
+```nix
+vogix.hardware.devices = {
+  case-fans = {
+    slot = "base0D";                            # a palette slot of the owner's theme
+    provider.openrgb = {
+      nameContains = "Corsair Lighting Node";   # every controller whose name contains this
+      mode = "Static";                          # the controller's mode, by name
+    };
+  };
+  desk-lamp = {
+    slot = "base01";
+    provider.command = {
+      argv = [ "${pkgs.lamp-ctl}/bin/lamp-ctl" "--color" "{{color}}" ];  # {{color}} becomes rrggbb
+      hotplug.hidraw = { vendorId = "1234"; productId = "abcd"; };       # run again when it appears
+    };
+  };
+};
+```
+
+- A device name and a slot are 1 to 64 characters of `A-Z a-z 0-9 _ -`.
+- `provider` is exactly one of `openrgb` and `command`.
+- A command's `argv[0]` is an absolute `/nix/store` path; an argument that
+  is exactly `{{color}}` becomes the colour as `rrggbb`, and `{{color}}`
+  inside a longer argument is rejected. The command runs as root in the
+  local owner's sandbox, with no network.
+- `hotplug.hidraw` (default `null`) takes USB ids as four lowercase hex
+  digits.
+
+The hardware modules declare their own devices:
+
+| Module | Device | Provider | Slot |
+|---|---|---|---|
+| `vogix.hardware.dram-rgb` | `dram-rgb` | OpenRGB: `ENE DRAM`, mode `Static` | `dram-rgb.colorSlot` (`base01`) |
+| `vogix.hardware.keychron-k2-he` | `keychron-k2-he` | OpenRGB: `Keychron K2 HE`, mode `Static` | `keychron-k2-he.colorSlot` (`base0D`) |
+| `vogix.hardware.kraken-elite` with `rgb.ring.enable` | `kraken-ring` | command: `liquidctl --match kraken set ring color fixed {{color}}`, re-run on hidraw `1e71:3012` | `kraken-elite.rgb.ring.colorSlot` (`base01`) |
+
+The rest of the machine configuration:
+
+- `vogix.machine.console.enable` (default `true`): whether `vogix-machine`
+  writes the VT palette.
+- `vogix.openrgb.client.maxProtocol` (`5` or `6`, default `6`): the highest
+  SDK protocol the client offers; the session runs at the lower of this and
+  the server's.
+- `vogix.openrgb.settings`: sections of `OpenRGB.json`, merged into it
+  before every server start (objects merge, other values replace);
+  `vogix.openrgb.qmkDevices` is rendered into it as `QMKOpenRGBDevices`.
+- `services.hardware.openrgb.package` defaults to vogix's OpenRGB build. A
+  host that sets it uses `vogix.lib.openrgbPatched pkgs`; an assertion
+  rejects a build that does not notify systemd when it listens
+  (`passthru.vogixReadiness`).
+
+### The files
+
+`/etc/vogix/machine.json` is rendered by the NixOS module from the options
+above; the owners read it with a typed loader that rejects unknown fields,
+and `vogix machine validate` runs that loader on any file:
+
+```json
+{
+  "schema": 1,
+  "owner": "alice",
+  "dropZone": "/var/lib/vogix/machine",
+  "console": { "enable": true },
+  "openrgb": { "host": "127.0.0.1", "port": 6742, "maxProtocol": 6, "clientName": "vogix" },
+  "devices": {
+    "dram-rgb": {
+      "slot": "base01",
+      "provider": { "openrgb": { "nameContains": "ENE DRAM", "mode": "Static" } }
+    },
+    "kraken-ring": {
+      "slot": "base01",
+      "provider": {
+        "command": {
+          "argv": ["/nix/store/…-liquidctl-…/bin/liquidctl", "--match", "kraken", "set", "ring", "color", "fixed", "{{color}}"],
+          "hotplug": { "hidraw": { "vendorId": "1e71", "productId": "3012" } }
+        }
+      }
+    }
+  }
+}
+```
+
+`openrgb` is `null` when no device uses OpenRGB, and its `host` is a
+loopback address.
+
+`/var/lib/vogix/machine/palette.json` is what the machine owner's CLI
+publishes: the theme, every slot the theme defines, and the 16 VT colours
+from `current-theme/console/palette` (`null` when the owner's console app is
+off):
+
+```json
+{
+  "schema": 1,
+  "theme": { "scheme": "vogix16", "name": "yoga", "variant": "night" },
+  "slots": { "base00": "#232020", "base01": "#2f2a27", "…": "…" },
+  "console": ["#232020", "#f0635a", "…"]
+}
+```
+
+### Failures
+
+Every failure is logged, in the journal of the unit that owns the surface;
+nothing is discarded:
+
+```bash
+journalctl -u vogix-machine                # the VT palette; each command device's runs, with the command's own output
+journalctl -u vogix-openrgb                # the SDK session; each controller confirmed or failed; absent devices
+journalctl -u openrgb                      # the OpenRGB server
+systemctl status vogix-machine vogix-openrgb   # each owner's STATUS= line
+vogix machine status                       # both owners, the owner and the published palette; exits 1 on a problem
+```
+
+- The publish is the CLI's: a palette it could not publish is a warning on
+  the CLI's stderr, naming the reason, and does not fail the theme change.
+- Each owner keeps a one-line summary in its `STATUS=` (for example
+  `protocol 6; 3 controllers; dram-rgb confirmed x2; keychron-k2-he absent`)
+  and a typed `status.json` under `/run/vogix/machine` or
+  `/run/vogix/openrgb`, which `vogix machine status` reads.
+- `vogix machine status` exits 1 when a surface is in error, an owner is
+  faulted, an owner the machine config declares is not running, the
+  published palette is rejected, or `machine.json` cannot be read. An absent
+  device is reported and is not a problem.
+- A command device that exits non-zero is logged with its pid and exit
+  status and shown as `error`; it runs again on the next published palette,
+  `SIGHUP` or a matching hidraw arrival.
+- A protocol violation the OpenRGB owner detects (a malformed frame, a
+  server below protocol 5) leaves it running and `faulted` until
+  `systemctl reload vogix-openrgb`, a stop, or an OpenRGB restart; it does
+  not retry by itself.
+- Exit statuses: `0` stopped; `75` temporary (OpenRGB refused or closed the
+  connection; for `vogix-machine`, an event source failed or the drop zone
+  went away); `78` configuration (`machine.json` rejected or the drop zone
+  missing; for `vogix-openrgb`, also the drop zone going away).
+  `vogix-machine` restarts after any failure but a `78`. `vogix-openrgb` has
+  no restart of its own: it is started again whenever it is down while
+  `openrgb.service` is active (`Upholds=`), at most 3 times in 60 seconds.
+  Past that limit (a `78` that repeats, or three OpenRGB crashes within a
+  minute) it stays failed until `systemctl reset-failed vogix-openrgb` or
+  the next boot.
+
+### Moving off `vogix.hardware.themeApply`
+
+- The NixOS option `vogix.hardware.themeApply` does not exist, and
+  `config.toml` has no `[hardware.*]` tables: the CLI does not run hardware
+  commands. Declare each device in `vogix.hardware.devices` instead. An
+  OpenRGB CLI line `openrgb -d '<name>' -m <mode> -c {{<slot>}}` becomes
+  `slot = "<slot>"` with `provider.openrgb = { nameContains = "<name>"; mode = "<mode>"; }`;
+  any other command becomes `provider.command.argv`, with `{{color}}` as an
+  argument of its own and `argv[0]` a store path. The hardware modules
+  above need no change.
+- A bridge that copied `vogix.hardware.themeApply` into
+  `programs.vogix.themeApply` is removed with it.
+- `programs.vogix.themeApply` stays: the user's own apply hooks, rendered
+  as `[hooks."<name>"]` and run by the CLI for that user's applies (the
+  greeter sync is one, see [Reload Mechanism](reload.md#apply-hooks)).
+- `openrgb.service` runs as `Type=notify`: leave
+  `services.hardware.openrgb.package` at its default or set it to
+  `vogix.lib.openrgbPatched pkgs`.
+- OpenRGB devices keep the brightness the server reports.

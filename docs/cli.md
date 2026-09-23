@@ -391,7 +391,10 @@ vogix greeter sync   # copy the live theme into /var/lib/vogix/greeter (the SDDM
 
 The machine owner's theme applies publish its palette to
 `/var/lib/vogix/machine/palette.json`, which the machine owner units apply to
-the LEDs, command devices and the VT palette. Check what they are doing:
+the LEDs, command devices and the VT palette (see
+[the machine surfaces](architecture.md#9-machine-surfaces) for the owner, the
+units, declaring devices and where failures are logged). Check what they are
+doing:
 
 ```bash
 vogix machine status         # the owner, the published palette, and each owner unit's state
@@ -425,7 +428,8 @@ and `/run/vogix/openrgb/status.json`) until `SIGHUP` or a stop.
 `status` exits 1 when a surface is in error, an owner unit is faulted, an owner
 unit the machine config declares has no status (it is not running), or the
 published palette is rejected. An absent device (no controller matches it) is
-reported but is not an error.
+reported but is not an error. The reason behind each state is in the owner
+unit's journal (`journalctl -u vogix-machine`, `journalctl -u vogix-openrgb`).
 
 Check the files the machine owners read, with the loaders they use:
 

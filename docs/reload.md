@@ -58,3 +58,10 @@ command = """/nix/store/…-vogix/bin/vogix greeter sync"""
 ```
 
 On every theme apply (`theme set`, `refresh`, `undo`, `redo`) the CLI runs all hooks in parallel, each as `sh -c` with every `{{slot}}` placeholder (e.g. `{{base01}}`, `{{active}}`) replaced by that slot's colour as `rrggbb`. A hook that cannot start or exits non-zero is reported and does not fail the apply.
+
+Hooks run as the user, for that user's own applies. Hardware that belongs to
+the machine (RGB LEDs, cooler rings) is not a hook: it is declared with the
+NixOS option `vogix.hardware.devices` and applied, like the VT palette, by
+the machine owner units from the machine owner's published palette (see
+[the machine surfaces](architecture.md#9-machine-surfaces)). `config.toml`
+has no `[hardware.*]` tables.

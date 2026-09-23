@@ -78,8 +78,9 @@ Vogix supports 4 color schemes, each with its own philosophy:
 - **Application-Specific Configs**: Direct integration for [supported applications](https://github.com/i-am-logger/vogix/tree/master/nix/modules/applications)
 - **Monochromatic Screen Shader**: A palette-derived Hyprland screen shader ships today — it desaturates the screen to a light/dark blend of the active theme's ramp while preserving the functional colors, applied/cleared via `hyprctl` and driven by the full `vogix shader` CLI (`on`/`off`/`toggle`/`status`, with intensity/brightness params)
 - **Multiple Reload Methods**: Unix signals, command, filesystem watching (`touch`), or none
+- **Machine Surfaces**: RGB LEDs through OpenRGB, command-driven devices such as a cooler's LED ring, and the kernel's VT palette follow one declared user's theme, applied by system units at boot and on every theme change; `vogix machine status` reports them (see [the machine surfaces](docs/architecture.md#9-machine-surfaces))
 - **Nix-Based Theme Generation**: All theme configurations pre-generated at build time
-- **NixOS Integration**: Home Manager module with systemd service
+- **NixOS Integration**: a Home Manager module for each user's theme and a NixOS module for the machine surfaces, the console and the greeter
 - **Shell Completions**: Support for Bash, Zsh, Fish, and Elvish
 
 ### Input Engine
@@ -187,7 +188,7 @@ See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) - System architecture and integration
+- [Architecture](docs/architecture.md) - System architecture and integration, and the machine surfaces (LEDs, coolers, the VT palette)
 - [CLI Reference](docs/cli.md) - Command-line interface guide
 - [Desktop Shell](docs/desktop.md) - The Flight Deck HUD: bars, widgets, notifications, lock, launcher
 - [Hyprland IPC](docs/hyprland-lua-ipc.md) - Talking to Hyprland under both config engines
