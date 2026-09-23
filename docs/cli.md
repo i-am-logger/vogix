@@ -387,6 +387,20 @@ vogix greeter sync   # copy the live theme into /var/lib/vogix/greeter (the SDDM
                      # programs.vogix.greeter.sync)
 ```
 
+### Machine surfaces
+
+Check the files the machine owners read, with the loaders they use:
+
+```bash
+vogix machine validate /etc/vogix/machine.json    # the rendered machine config
+vogix machine validate --palette /var/lib/vogix/machine/palette.json   # a published palette
+```
+
+Both print a summary and exit 0 when the file is accepted, and name the file
+and the reason and exit 1 when it is not. A palette is checked on the drop-zone
+terms: a regular file (not a symlink) owned by its directory's owner, at most
+64 KiB, schema 1 with no unknown fields.
+
 ### Modes
 
 Switch the active desktop mode, and inspect submap-mode telemetry captured by the daemon:

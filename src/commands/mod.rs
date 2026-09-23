@@ -16,6 +16,7 @@ pub mod greeter;
 pub mod hypr;
 mod input;
 mod list;
+pub mod machine;
 mod modes;
 pub mod refresh;
 pub mod session;

@@ -7,6 +7,10 @@ mod errors;
 mod fsutil;
 mod history;
 mod input;
+// `vogix machine validate` is this build's only caller of the machine module;
+// the parts the machine owner units use have no caller in this build.
+#[allow(dead_code)]
+mod machine;
 mod reload;
 mod scheme;
 mod shader;
@@ -113,6 +117,8 @@ fn run(cli: &Cli) -> Result<()> {
         Commands::Desktop { command } => commands::desktop::handle_desktop(command),
 
         Commands::Greeter { command } => commands::greeter::handle_greeter(command),
+
+        Commands::Machine { command } => commands::machine::handle_machine(command),
 
         Commands::Cache {
             command: CacheCommands::Clean,

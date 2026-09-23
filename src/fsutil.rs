@@ -7,7 +7,7 @@
 //! one, never a torn one, and a destination that holds exactly the intended
 //! bytes is left alone, so its watchers see no event.
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
@@ -103,6 +103,20 @@ fn holds_exactly(dest: &Path, contents: &[u8], mode: u32) -> bool {
     file.take(contents.len() as u64 + 1)
         .read_to_end(&mut existing)
         .is_ok_and(|_| existing == contents)
+}
+
+/// Read at most `max` bytes from `file`; more than that is `InvalidData`.
+/// Bounds every read of a file another process controls.
+pub fn read_capped(file: &mut File, max: u64) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    file.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("larger than {max} bytes"),
+        ));
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -251,5 +265,16 @@ mod tests {
         let dest = dir.path().join("absent/palette.json");
         let err = write_atomic(&dest, b"x", 0o644).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn read_capped_rejects_one_byte_over_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f");
+        fs::write(&path, vec![b'a'; 16]).unwrap();
+        let exact = read_capped(&mut File::open(&path).unwrap(), 16).unwrap();
+        assert_eq!(exact.len(), 16);
+        let err = read_capped(&mut File::open(&path).unwrap(), 15).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 }

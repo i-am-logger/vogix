@@ -55,6 +55,13 @@ pub enum Commands {
         command: GreeterCommands,
     },
 
+    /// Machine surfaces (LEDs, command devices, the VT palette) that follow
+    /// the machine owner's published palette
+    Machine {
+        #[command(subcommand)]
+        command: MachineCommands,
+    },
+
     /// Manage desktop sessions (save/restore workspaces)
     Session {
         #[command(subcommand)]
@@ -431,6 +438,22 @@ pub enum GreeterCommands {
     /// into /var/lib/vogix/greeter so the SDDM greeter follows the palette.
     /// Wired as a themeApply hook by programs.vogix.greeter.sync
     Sync,
+}
+
+#[derive(Subcommand)]
+pub enum MachineCommands {
+    /// Check a machine config (/etc/vogix/machine.json) — or, with
+    /// --palette, a published palette.json — with the same loader the
+    /// machine owners use, and summarize it. Exits 1 when it is rejected
+    Validate {
+        /// The file to check
+        path: std::path::PathBuf,
+        /// Check a published palette.json (drop-zone rules: a regular file,
+        /// not a symlink, owned by its directory's owner) instead of a
+        /// machine config
+        #[arg(long)]
+        palette: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -935,6 +958,33 @@ mod tests {
             }
         ));
         assert!(Cli::try_parse_from(["vogix", "desktop", "bar", "geometry", "top"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_machine_validate() {
+        let cli = Cli::try_parse_from(["vogix", "machine", "validate", "/etc/vogix/machine.json"])
+            .unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Validate { ref path, palette: false }
+            } if path == std::path::Path::new("/etc/vogix/machine.json")
+        ));
+        let cli = Cli::try_parse_from([
+            "vogix",
+            "machine",
+            "validate",
+            "--palette",
+            "/var/lib/vogix/machine/palette.json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Validate { palette: true, .. }
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "machine", "validate"]).is_err());
     }
 
     // ── Property: invalid subcommands fail gracefully ──

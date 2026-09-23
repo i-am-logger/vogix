@@ -1,0 +1,12 @@
+//! Machine surfaces: state that belongs to the machine rather than to a user
+//! session — LEDs behind the OpenRGB server, command-driven devices and the
+//! kernel's VT palette.
+//!
+//! One declared owner publishes `palette.json` into a drop zone; system units
+//! read it together with `/etc/vogix/machine.json` and apply it. This module
+//! holds the data model both sides share and the primitives those units are
+//! built from.
+
+pub mod config;
+pub mod palette;
+pub mod types;
