@@ -109,8 +109,9 @@ let
         type = types.nullOr types.ints.positive;
         default = null;
         description = ''
-          Seconds between runs. Null runs the command only when the cell
-          appears, when a `watch` file changes, after a click, and on
+          Seconds between runs, counted from the latest result. Null runs
+          the command only when the cell first appears, when a `watch`
+          file changes, after a click, and on
           `vogix desktop custom refresh <name>`.
         '';
       };
@@ -257,8 +258,12 @@ in
           description = ''
             Custom cells, each showing the output of a command. A bar
             places one by naming `custom/<name>` in a layout section
-            (names: letters, digits, `-`, `_`); the command runs only while
-            a bar shows its cell, once however many bars and screens do.
+            (names: letters, digits, `-`, `_`). The command runs once however
+            many bars and screens show the cell, and only while one of them
+            is on screen: shown, not parked, the session unlocked and the
+            screens on. A cell back on screen runs its command only if its
+            result is older than its interval, or a watched file changed or
+            a refresh came while it was away.
           '';
         };
 

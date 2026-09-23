@@ -29,9 +29,22 @@ FrameCell {
     // side padding and a unit of air on each side.
     readonly property real railRoom: (axis?.thickness ?? 0) - 2 * padH - 4 * Metrics.unit
 
-    // The name arrives after the cell is created, so the runner is held
-    // from whichever name the cell currently shows.
+    // The runner counts this cell as placed while it exists, and as live
+    // while its bar is (BarState.live: shown, not parked, the screen in
+    // use); its command runs only while some cell is live. The name and
+    // the axis arrive after the cell is created, so both holds follow
+    // whichever name the cell currently shows.
+    readonly property string liveName: (root.axis?.live ?? false) ? root.cellName : ""
+    property string _placed: ""
     property string _held: ""
+
+    function _place(next: string): void {
+        if (root._placed !== "")
+            Custom.unplace(root._placed);
+        root._placed = next;
+        if (next !== "")
+            Custom.place(next);
+    }
 
     function _hold(next: string): void {
         if (root._held !== "")
@@ -41,8 +54,12 @@ FrameCell {
             Custom.acquire(next);
     }
 
-    onCellNameChanged: _hold(cellName)
-    Component.onDestruction: _hold("")
+    onCellNameChanged: _place(cellName)
+    onLiveNameChanged: _hold(liveName)
+    Component.onDestruction: {
+        _hold("");
+        _place("");
+    }
 
     title: {
         const t = root.def.title ?? root.cellName;

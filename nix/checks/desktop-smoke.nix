@@ -67,9 +67,10 @@ let
     # One mount every host has and one no host has: the mounts cell comes
     # up for the first and has no entry for the second.
     meters.mounts = [ "/" "/vogix-smoke-absent" ];
-    # Custom cells over every trigger but the timer: first show (text,
-    # json, a stream), a watched file's creation and change, and the IPC
-    # refresh. @RT@ becomes the runtime dir once the file is in place.
+    # Custom cells over every trigger: first show (text, json, a stream),
+    # a watched file's creation and change, the IPC refresh, and the
+    # timer (one cell due every 2 s, one hourly). @RT@ becomes the
+    # runtime dir once the file is in place.
     custom = {
       smoke = { title = "SMK"; command = "echo SMOKE-42"; };
       gauge = {
@@ -81,11 +82,19 @@ let
       counter = {
         command = "n=$(cat @RT@/smoke-count 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-count; echo RUN-$n";
       };
+      ticker = {
+        command = "n=$(cat @RT@/smoke-tick 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-tick; echo TICK-$n";
+        interval = 2;
+      };
+      slow = {
+        command = "n=$(cat @RT@/smoke-slow 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-slow; echo SLOW-$n";
+        interval = 3600;
+      };
     };
     bars = {
       top.layout.center = pin.bars.top.layout.center ++ extras ++ [ "custom/smoke" "custom/gauge" ];
       right.layout.center = pin.bars.right.layout.center ++ railExtras
-        ++ [ "custom/watched" "custom/counter" "custom/stream" ];
+        ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" ];
     };
   };
   desktopJson = builtins.toJSON fixture;
@@ -360,6 +369,32 @@ pkgs.runCommand "vogix-desktop-smoke"
   v custom-counter-refresh custom refresh counter
   sleep 1
   v custom-counter custom status counter
+  # Custom cells run only while their bar is on screen. The 2 s ticker
+  # has ticked; with the right rail parked, nothing on it runs, and a
+  # watched change and a refresh wait. Back on screen, the ticker (its
+  # result older than its interval), the watched cell and the refreshed
+  # counter run at once, and the hourly cell does not.
+  for _ in $(seq 60); do
+    [ "$(cat $XDG_RUNTIME_DIR/smoke-tick 2>/dev/null || echo 0)" -ge 2 ] && break
+    sleep 0.1
+  done
+  v park-right bar hide right
+  sleep 1
+  t0=$(cat $XDG_RUNTIME_DIR/smoke-tick)
+  s0=$(cat $XDG_RUNTIME_DIR/smoke-slow)
+  echo W-3 > $XDG_RUNTIME_DIR/smoke-watch
+  v custom-parked-refresh custom refresh counter
+  sleep 3
+  echo "custom-parked-ticks $t0 $(cat $XDG_RUNTIME_DIR/smoke-tick)" >> $R
+  v custom-parked-watched custom status watched
+  v custom-parked-counter custom status counter
+  t1=$(cat $XDG_RUNTIME_DIR/smoke-tick)
+  v unpark-right bar show right
+  sleep 1
+  echo "custom-unparked-ticks $(($(cat $XDG_RUNTIME_DIR/smoke-tick) - t1))" >> $R
+  echo "custom-unparked-slow $s0 $(cat $XDG_RUNTIME_DIR/smoke-slow)" >> $R
+  v custom-unparked-watched custom status watched
+  v custom-unparked-counter custom status counter
   v keyboard keyboard
   # The input engine's lock document, handled as the engine does:
   # written tmp + rename, rewritten the same way, removed on stop. The
@@ -522,6 +557,19 @@ pkgs.runCommand "vogix-desktop-smoke"
   r 'custom-watched-changed W-2'
   r 'custom-counter-refresh refreshing'
   r 'custom-counter RUN-2'
+  # Parked: the tick count held, the watched cell kept its value and the
+  # refresh was queued. Back on screen: one tick at once, no hourly run,
+  # and the watched change and the refresh taken.
+  set -- $(grep '^custom-parked-ticks ' $TMPDIR/result)
+  test "$2" = "$3" || { echo "a custom cell ran while its bar was parked: ticks $2 -> $3"; exit 1; }
+  r 'custom-parked-refresh queued: custom/counter runs once its bar is on screen'
+  r 'custom-parked-watched W-2'
+  r 'custom-parked-counter RUN-2'
+  r 'custom-unparked-ticks 1'
+  set -- $(grep '^custom-unparked-slow ' $TMPDIR/result)
+  test "$2" = "$3" || { echo "the hourly cell ran on coming back on screen: $2 -> $3"; exit 1; }
+  r 'custom-unparked-watched W-3'
+  r 'custom-unparked-counter RUN-3'
   # A name desktop.json does not define is the caller's error.
   r 'custom-undefined [ERROR] config error: unknown custom cell: undefined'
   r 'keyboard device:vogix-input layouts:de,us active:de caps:unknown'

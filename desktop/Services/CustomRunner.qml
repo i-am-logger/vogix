@@ -1,11 +1,19 @@
 pragma ComponentBehavior: Bound
 // One custom cell's command (desktop.json `custom.<name>`), shared by every
-// cell that shows it and live only while one does. A run starts when the
-// first cell appears, every `interval` seconds, when a `watch` file
-// changes, after the cell's click action finishes, and on `vogix desktop
-// custom refresh`. A trigger during a one-shot run queues exactly one
-// re-run, so a burst of file changes costs one more run, never a pile-up.
-// A `stream` command stays up and publishes every line it prints; a
+// cell that shows it. The command runs only while one of those cells is on
+// a live bar (`active`: shown, not parked, the screen in use); nothing runs
+// while every bar showing it is parked, locked away or switched off.
+//
+// A run starts when the cell becomes live and its last result is older
+// than its `interval` (or it has none), once the result reaches that age
+// while live, when a `watch` file changes, after the cell's click action
+// finishes, and on `vogix desktop custom refresh`. A watch change or a
+// refresh that arrives while the cell is not live, and a run cut short by
+// its bar leaving the screen, leave the result stale: the command runs as
+// soon as the cell is live again. A trigger during a one-shot run queues
+// exactly one re-run, so a burst of file changes costs one more run, never
+// a pile-up. A `stream` command stays up while live and publishes every
+// line it prints; it starts again whenever the cell becomes live, and a
 // trigger relaunches it only once it has exited.
 import QtQuick
 import Quickshell
@@ -16,6 +24,9 @@ Scope {
 
     required property string name
     property var def: ({})
+    // Some cell shows this command (on any bar, live or not).
+    property bool placed: false
+    // Some cell showing it is on a live bar.
     property bool active: false
 
     readonly property string command: def.command ?? ""
@@ -37,11 +48,15 @@ Scope {
     property bool hasResult: false
 
     // One line for `vogix desktop custom status`.
-    readonly property string status: !active ? "inactive"
+    readonly property string status: !placed && !hasResult ? "inactive"
         : failure !== "" ? "failed: " + failure
         : hasResult ? text
         : "pending"
 
+    // When the latest result (a value or a failure) landed, epoch ms.
+    property real _resultAt: 0
+    // Something the result depends on changed while nothing could run.
+    property bool _stale: false
     property bool _queued: false
     property bool _stopping: false
     // A one-shot run's output, published once the run exits: its first
@@ -50,21 +65,45 @@ Scope {
     property string _all: ""
     readonly property int _jsonCap: 64 * 1024
 
+    // Run the command now, or, while no bar showing it is live, as soon as
+    // one is.
     function trigger(): void {
-        if (!root.active || root.command === "")
+        if (root.command === "")
             return;
+        if (!root.active) {
+            root._stale = true;
+            return;
+        }
         if (proc.running) {
             if (!root.stream)
                 root._queued = true;
             return;
         }
+        root._stale = false;
         root._firstLine = "";
         root._all = "";
+        due.stop();
         proc.running = true;
     }
 
-    // A changed command or a hidden cell ends the current run without
-    // counting it as a failure; a changed command starts the new one.
+    // The result is at least `interval` old.
+    function _due(): bool {
+        return root.intervalSec > 0 && Date.now() - root._resultAt >= root.intervalSec * 1000;
+    }
+
+    // Wake when the result reaches its interval's age.
+    function _schedule(): void {
+        if (!root.active || root.intervalSec <= 0 || proc.running) {
+            due.stop();
+            return;
+        }
+        due.interval = Math.max(1, root.intervalSec * 1000 - (Date.now() - root._resultAt));
+        due.restart();
+    }
+
+    // A changed command or a cell leaving the screen ends the current run
+    // without counting it as a failure; a changed command starts the new
+    // one.
     function _stop(thenRun: bool): void {
         root._queued = thenRun;
         if (proc.running) {
@@ -85,13 +124,18 @@ Scope {
             clickProc.running = true;
     }
 
+    function _landed(): void {
+        root.hasResult = true;
+        root._resultAt = Date.now();
+    }
+
     function _publish(raw: string): void {
         if (!root.json) {
             root.text = raw;
             root.level = "normal";
             root.meter = -1;
             root.failure = "";
-            root.hasResult = true;
+            root._landed();
             return;
         }
         let value = null;
@@ -109,14 +153,14 @@ Scope {
         root.level = value.state === "warning" || value.state === "danger" ? value.state : "normal";
         root.meter = typeof value.meter === "number" ? Math.max(0, Math.min(1, value.meter)) : -1;
         root.failure = "";
-        root.hasResult = true;
+        root._landed();
     }
 
     function _fail(why: string): void {
         if (root.failure !== why)
             console.warn("vogix: custom/" + root.name + ": " + why);
         root.failure = why;
-        root.hasResult = true;
+        root._landed();
     }
 
     function _read(line: string): void {
@@ -141,9 +185,13 @@ Scope {
         } else if (!root.stream) {
             root._publish(root.json ? root._all.trim() : root._firstLine);
         }
-        if (root._queued) {
+        // A queued trigger, or a run owed since the cell left the screen and
+        // came back before this one finished stopping.
+        if (root._queued || (root.active && root._stale)) {
             root._queued = false;
             root.trigger();
+        } else {
+            root._schedule();
         }
     }
 
@@ -157,10 +205,18 @@ Scope {
     }
 
     onActiveChanged: {
-        if (active)
-            trigger();
-        else
-            _stop(false);
+        if (active) {
+            if (root.stream || root._stale || !root.hasResult || root._due())
+                root.trigger();
+            else
+                root._schedule();
+        } else {
+            due.stop();
+            // A run cut short owes its result.
+            if (proc.running)
+                root._stale = true;
+            root._stop(false);
+        }
     }
 
     onCommandChanged: {
@@ -186,15 +242,15 @@ Scope {
     }
 
     Timer {
-        interval: Math.max(1, root.intervalSec) * 1000
-        running: root.active && root.intervalSec > 0
-        repeat: true
+        id: due
         onTriggered: root.trigger()
     }
 
-    // Change notification only: nothing is read from these files.
+    // Change notification only: nothing is read from these files. Watched
+    // while any cell shows the command, so a change while none is live is
+    // not missed.
     Variants {
-        model: root.active ? root.watch : []
+        model: root.placed ? root.watch : []
 
         FileView {
             id: watched

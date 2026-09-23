@@ -404,7 +404,8 @@ pub enum RemindCommands {
 #[derive(Subcommand)]
 pub enum CustomCommands {
     /// Run the cell's command now — the event-driven refresh, for whatever
-    /// just changed the state the cell shows
+    /// just changed the state the cell shows. While no bar showing the cell
+    /// is on screen, it runs once one is
     Refresh {
         /// The cell's name (its key under desktop.json `custom`)
         name: String,
