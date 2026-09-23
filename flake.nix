@@ -306,6 +306,81 @@
               touch $out
             '';
 
+          # Login shells run nothing from vogix; the theme is restored once
+          # per graphical session by a user oneshot. Evaluated for a profile
+          # with bash, zsh and fish enabled: no login-time shell text names
+          # the vogix binary; vogix-theme-restore is a oneshot without
+          # RemainAfterExit, wanted by and ordered after
+          # graphical-session.target, running the profile's
+          # `vogix theme refresh` at its log level; config.toml carries the
+          # apply hooks (the greeter's included) as [hooks."<name>"] tables
+          # and no [hardware.*] table. Checked at instantiation, so
+          # `--no-build` covers it.
+          login-profile =
+            let
+              inherit (pkgs) lib;
+              inherit (home-manager.lib.homeManagerConfiguration {
+                inherit pkgs;
+                modules = [
+                  self.homeManagerModules.default
+                  {
+                    home = {
+                      username = "t";
+                      homeDirectory = "/home/t";
+                      stateVersion = "24.11";
+                    };
+                    programs = {
+                      bash.enable = true;
+                      zsh.enable = true;
+                      fish.enable = true;
+                      vogix = {
+                        enable = true;
+                        appearance = {
+                          theme = "yoga";
+                          variant = "night";
+                          prebuiltThemes = [ "yoga" ];
+                        };
+                        logLevel = "debug";
+                        greeter.sync = true;
+                        themeApply.probe = "printf %s {{base01}}";
+                        enableDaemon = false;
+                      };
+                    };
+                  }
+                ];
+              }) config;
+              loginTexts = {
+                "programs.bash.profileExtra" = config.programs.bash.profileExtra;
+                "programs.zsh.profileExtra" = config.programs.zsh.profileExtra;
+                "programs.zsh.loginExtra" = config.programs.zsh.loginExtra;
+                "programs.fish.loginShellInit" = config.programs.fish.loginShellInit;
+              };
+              runningVogix = builtins.attrNames (lib.filterAttrs (_: lib.hasInfix "bin/vogix") loginTexts);
+              unit = config.systemd.user.services.vogix-theme-restore or null;
+              refresh = "${config.programs.vogix.package}/bin/vogix theme refresh";
+              unitOk = unit != null
+                && unit.Service.Type == "oneshot"
+                && !(unit.Service ? RemainAfterExit)
+                && lib.toList unit.Service.ExecStart == [ refresh ]
+                && builtins.elem "RUST_LOG=vogix=debug" (lib.toList unit.Service.Environment)
+                && builtins.elem "graphical-session.target" unit.Unit.After
+                && builtins.elem "graphical-session.target" unit.Install.WantedBy;
+              setup = config.home.activation.vogixSetup.data;
+              hooksOk = lib.hasInfix ''[hooks."greeter"]'' setup
+                && lib.hasInfix ''
+                [hooks."probe"]
+                command = """printf %s {{base01}}"""''
+                setup
+                && !(lib.hasInfix "[hardware" setup);
+            in
+            assert runningVogix == [ ] || throw "login shells run vogix from ${lib.concatStringsSep ", " runningVogix}";
+            assert unitOk || throw "vogix-theme-restore is not a oneshot without RemainAfterExit, wanted by and after graphical-session.target, running `${refresh}` at RUST_LOG=vogix=debug: ${builtins.toJSON unit}";
+            assert hooksOk || throw "config.toml does not carry the apply hooks as [hooks.\"<name>\"] tables, or still has a [hardware] table";
+            pkgs.runCommand "vogix-login-profile" { } ''
+              echo "login shells run nothing from vogix; vogix-theme-restore restores each graphical session"
+              touch $out
+            '';
+
           # desktop.json is the v1→v2 contract, so its DEFAULT rendering is
           # pinned byte-for-byte (key-sorted): schema drift must arrive as a
           # deliberate, reviewed edit of the pin file, never as a side effect

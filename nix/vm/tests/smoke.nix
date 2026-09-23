@@ -1,7 +1,8 @@
 # Smoke tests - Quick sanity checks
 #
-# Tests: Binary exists, status command, list command, activation setup
-# These should run fast and catch obvious failures early.
+# Tests: Binary exists, status command, list command, activation setup,
+# login shells running nothing from vogix, and the session's theme restore
+# unit. These should run fast and catch obvious failures early.
 #
 { pkgs
 , vogix16Themes
@@ -75,18 +76,49 @@ testLib.mkTest "smoke" ''
   assert "_vogix" in output or "completion" in output
   print("✓ Shell completions work")
 
-  print("\n=== Test: Vogix Refresh in Login Shell Profile ===")
-  # Check that vogix theme refresh is in bash profile or .profile (since bash is enabled in test VM)
-  # Home-manager may put profileExtra in .profile which is sourced by .bash_profile
-  profile_content = machine.succeed("su - vogix -c 'cat ~/.profile 2>/dev/null || echo NOTFOUND'")
-  bash_profile_content = machine.succeed("su - vogix -c 'cat ~/.bash_profile 2>/dev/null || echo NOTFOUND'")
+  print("\n=== Test: Login Shells Run Nothing From Vogix ===")
+  # bash is enabled for the test user, so home-manager writes both login
+  # files; neither may name the vogix binary.
+  for profile in ("/home/vogix/.profile", "/home/vogix/.bash_profile"):
+      machine.succeed(f"test -s {profile}")
+      machine.fail(f"grep -F bin/vogix {profile}")
+  print("✓ ~/.profile and ~/.bash_profile do not run vogix")
 
-  if "vogix theme refresh" in profile_content or "vogix theme refresh" in bash_profile_content:
-      print("✓ vogix theme refresh found in login shell profile")
-  else:
-      print(f".profile content: {profile_content[:500]}")
-      print(f".bash_profile content: {bash_profile_content[:500]}")
-      raise AssertionError("FAILED: vogix theme refresh not found in shell profile")
+  # A refresh swaps current-theme by renaming a new link over it, so a login
+  # shell that ran one would leave a different inode behind.
+  def current_theme_inode():
+      return machine.succeed(f"stat -c %i {current_theme}").strip()
+
+  inode = current_theme_inode()
+  machine.succeed("su - vogix -c true")
+  assert current_theme_inode() == inode, "a login shell replaced current-theme: it ran a theme refresh"
+  print("✓ a login shell leaves current-theme untouched")
+
+  print("\n=== Test: Session Theme Restore Unit ===")
+  units = "/home/vogix/.config/systemd/user"
+  unit = machine.succeed(f"cat {units}/vogix-theme-restore.service")
+  assert "Type=oneshot" in unit, unit
+  assert "RemainAfterExit" not in unit, unit
+  assert re.search(r"^ExecStart=/nix/store/[^/]+/bin/vogix theme refresh$", unit, re.M), unit
+  assert re.search(r"^After=graphical-session\.target$", unit, re.M), unit
+  assert re.search(r"^WantedBy=graphical-session\.target$", unit, re.M), unit
+  machine.succeed(f"test -e {units}/graphical-session.target.wants/vogix-theme-restore.service")
+  print("✓ vogix-theme-restore.service is a oneshot wanted by graphical-session.target")
+
+  # This VM has no graphical session, so the unit is started directly: the
+  # refresh it runs applies the theme and logs to the user journal.
+  def user_systemctl(args):
+      return machine.succeed(f"su - vogix -c 'XDG_RUNTIME_DIR=/run/user/1000 systemctl --user {args}'")
+
+  machine.wait_for_unit("user@1000.service")
+  user_systemctl("start vogix-theme-restore.service")
+  assert current_theme_inode() != inode, "the restore unit did not refresh the theme"
+  machine.wait_until_succeeds(
+      "journalctl -o cat _SYSTEMD_USER_UNIT=vogix-theme-restore.service | grep -F 'Applied: yoga-night'"
+  )
+  result = user_systemctl("show vogix-theme-restore.service -p Result -p ActiveState")
+  assert "Result=success" in result and "ActiveState=inactive" in result, result
+  print("✓ starting vogix-theme-restore applies the theme, logs 'Applied:' and leaves the unit inactive")
 
   print("\n" + "="*60)
   print("SMOKE TESTS PASSED!")

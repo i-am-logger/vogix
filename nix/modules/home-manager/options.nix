@@ -176,13 +176,15 @@ in
       type = types.enum [ "error" "warn" "info" "debug" "trace" ];
       default = "info";
       description = ''
-        Log verbosity for the vogix systemd user services (the theme daemon and
-        the input engine). Rendered as `RUST_LOG=vogix=<level>` on each unit so
-        the output lands in journald — systemd user services do not inherit a
+        Log verbosity for the vogix systemd user services (the session's
+        theme restore, the theme daemon, the input engine and the desktop
+        shell). Rendered as `RUST_LOG=vogix=<level>` on each unit so the
+        output lands in journald — systemd user services do not inherit a
         shell's `RUST_LOG`, so it must be set on the unit. Raise to `debug` to
         make every keybinding decision (key in → mode → binding match/miss →
-        dispatch result/uinput emit) and the daemon's startup environment
-        observable via `journalctl --user -u vogix-input -u vogix-daemon`.
+        dispatch result/uinput emit), the daemon's startup environment and
+        each app the restore finds not running observable via
+        `journalctl --user -u vogix-input -u vogix-daemon -u vogix-theme-restore`.
         `trace` additionally logs every key (including passthrough typing).
       '';
     };
@@ -202,7 +204,10 @@ in
         values are shell commands in which each `{{slot}}` placeholder (e.g.
         `{{base01}}`, `{{active}}`) is replaced by that slot's colour as
         `rrggbb`. The hooks run in parallel, and one that fails is reported
-        without failing the apply.'';
+        without failing the apply. They run as the user, for the user's own
+        applies only; machine hardware (LEDs, coolers) is declared through
+        the NixOS option `vogix.hardware.devices` and follows the machine
+        owner's theme.'';
     };
 
     greeter = mkOption {

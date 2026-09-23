@@ -157,6 +157,9 @@ pkgs.testers.nixosTest {
     for c in json.loads(r"""${builtins.toJSON contractThemes}"""):
         scheme, theme, variant = c["scheme"], c["theme"], c["variant"]
         machine.succeed(f"su - vogix -c 'vogix theme set -s {scheme} -t {theme} -v {variant} -q'")
+        # A set to the current theme changes nothing and renders nothing, and
+        # no login shell refreshes; refresh renders the current theme.
+        machine.succeed("su - vogix -c 'vogix theme refresh -q'")
         nix_built = f"{vogix_themes}/{theme}-{variant}/vogix-desktop/theme.json"
         cached = f"{vogix_cache}/{scheme}/{theme}/{variant}/theme.json"
         status, diff = machine.execute(f"su - vogix -c 'diff {nix_built} {cached}'")

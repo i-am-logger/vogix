@@ -17,6 +17,8 @@
 #
 # Gates, one function each (a failing gate is reported and the run goes
 # on, so one boot names every failure):
+#   session-restore     the session's start runs vogix-theme-restore once,
+#                       after graphical-session.target, and it succeeds
 #   mode-border         the input engine paints the mode's border colour
 #                       at session start, read back from the compositor
 #   mode-border-stall   an engine started while the compositor has not
@@ -657,6 +659,21 @@ pkgs.testers.nixosTest {
         d.poll(GET_BORDER, lambda o: border_colour(o) == want, 5,
                f"the mode's colour {want} is painted again after a config reload")
 
+    def gate_session_restore(d: Desktop) -> None:
+        # The session's start ran the theme restore once, after
+        # graphical-session.target was up, and the oneshot is inactive again.
+        d.m.wait_until_succeeds(
+            "journalctl -o cat _SYSTEMD_USER_UNIT=vogix-theme-restore.service | grep -qF 'Applied: yoga-night'",
+            timeout=60,
+        )
+        log = d.journal("vogix-theme-restore.service")
+        assert log.count("Applied: yoga-night") == 1, f"restore log: {log!r}"
+        assert d.prop("vogix-theme-restore", "Result") == "success", "the restore failed"
+        assert d.prop("vogix-theme-restore", "ActiveState") == "inactive", "the restore stayed active"
+        ran = int(d.prop("vogix-theme-restore", "ExecMainStartTimestampMonotonic"))
+        session = int(d.prop("graphical-session.target", "ActiveEnterTimestampMonotonic"))
+        assert 0 < session <= ran, f"restore ran at {ran}, graphical-session.target active at {session}"
+
 
     def set_layouts(d: Desktop, layouts: str) -> None:
         if d.dialect == "lua":
@@ -855,6 +872,7 @@ pkgs.testers.nixosTest {
 
     lua_desktop = Desktop(lua, "lua")
     lua_desktop.boot()
+    gate("lua session-restore", lambda: gate_session_restore(lua_desktop))
     gate("lua mode-border", lambda: gate_mode_border(lua_desktop))
     gate("lua network-backend", lambda: gate_network_backend(lua_desktop))
     gate("lua keyboard-active", lambda: gate_keyboard_active(lua_desktop))

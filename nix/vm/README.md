@@ -98,7 +98,19 @@ systemctl --user status vogix-daemon
 journalctl --user -u vogix-daemon -f
 ```
 
-### 6. Generate Shell Completions
+### 6. Session Theme Restore
+
+Login shells, the auto-login included, run nothing from vogix. The theme is
+restored for each graphical session by the user unit `vogix-theme-restore`,
+wanted by `graphical-session.target`, which this terminal-only VM never
+reaches. Start it by hand to run the restore:
+
+```bash
+systemctl --user start vogix-theme-restore
+journalctl --user -u vogix-theme-restore    # "Applied: yoga-night"
+```
+
+### 7. Generate Shell Completions
 ```bash
 # Generate bash completions
 vogix completions bash > ~/.local/share/bash-completion/completions/vogix
@@ -110,7 +122,7 @@ source ~/.local/share/bash-completion/completions/vogix
 vogix <TAB>
 ```
 
-### 7. Check Paths
+### 8. Check Paths
 ```bash
 # Config manifest
 cat ~/.local/state/vogix/config.toml

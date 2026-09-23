@@ -24,8 +24,9 @@
 # module evaluated it.
 #
 # Gates:
-# - boot with nothing published: vogix-machine is ready and waiting, the VT
-#   keeps console.colors (built from the owner's configured theme),
+# - boot with nothing published: the owner's tty1 autologin shell runs its
+#   login profile and publishes nothing, vogix-machine is ready and waiting,
+#   the VT keeps console.colors (built from the owner's configured theme),
 #   vogix-openrgb waits for a palette, `vogix machine status` and
 #   `validate` accept the state and the installed machine.json;
 # - the owner's `vogix theme set` publishes after the state commit and every
@@ -48,8 +49,8 @@
 #   come back; the server never refused a connection;
 # - a switch to maxProtocol 5 restarts both owners with the new
 #   machine.json; vogix-openrgb speaks protocol 5 to the protocol 6 server;
-# - after a reboot with no login: vogix-machine is ready before
-#   systemd-user-sessions with the published palette on the VT, the LEDs
+# - after a reboot: vogix-machine is ready before systemd-user-sessions, so
+#   before any login, with the published palette on the VT, the LEDs
 #   and the command device follow it again, and the absent device is warned
 #   about once, after OpenRGB's detection completes.
 { pkgs
@@ -91,10 +92,6 @@ pkgs.testers.nixosTest {
       memorySize = 2048;
       qemu.options = [ "-device qemu-xhci,id=xhci" ];
     };
-
-    # No login may run before the checks: a login shell's theme refresh
-    # would publish the palette.
-    services.getty.autologinUser = lib.mkForce null;
 
     users.users.other = {
       isNormalUser = true;
@@ -276,6 +273,9 @@ pkgs.testers.nixosTest {
         machine.wait_for_unit("vogix-machine.service")
         machine.wait_for_unit("openrgb.service")
         machine.wait_for_unit("vogix-openrgb.service")
+        # The owner's autologin shell on tty1 has run its login profile once
+        # its .bashrc banner is on screen; a login shell publishes nothing.
+        machine.wait_until_tty_matches("1", "Vogix Test VM")
         machine.fail(f"test -e {PALETTE}")
         assert machine.succeed(f"stat -c '%U %G %a' {ZONE}").strip() == "vogix users 755"
         s = status(LOCAL)

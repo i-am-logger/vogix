@@ -104,7 +104,7 @@ The home-manager module (`programs.vogix`) handles all build-time generation:
 1. Nix evaluates theme definitions and application generators
 2. Generates all scheme-theme-variant combinations
 3. Stores generated configs in `/nix/store/xxxx-vogix-{scheme}-{theme}-{variant}/`
-4. Systemd service creates symlinks on user login
+4. home-manager activation writes `config.toml`, creates the app config symlinks, and creates `current-theme` when it does not exist yet
 
 ## 5. Theme Switching Mechanism
 
@@ -117,6 +117,31 @@ When a user runs `vogix theme set -t catppuccin -v mocha` or `vogix theme set -v
 5. **Instant Effect**: Since `~/.config/` points to `current-theme/`, change is immediate
 
 **Key Advantage**: No config generation at runtime. All theme files pre-exist in `/nix/store`, making switching instant.
+
+### Restore across reboots and sessions
+
+`vogix theme refresh` re-runs a theme change's side effects for the selection
+already in place (templates, the `current-theme` swap, app reloads, apply
+hooks, the screen shader, the mode border, the machine palette publish) and
+records nothing. Nothing else needs replaying after a reboot: the selection
+lives in `state.toml` and the app configs resolve through `current-theme`.
+What does not survive a reboot is restored by the unit that owns it:
+
+- **The desktop session's compositor state** (the screen shader, the mode
+  border) is restored by the home-manager user unit
+  `vogix-theme-restore.service`: a oneshot, without `RemainAfterExit`, wanted
+  by and ordered after `graphical-session.target`, that runs
+  `vogix theme refresh`. Being inactive again once it exits, it runs on every
+  start of the graphical session. Its log, and the reason when a restore
+  fails, is `journalctl --user -u vogix-theme-restore`.
+- **The machine surfaces** (LEDs, cooler rings, the kernel's VT palette) are
+  restored at boot by the machine owner units, from the palette the machine
+  owner last published (section 9).
+
+Login shells run nothing from vogix: a TTY login, `su -`, SSH and a terminal's
+login shell spawn no vogix process. Interactive bash and zsh shells set the
+terminal's 16 ANSI colours and its foreground and background from
+`current-theme/console/palette` (OSC 4/10/11), reading that one file.
 
 ## 6. Implementation Details
 
@@ -365,7 +390,7 @@ machine owner's vogix CLI (theme set / undo / redo / refresh)
   `vogix machine status` exit 1.
 - The drop zone is state: a host with an ephemeral root persists
   `/var/lib/vogix/machine`, or the boot restore waits for the owner's next
-  apply.
+  apply: a theme change, or the restore of their next desktop session.
 
 ### The units
 
@@ -417,6 +442,10 @@ Nothing sleeps, retries on a timer or times out.
   terminal, the bar, the launcher or a keybinding) by the machine owner
   publishes; both owners re-read the palette and re-apply what changed.
   Rapid changes coalesce.
+- **A desktop session starting** runs the user's `vogix-theme-restore`
+  (section 5). Its publish is skipped when the published palette is current,
+  so the owners see nothing; when the drop zone lost the palette, it
+  publishes it again.
 - **OpenRGB stopped or restarted.** `vogix-openrgb` stops with it and is
   started again once the server is active. A crashed server closes the
   connection: `vogix-openrgb` logs `OpenRGB closed the connection`, exits
@@ -542,6 +571,7 @@ nothing is discarded:
 journalctl -u vogix-machine                # the VT palette; each command device's runs, with the command's own output
 journalctl -u vogix-openrgb                # the SDK session; each controller confirmed or failed; absent devices
 journalctl -u openrgb                      # the OpenRGB server
+journalctl --user -u vogix-theme-restore   # each desktop session's theme restore
 systemctl status vogix-machine vogix-openrgb   # each owner's STATUS= line
 vogix machine status                       # both owners, the owner and the published palette; exits 1 on a problem
 ```

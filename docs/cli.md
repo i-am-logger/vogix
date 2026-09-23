@@ -54,12 +54,40 @@ vogix theme set -v dark      # identical to -v darker
 
 ### Refresh
 
-Reapply the current theme (re-render templates and trigger reloads) without changing the selection:
+Reapply the current theme without changing the selection:
 
 ```bash
 vogix theme refresh
-vogix theme refresh -q       # errors only
+vogix theme refresh -q       # without the per-app and per-hook success lines
 ```
+
+A refresh does what a theme change does, for the selection already in place:
+it renders the templates, swaps `current-theme` to the selected theme variant,
+reloads the apps that are running, runs the apply hooks, re-applies the screen
+shader and repaints the mode border, then publishes the machine palette (see
+[Machine surfaces](#machine-surfaces)); a palette identical to the published one
+is not rewritten. It records no state and no history. It exits 1 when the theme
+cannot be applied: the theme variant is missing, or its templates or the
+`current-theme` link cannot be written. An app that is not running is not
+reloaded and is not a failure (it reads the theme when it starts); a failed
+reload, a failed hook and an unpublished palette are reported and do not fail
+the refresh.
+
+Login shells run nothing from vogix. The home-manager module installs
+`vogix-theme-restore.service`, a user oneshot that runs `vogix theme refresh`
+every time `graphical-session.target` starts, so each desktop session begins
+with its screen shader, mode border and running apps on the current theme. Its
+output is in the user journal:
+
+```bash
+journalctl --user -u vogix-theme-restore    # each session's restore: "Applied: <theme>-<variant>", or why it failed
+systemctl --user start vogix-theme-restore  # run the restore now
+```
+
+A text-only login (a TTY, SSH) starts no graphical session and runs no
+restore; the files the theme applies persist through `current-theme`, and the
+VT palette and the machine's LEDs are restored at boot by the machine owner
+units.
 
 ### Undo and Redo
 

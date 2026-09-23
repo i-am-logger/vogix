@@ -655,30 +655,36 @@ in
       '';
     }
 
-    # Apply theme on login via shell profile (needs TTY access for console colors)
-    # Add to bash profile if bash is enabled
-    (mkIf (config.programs.bash.enable or false) {
-      programs.bash.profileExtra = ''
-        # Apply vogix theme on login (restores theme after reboot)
-        ${cfg.package}/bin/vogix theme refresh --quiet 2>/dev/null || true
-      '';
-    })
+    # The theme restore, once per graphical session. Login shells run
+    # nothing from vogix: the theme's files persist across a reboot through
+    # the current-theme link, and the machine surfaces (LEDs, cooler, VT
+    # palette) are restored at boot by the NixOS module's machine owner
+    # units. What a new session starts without is the compositor state (the
+    # screen shader, the mode border); `theme refresh` re-applies it and
+    # reloads the apps already running, and its re-publish of the machine
+    # palette is skipped when the bytes are unchanged. Without
+    # RemainAfterExit the unit is inactive again once the refresh exits, so
+    # every start of graphical-session.target runs it again. A failed
+    # refresh fails the unit; its log is
+    # `journalctl --user -u vogix-theme-restore`.
+    {
+      systemd.user.services.vogix-theme-restore = {
+        Unit = {
+          Description = "Restore the vogix theme for this graphical session";
+          After = [ "graphical-session.target" ];
+        };
 
-    # Add to zsh profile if zsh is enabled
-    (mkIf (config.programs.zsh.enable or false) {
-      programs.zsh.profileExtra = ''
-        # Apply vogix theme on login (restores theme after reboot)
-        ${cfg.package}/bin/vogix theme refresh --quiet 2>/dev/null || true
-      '';
-    })
+        Service = {
+          Type = "oneshot";
+          ExecStart = "${cfg.package}/bin/vogix theme refresh";
+          Environment = [ "RUST_LOG=vogix=${cfg.logLevel}" ];
+        };
 
-    # Add to fish profile if fish is enabled
-    (mkIf (config.programs.fish.enable or false) {
-      programs.fish.loginShellInit = ''
-        # Apply vogix theme on login (restores theme after reboot)
-        ${cfg.package}/bin/vogix theme refresh --quiet 2>/dev/null; or true
-      '';
-    })
+        Install = {
+          WantedBy = [ "graphical-session.target" ];
+        };
+      };
+    }
 
     # Wezterm keybindings (smart Ctrl+C/V for Super→Ctrl remap)
     (mkIf (config.programs.wezterm.enable or false) {
