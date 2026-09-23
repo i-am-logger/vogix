@@ -18,12 +18,12 @@ mod types;
 
 use crate::errors::{Result, VogixError};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
 // Re-export types
-pub use types::{AppMetadata, HardwareDevice, ShaderConfig, TemplatesConfig, ThemeSourcesConfig};
+pub use types::{AppMetadata, ApplyHook, ShaderConfig, TemplatesConfig, ThemeSourcesConfig};
 
 /// Main configuration loaded from runtime manifest
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -31,7 +31,8 @@ pub struct Config {
     pub default_theme: String,
     pub default_variant: String,
     pub apps: HashMap<String, AppMetadata>,
-    pub hardware: HashMap<String, HardwareDevice>,
+    /// User apply hooks from `[hooks]`, by name.
+    pub hooks: BTreeMap<String, ApplyHook>,
     pub templates: Option<TemplatesConfig>,
     pub theme_sources: Option<ThemeSourcesConfig>,
     pub shader: Option<ShaderConfig>,
@@ -43,7 +44,7 @@ impl Default for Config {
             default_theme: "yoga".to_string(),
             default_variant: "dark".to_string(),
             apps: HashMap::new(),
-            hardware: HashMap::new(),
+            hooks: BTreeMap::new(),
             templates: None,
             theme_sources: None,
             shader: None,
@@ -82,8 +83,8 @@ impl Config {
         // Parse app metadata from [apps] section
         let apps = Self::parse_apps(&manifest);
 
-        // Parse hardware devices from [hardware] section
-        let hardware = Self::parse_hardware(&manifest);
+        // Parse user apply hooks from the [hooks] section
+        let hooks = Self::parse_hooks(&manifest);
 
         // Parse templates config
         let templates = Self::parse_templates(&manifest);
@@ -98,7 +99,7 @@ impl Config {
             default_theme,
             default_variant,
             apps,
-            hardware,
+            hooks,
             templates,
             theme_sources,
             shader,
@@ -150,21 +151,30 @@ impl Config {
             .unwrap_or_default()
     }
 
-    /// Parse the [hardware] section from manifest
-    fn parse_hardware(manifest: &toml::Value) -> HashMap<String, HardwareDevice> {
-        manifest
-            .get("hardware")
-            .and_then(|h| h.as_table())
-            .map(|hw_table| {
-                hw_table
-                    .iter()
-                    .filter_map(|(device_name, device_data)| {
-                        let command = device_data.get("command")?.as_str()?.to_string();
-                        Some((device_name.clone(), HardwareDevice { command }))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// Parse the [hooks] section from manifest: `[hooks."<name>"]` tables
+    /// with a string `command`. An entry without one is skipped with a
+    /// warning naming it.
+    fn parse_hooks(manifest: &toml::Value) -> BTreeMap<String, ApplyHook> {
+        let Some(table) = manifest.get("hooks").and_then(|h| h.as_table()) else {
+            return BTreeMap::new();
+        };
+        table
+            .iter()
+            .filter_map(
+                |(name, entry)| match entry.get("command").and_then(|c| c.as_str()) {
+                    Some(command) => Some((
+                        name.clone(),
+                        ApplyHook {
+                            command: command.to_string(),
+                        },
+                    )),
+                    None => {
+                        log::warn!("config.toml: hooks.{name} has no string `command`; skipped");
+                        None
+                    }
+                },
+            )
+            .collect()
     }
 
     /// Parse the [templates] section from manifest

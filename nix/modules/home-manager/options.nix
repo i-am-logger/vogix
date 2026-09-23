@@ -196,7 +196,13 @@ in
     themeApply = mkOption {
       type = types.attrsOf types.str;
       default = { };
-      description = "Hardware theme apply commands. Keys are device names, values are shell commands with {{color}} placeholders resolved at runtime.";
+      description = ''
+        User apply hooks, run by the vogix CLI on every theme apply and
+        rendered into config.toml as `[hooks."<name>"]`. Keys are hook names;
+        values are shell commands in which each `{{slot}}` placeholder (e.g.
+        `{{base01}}`, `{{active}}`) is replaced by that slot's colour as
+        `rrggbb`. The hooks run in parallel, and one that fails is reported
+        without failing the apply.'';
     };
 
     greeter = mkOption {

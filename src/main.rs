@@ -203,7 +203,7 @@ fn run_with_engine(command: &Commands) -> Result<()> {
     let new_state = engine.situation();
 
     // Refresh is intentionally a no-op state transition — its whole purpose is
-    // to re-run side effects (templates, symlinks, app reloads, hardware, shader).
+    // to re-run side effects (templates, symlinks, app reloads, apply hooks, shader).
     // For all other actions, skip when nothing actually changed.
     let is_refresh = matches!(
         command,
@@ -453,7 +453,7 @@ fn execute_side_effects(
             let reload_dispatcher = reload::ReloadDispatcher::new();
             let reload_result = reload_dispatcher.reload_apps(config, *quiet);
 
-            // Load theme colors for validation and hardware
+            // Load theme colors for validation and the apply hooks
             if let Some(theme_sources) = &config.theme_sources {
                 let variant_path = cache::paths::theme_variant_path(
                     theme_sources,
@@ -481,10 +481,7 @@ fn execute_side_effects(
                             warn!("Theme axiom: {}", failure);
                         }
 
-                        // Hardware color push
-                        if !config.hardware.is_empty() {
-                            reload_dispatcher.apply_hardware(config, &colors, *quiet);
-                        }
+                        reload_dispatcher.run_apply_hooks(config, &colors, *quiet);
                     }
                     Err(e) => warn!("Theme colors not loaded: {}", e),
                 }
@@ -499,6 +496,12 @@ fn execute_side_effects(
             // mode's slot is data (input.json), the hex just changed.
             commands::daemon::apply_mode_border(&state.current_mode);
 
+            if !reload_result.not_running.is_empty() {
+                debug!(
+                    "Not running, so not reloaded (they read the theme when they start): {}",
+                    reload_result.not_running.join(", ")
+                );
+            }
             let theme_variant = format!("{}-{}", state.current_theme, state.current_variant);
             if reload_result.has_failures() {
                 warn!(

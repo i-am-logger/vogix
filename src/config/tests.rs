@@ -217,30 +217,28 @@ reload_command = "polybar-msg cmd restart"
 }
 
 #[test]
-fn test_parse_hardware() {
+fn hooks_are_read_from_the_hooks_section() {
     let manifest = r##"
-[hardware."kraken-ring"]
-command = "liquidctl --match kraken set external color fixed {{base01}}"
+[hooks."greeter"]
+command = """vogix greeter sync"""
 
-[hardware."keychron-k2-he"]
-command = "openrgb -d 'Keychron K2 HE' -m static -c {{base01}}"
+[hooks."kraken-ring"]
+command = "liquidctl --match kraken set ring color fixed {{base01}}"
 "##;
 
     let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
-    let hardware = Config::parse_hardware(&manifest_value);
+    let hooks = Config::parse_hooks(&manifest_value);
 
-    assert_eq!(hardware.len(), 2);
-
-    let kraken = hardware.get("kraken-ring").unwrap();
-    assert!(kraken.command.contains("liquidctl"));
-    assert!(kraken.command.contains("{{base01}}"));
-
-    let keychron = hardware.get("keychron-k2-he").unwrap();
-    assert!(keychron.command.contains("openrgb"));
+    assert_eq!(
+        hooks.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["greeter", "kraken-ring"]
+    );
+    assert_eq!(hooks["greeter"].command, "vogix greeter sync");
+    assert!(hooks["kraken-ring"].command.ends_with("{{base01}}"));
 }
 
 #[test]
-fn test_parse_hardware_empty() {
+fn a_manifest_without_hooks_has_none() {
     let manifest = r##"
 [default]
 theme = "yoga"
@@ -248,21 +246,34 @@ variant = "dark"
 "##;
 
     let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
-    let hardware = Config::parse_hardware(&manifest_value);
-
-    assert!(hardware.is_empty());
+    assert!(Config::parse_hooks(&manifest_value).is_empty());
 }
 
 #[test]
-fn test_parse_hardware_missing_command() {
+fn a_hook_without_a_string_command_is_skipped() {
     let manifest = r##"
-[hardware."broken-device"]
+[hooks."broken"]
 not_command = "something"
+
+[hooks."numeric"]
+command = 7
+
+[hooks."ok"]
+command = "true"
 "##;
 
     let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
-    let hardware = Config::parse_hardware(&manifest_value);
+    let hooks = Config::parse_hooks(&manifest_value);
+    assert_eq!(hooks.keys().map(String::as_str).collect::<Vec<_>>(), ["ok"]);
+}
 
-    // Device without "command" key should be skipped
-    assert!(hardware.is_empty());
+#[test]
+fn the_retired_hardware_section_is_not_read_as_hooks() {
+    let manifest = r##"
+[hardware."kraken-ring"]
+command = "liquidctl --match kraken set ring color fixed {{base01}}"
+"##;
+
+    let manifest_value: toml::Value = toml::from_str(manifest).unwrap();
+    assert!(Config::parse_hooks(&manifest_value).is_empty());
 }

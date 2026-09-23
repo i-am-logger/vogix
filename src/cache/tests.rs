@@ -41,7 +41,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
         default_theme: "test-theme".to_string(),
         default_variant: "dark".to_string(),
         apps: HashMap::new(),
-        hardware: HashMap::new(),
+        hooks: Default::default(),
         templates: Some(TemplatesConfig {
             path: templates_path,
             hash: "test-hash-123".to_string(),
@@ -109,7 +109,7 @@ theme[temp_end]="{{ colors.danger }}"
         default_theme: "test-theme".to_string(),
         default_variant: "dark".to_string(),
         apps: HashMap::new(),
-        hardware: HashMap::new(),
+        hooks: Default::default(),
         templates: Some(TemplatesConfig {
             path: templates_path,
             hash: "multi-hash-456".to_string(),

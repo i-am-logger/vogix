@@ -204,10 +204,11 @@ let
     )
     themedApps;
 
-  # Hardware theme apply commands section
-  themeApplySection = concatMapStringsSep "\n\n"
+  # User apply hooks section: [hooks."<name>"] tables the CLI runs on every
+  # theme apply
+  hooksSection = concatMapStringsSep "\n\n"
     (name: ''
-      [hardware."${name}"]
+      [hooks."${name}"]
       command = """${cfg.themeApply.${name}}"""'')
     (builtins.attrNames cfg.themeApply);
 
@@ -248,8 +249,8 @@ let
     # Application reload methods
     ${appsSection}
 
-    # Hardware theme apply
-    ${themeApplySection}
+    # User apply hooks
+    ${hooksSection}
   '';
 
 in

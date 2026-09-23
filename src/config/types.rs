@@ -57,10 +57,11 @@ impl Default for ShaderConfig {
     }
 }
 
-/// Hardware device that receives theme colors on theme change
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct HardwareDevice {
-    /// Shell command with {{color}} placeholders (e.g. {{active}}, {{base0C}})
+/// A user apply hook: a shell command the CLI runs on every theme apply,
+/// with each `{{slot}}` placeholder (e.g. `{{active}}`, `{{base0C}}`)
+/// replaced by that slot's colour as `rrggbb`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ApplyHook {
     pub command: String,
 }
 

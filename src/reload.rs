@@ -1,18 +1,33 @@
 use crate::config::Config;
 use crate::errors::{Result, VogixError};
-use log::warn;
+use log::{debug, warn};
 use std::collections::HashMap;
 use std::process::Command;
+
+/// What reloading one application did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReloadOutcome {
+    /// The application was told to reload; the text says how.
+    Reloaded(String),
+    /// The application's process is not running, so there is nothing to
+    /// reload: it reads the new theme when it starts.
+    NotRunning,
+    /// `reload_method = "none"`: the theme takes effect on next launch.
+    NotNeeded,
+}
 
 /// Result of reloading applications
 #[derive(Debug)]
 pub struct ReloadResult {
     /// Number of apps successfully reloaded
     pub success_count: usize,
-    /// Total apps that attempted reload (excludes apps with reload_method = "none")
+    /// Apps that attempted a reload (excludes apps with reload_method = "none"
+    /// and apps that are not running)
     pub total_count: usize,
     /// Apps that failed to reload with error messages
     pub failed_apps: Vec<(String, String)>,
+    /// Apps with a signal reload whose process is not running
+    pub not_running: Vec<String>,
 }
 
 impl ReloadResult {
@@ -41,26 +56,28 @@ impl ReloadDispatcher {
                 success_count: 0,
                 total_count: 0,
                 failed_apps: Vec::new(),
+                not_running: Vec::new(),
             };
         }
 
         let mut failed_apps = Vec::new();
-        let mut skipped = 0;
+        let mut not_running = Vec::new();
+        let mut success_count = 0;
 
         for (app_name, app_metadata) in &config.apps {
-            // Skip apps that don't need reloading
-            if app_metadata.reload_method == "none" {
-                skipped += 1;
-                continue;
-            }
-
-            if let Err(e) = self.reload_app(app_name, app_metadata) {
-                failed_apps.push((app_name.clone(), e.to_string()));
+            match self.reload_app(app_name, app_metadata) {
+                Ok(ReloadOutcome::Reloaded(how)) => {
+                    debug!("{app_name}: {how}");
+                    success_count += 1;
+                }
+                Ok(ReloadOutcome::NotRunning) => not_running.push(app_name.clone()),
+                Ok(ReloadOutcome::NotNeeded) => {}
+                Err(e) => failed_apps.push((app_name.clone(), e.to_string())),
             }
         }
+        not_running.sort();
 
-        let total_count = config.apps.len() - skipped;
-        let success_count = total_count - failed_apps.len();
+        let total_count = success_count + failed_apps.len();
 
         if failed_apps.is_empty() {
             if !quiet {
@@ -85,35 +102,43 @@ impl ReloadDispatcher {
             success_count,
             total_count,
             failed_apps,
+            not_running,
         }
     }
 
     /// Reload a single application using metadata from manifest
-    fn reload_app(&self, app_name: &str, metadata: &crate::config::AppMetadata) -> Result<String> {
+    fn reload_app(
+        &self,
+        app_name: &str,
+        metadata: &crate::config::AppMetadata,
+    ) -> Result<ReloadOutcome> {
         match metadata.reload_method.as_str() {
             "signal" => {
                 let signal = metadata.reload_signal.as_ref().ok_or_else(|| {
                     VogixError::reload("signal reload method requires reload_signal")
                 })?;
                 let process_name = metadata.process_name.as_deref().unwrap_or(app_name);
-                self.send_signal(process_name, signal)?;
-                Ok(format!("sent {} signal", signal))
+                self.send_signal(process_name, signal)
             }
             "command" => {
                 let cmd = metadata.reload_command.as_ref().ok_or_else(|| {
                     VogixError::reload("command reload method requires reload_command")
                 })?;
                 self.run_command(cmd)?;
-                Ok("executed reload command".to_string())
+                Ok(ReloadOutcome::Reloaded(
+                    "executed reload command".to_string(),
+                ))
             }
             "touch" => {
                 self.touch_or_relink(&metadata.config_path)?;
                 if let Some(theme_path) = &metadata.theme_file_path {
                     let _ = self.touch_or_relink(theme_path);
                 }
-                Ok("touched to trigger auto-reload".to_string())
+                Ok(ReloadOutcome::Reloaded(
+                    "touched to trigger auto-reload".to_string(),
+                ))
             }
-            "none" => Ok("no reload needed (changes take effect on next use)".to_string()),
+            "none" => Ok(ReloadOutcome::NotNeeded),
             _ => Err(VogixError::reload(format!(
                 "unknown reload method: {}",
                 metadata.reload_method
@@ -151,23 +176,25 @@ impl ReloadDispatcher {
         Ok(())
     }
 
-    /// Send a Unix signal to a process by name using native Rust
-    fn send_signal(&self, process_name: &str, signal: &str) -> Result<()> {
+    /// Send a Unix signal to every process named `process_name` (its
+    /// `/proc/<pid>/comm`). No such process is [`ReloadOutcome::NotRunning`];
+    /// processes that exist but could not be signalled are an error.
+    fn send_signal(&self, process_name: &str, signal: &str) -> Result<ReloadOutcome> {
         use std::fs;
 
         let sig = match signal.trim_start_matches("SIG") {
-            "USR1" => 10,
-            "USR2" => 12,
-            "HUP" => 1,
-            "TERM" => 15,
-            "INT" => 2,
+            "USR1" => libc::SIGUSR1,
+            "USR2" => libc::SIGUSR2,
+            "HUP" => libc::SIGHUP,
+            "TERM" => libc::SIGTERM,
+            "INT" => libc::SIGINT,
             s => {
                 return Err(VogixError::reload(format!("unsupported signal: {}", s)));
             }
         };
 
-        // Find PIDs by scanning /proc
-        let mut found = false;
+        let mut matched = 0usize;
+        let mut signalled = 0usize;
         if let Ok(entries) = fs::read_dir("/proc") {
             for entry in entries.flatten() {
                 let name = entry.file_name();
@@ -184,12 +211,15 @@ impl ReloadDispatcher {
                     && comm.trim() == process_name
                     && let Ok(pid) = pid_str.parse::<i32>()
                 {
+                    matched += 1;
+                    // SAFETY: kill(2) with a pid read from /proc and a valid
+                    // signal number; it has no memory-safety preconditions.
                     let ret = unsafe { libc::kill(pid, sig) };
                     if ret == 0 {
-                        found = true;
+                        signalled += 1;
                     } else {
                         warn!(
-                            "Signal {} to {} (pid {}) failed: errno {}",
+                            "Signal {} to {} (pid {}) failed: {}",
                             sig,
                             process_name,
                             pid,
@@ -200,14 +230,7 @@ impl ReloadDispatcher {
             }
         }
 
-        if !found {
-            return Err(VogixError::reload(format!(
-                "process '{}' is not running",
-                process_name
-            )));
-        }
-
-        Ok(())
+        signal_outcome(process_name, signal, matched, signalled)
     }
 
     /// Run a shell command
@@ -226,42 +249,37 @@ impl ReloadDispatcher {
         Ok(())
     }
 
-    /// Apply theme colors to hardware devices in parallel.
+    /// Run the user apply hooks, all in parallel.
     ///
-    /// Each device runs as a separate `sh -c` child process spawned concurrently;
-    /// we then join them all so the call still returns synchronously. This matters
-    /// when multiple devices are configured (keyboard + kraken + DRAM): on a theme
-    /// change all three light up together instead of cascading over ~hundreds of ms.
-    pub fn apply_hardware(&self, config: &Config, colors: &HashMap<String, String>, quiet: bool) {
-        if config.hardware.is_empty() {
+    /// Each hook runs as its own `sh -c` child with every `{{slot}}`
+    /// placeholder replaced by that slot's colour without the '#'; the call
+    /// returns once every child has exited. A hook that cannot start or
+    /// exits non-zero is reported and does not fail the apply.
+    pub fn run_apply_hooks(&self, config: &Config, colors: &HashMap<String, String>, quiet: bool) {
+        if config.hooks.is_empty() {
             return;
         }
 
-        let children: Vec<(String, std::io::Result<std::process::Child>)> = config
-            .hardware
+        let children: Vec<(&str, std::io::Result<std::process::Child>)> = config
+            .hooks
             .iter()
-            .map(|(device_name, device)| {
-                let mut cmd = device.command.clone();
-                for (color_name, hex_value) in colors {
-                    let placeholder = format!("{{{{{}}}}}", color_name);
-                    let hex_no_hash = hex_value.trim_start_matches('#');
-                    cmd = cmd.replace(&placeholder, hex_no_hash);
-                }
+            .map(|(name, hook)| {
+                let command = substitute_slots(&hook.command, colors);
                 let child = Command::new("sh")
                     .arg("-c")
-                    .arg(&cmd)
+                    .arg(&command)
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
                     .spawn();
-                (device_name.clone(), child)
+                (name.as_str(), child)
             })
             .collect();
 
-        for (device_name, child) in children {
+        for (name, child) in children {
             let child = match child {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("⚠ Hardware {}: failed to spawn: {}", device_name, e);
+                    eprintln!("⚠ Hook {}: failed to spawn: {}", name, e);
                     continue;
                 }
             };
@@ -269,21 +287,45 @@ impl ReloadDispatcher {
             match child.wait_with_output() {
                 Ok(out) if out.status.success() => {
                     if !quiet {
-                        println!("✓ Hardware: {}", device_name);
+                        println!("✓ Hook: {}", name);
                     }
                 }
                 Ok(out) => {
                     let stderr = String::from_utf8_lossy(&out.stderr);
-                    eprintln!(
-                        "⚠ Hardware {}: command failed: {}",
-                        device_name,
-                        stderr.trim()
-                    );
+                    eprintln!("⚠ Hook {}: command failed: {}", name, stderr.trim());
                 }
-                Err(e) => eprintln!("⚠ Hardware {}: {}", device_name, e),
+                Err(e) => eprintln!("⚠ Hook {}: {}", name, e),
             }
         }
     }
+}
+
+/// What a signal reload did, from how many processes carried the name and
+/// how many of them the signal reached.
+fn signal_outcome(
+    process_name: &str,
+    signal: &str,
+    matched: usize,
+    signalled: usize,
+) -> Result<ReloadOutcome> {
+    match (matched, signalled) {
+        (0, _) => Ok(ReloadOutcome::NotRunning),
+        (_, 0) => Err(VogixError::reload(format!(
+            "no '{process_name}' process accepted SIG{}",
+            signal.trim_start_matches("SIG")
+        ))),
+        _ => Ok(ReloadOutcome::Reloaded(format!("sent {signal} signal"))),
+    }
+}
+
+/// `command` with every `{{slot}}` placeholder of a known slot replaced by
+/// that slot's colour, leading '#' removed.
+fn substitute_slots(command: &str, colors: &HashMap<String, String>) -> String {
+    let mut command = command.to_string();
+    for (slot, hex) in colors {
+        command = command.replace(&format!("{{{{{slot}}}}}"), hex.trim_start_matches('#'));
+    }
+    command
 }
 
 impl Default for ReloadDispatcher {
@@ -295,179 +337,178 @@ impl Default for ReloadDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{AppMetadata, ApplyHook};
+    use std::collections::BTreeMap;
 
-    #[test]
-    fn test_reload_dispatcher_creation() {
-        // Constructing the dispatcher must not panic.
-        let _dispatcher = ReloadDispatcher::new();
-    }
-
-    #[test]
-    fn test_reload_app_with_touch_method() {
-        use crate::config::AppMetadata;
-        let dispatcher = ReloadDispatcher::new();
-        let metadata = AppMetadata {
+    fn app(reload_method: &str) -> AppMetadata {
+        AppMetadata {
             config_path: "/tmp/test.conf".to_string(),
-            reload_method: "touch".to_string(),
+            reload_method: reload_method.to_string(),
             reload_signal: None,
             process_name: None,
             reload_command: None,
             theme_file_path: None,
-        };
+        }
+    }
 
-        // Touch may fail if /tmp isn't writable in the test env — that's OK; we
-        // only assert it doesn't crash and reports a touch on success.
-        if let Ok(msg) = dispatcher.reload_app("test", &metadata) {
-            assert!(msg.contains("touched"));
+    fn config_with(
+        apps: HashMap<String, AppMetadata>,
+        hooks: BTreeMap<String, ApplyHook>,
+    ) -> Config {
+        Config {
+            default_theme: "test".to_string(),
+            default_variant: "dark".to_string(),
+            apps,
+            hooks,
+            templates: None,
+            theme_sources: None,
+            shader: None,
+        }
+    }
+
+    /// A process name no test host runs.
+    const ABSENT_PROCESS: &str = "vogix-absent-t";
+
+    #[test]
+    fn test_reload_app_with_touch_method() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("app.conf");
+        std::fs::write(&path, "x").unwrap();
+        let metadata = AppMetadata {
+            config_path: path.display().to_string(),
+            ..app("touch")
+        };
+        match ReloadDispatcher::new().reload_app("test", &metadata) {
+            Ok(ReloadOutcome::Reloaded(how)) => assert!(how.contains("touched"), "{how}"),
+            other => panic!("expected a touch reload, got {other:?}"),
         }
     }
 
     #[test]
     fn test_reload_app_with_none_method() {
-        use crate::config::AppMetadata;
-        let dispatcher = ReloadDispatcher::new();
-        let metadata = AppMetadata {
-            config_path: "/tmp/test.conf".to_string(),
-            reload_method: "none".to_string(),
-            reload_signal: None,
-            process_name: None,
-            reload_command: None,
-            theme_file_path: None,
-        };
+        let result = ReloadDispatcher::new().reload_app("test", &app("none"));
+        assert_eq!(result.unwrap(), ReloadOutcome::NotNeeded);
+    }
 
-        let result = dispatcher.reload_app("test", &metadata);
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains("no reload needed"));
+    #[test]
+    fn a_signal_reload_of_an_app_that_is_not_running_is_not_running() {
+        let metadata = AppMetadata {
+            reload_signal: Some("SIGUSR1".to_string()),
+            process_name: Some(ABSENT_PROCESS.to_string()),
+            ..app("signal")
+        };
+        let result = ReloadDispatcher::new().reload_app("btop", &metadata);
+        assert_eq!(result.unwrap(), ReloadOutcome::NotRunning);
+    }
+
+    #[test]
+    fn an_app_that_is_not_running_is_not_a_failure() {
+        let mut apps = HashMap::new();
+        apps.insert(
+            "btop".to_string(),
+            AppMetadata {
+                reload_signal: Some("USR1".to_string()),
+                process_name: Some(ABSENT_PROCESS.to_string()),
+                ..app("signal")
+            },
+        );
+        apps.insert("alacritty".to_string(), app("none"));
+        let result = ReloadDispatcher::new().reload_apps(&config_with(apps, BTreeMap::new()), true);
+        assert!(!result.has_failures(), "{:?}", result.failed_apps);
+        assert_eq!(result.not_running, ["btop"]);
+        assert_eq!(result.total_count, 0);
+        assert_eq!(result.success_count, 0);
+    }
+
+    #[test]
+    fn an_unsupported_signal_is_an_error() {
+        let metadata = AppMetadata {
+            reload_signal: Some("SIGWINCH".to_string()),
+            process_name: Some(ABSENT_PROCESS.to_string()),
+            ..app("signal")
+        };
+        let err = ReloadDispatcher::new()
+            .reload_app("x", &metadata)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unsupported signal: WINCH"), "{err}");
+    }
+
+    #[test]
+    fn the_signal_outcome_follows_matches_and_deliveries() {
+        assert_eq!(
+            signal_outcome("btop", "SIGUSR1", 0, 0).unwrap(),
+            ReloadOutcome::NotRunning
+        );
+        let err = signal_outcome("btop", "SIGUSR1", 2, 0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no 'btop' process accepted SIGUSR1"), "{err}");
+        assert_eq!(
+            signal_outcome("btop", "USR1", 2, 1).unwrap(),
+            ReloadOutcome::Reloaded("sent USR1 signal".to_string())
+        );
     }
 
     #[test]
     fn test_reload_apps_returns_failure_count() {
-        use crate::config::AppMetadata;
-        use std::collections::HashMap;
-
-        let dispatcher = ReloadDispatcher::new();
-
-        // Create config with a command that will fail
         let mut apps = HashMap::new();
         apps.insert(
             "failing_app".to_string(),
             AppMetadata {
-                config_path: "/tmp/test.conf".to_string(),
-                reload_method: "command".to_string(),
-                reload_signal: None,
-                process_name: None,
-                reload_command: Some("exit 1".to_string()), // This will fail
-                theme_file_path: None,
+                reload_command: Some("exit 1".to_string()),
+                ..app("command")
             },
         );
-        apps.insert(
-            "skipped_app".to_string(),
-            AppMetadata {
-                config_path: "/tmp/test.conf".to_string(),
-                reload_method: "none".to_string(),
-                reload_signal: None,
-                process_name: None,
-                reload_command: None,
-                theme_file_path: None,
-            },
-        );
-
-        let config = Config {
-            default_theme: "test".to_string(),
-            default_variant: "dark".to_string(),
-            apps,
-            hardware: HashMap::new(),
-            templates: None,
-            theme_sources: None,
-            shader: None,
-        };
-
-        let result = dispatcher.reload_apps(&config, false);
-
-        // The result should indicate there was a failure
+        apps.insert("skipped_app".to_string(), app("none"));
+        let result =
+            ReloadDispatcher::new().reload_apps(&config_with(apps, BTreeMap::new()), false);
         assert!(
             result.has_failures(),
             "reload_apps should report failures when apps fail to reload"
         );
+        assert_eq!(result.total_count, 1);
     }
 
     #[test]
-    fn test_apply_hardware_resolves_placeholders() {
-        use crate::config::HardwareDevice;
-
-        let mut hardware = HashMap::new();
-        hardware.insert(
-            "test-device".to_string(),
-            HardwareDevice {
-                command: "echo {{base00}} {{base01}}".to_string(),
+    fn hooks_run_with_their_slots_substituted_without_the_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = |name: &str| dir.path().join(name);
+        let mut hooks = BTreeMap::new();
+        for name in ["first", "second"] {
+            hooks.insert(
+                name.to_string(),
+                ApplyHook {
+                    command: format!(
+                        "printf '%s %s' {{{{base00}}}} {{{{base01}}}} > {}",
+                        out(name).display()
+                    ),
+                },
+            );
+        }
+        hooks.insert(
+            "failing".to_string(),
+            ApplyHook {
+                command: "exit 3".to_string(),
             },
         );
-
-        let config = Config {
-            default_theme: "test".to_string(),
-            default_variant: "dark".to_string(),
-            apps: HashMap::new(),
-            hardware,
-            templates: None,
-            theme_sources: None,
-            shader: None,
-        };
-
-        let mut colors = HashMap::new();
-        colors.insert("base00".to_string(), "#262626".to_string());
-        colors.insert("base01".to_string(), "#333333".to_string());
-
-        // Should not panic — placeholders get resolved and command runs
-        let dispatcher = ReloadDispatcher::new();
-        dispatcher.apply_hardware(&config, &colors, true);
-    }
-
-    #[test]
-    fn test_apply_hardware_strips_hash_from_hex() {
-        use crate::config::HardwareDevice;
-
-        let mut hardware = HashMap::new();
-        hardware.insert(
-            "test-device".to_string(),
-            HardwareDevice {
-                command: "echo {{base00}}".to_string(),
-            },
-        );
-
-        let config = Config {
-            default_theme: "test".to_string(),
-            default_variant: "dark".to_string(),
-            apps: HashMap::new(),
-            hardware,
-            templates: None,
-            theme_sources: None,
-            shader: None,
-        };
-
         let mut colors = HashMap::new();
         colors.insert("base00".to_string(), "#ff0000".to_string());
+        colors.insert("base01".to_string(), "#333333".to_string());
 
-        // The command should receive "ff0000" not "#ff0000"
-        let dispatcher = ReloadDispatcher::new();
-        dispatcher.apply_hardware(&config, &colors, true);
-        // If the echo command ran, the placeholder was resolved (no error)
+        ReloadDispatcher::new().run_apply_hooks(&config_with(HashMap::new(), hooks), &colors, true);
+        for name in ["first", "second"] {
+            assert_eq!(std::fs::read_to_string(out(name)).unwrap(), "ff0000 333333");
+        }
     }
 
     #[test]
-    fn test_apply_hardware_skips_empty() {
-        let config = Config {
-            default_theme: "test".to_string(),
-            default_variant: "dark".to_string(),
-            apps: HashMap::new(),
-            hardware: HashMap::new(),
-            templates: None,
-            theme_sources: None,
-            shader: None,
-        };
-
-        let colors = HashMap::new();
-        let dispatcher = ReloadDispatcher::new();
-        // Should return immediately without error
-        dispatcher.apply_hardware(&config, &colors, true);
+    fn placeholders_of_unknown_slots_are_left_alone() {
+        let mut colors = HashMap::new();
+        colors.insert("base00".to_string(), "#262626".to_string());
+        assert_eq!(
+            substitute_slots("x {{base00}} {{nope}} {{base00}}", &colors),
+            "x 262626 {{nope}} 262626"
+        );
     }
 }
