@@ -167,9 +167,17 @@
         in
         {
           inherit vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
+          # The OpenRGB server vogix.openrgb runs (nix/packages/openrgb.nix).
+          openrgb = self.lib.openrgbPatched pkgs;
           default = vogix;
         }
       );
+
+      # OpenRGB built from vogix's OpenRGB source with a host's own package
+      # set: the server package vogix.openrgb defaults to, for hosts that
+      # set services.hardware.openrgb.package themselves
+      # (`services.hardware.openrgb.package = vogix.lib.openrgbPatched pkgs;`).
+      lib.openrgbPatched = pkgs: pkgs.callPackage ./nix/packages/openrgb.nix { };
 
       # Overlay to make vogix (and the desktop shell's QML runtime) available
       # in pkgs. quickshell's own overlay is COMPOSED — its package is built
@@ -741,6 +749,13 @@
           # LANG cell, taps across a PipeWire restart, lock-time sampling
           # and the late-NetworkManager restart.
           desktop-hyprland = import ./nix/vm/tests/desktop-hyprland.nix testArgs;
+
+          # openrgb.service as vogix.openrgb runs it, against the real
+          # OpenRGB server: Type=notify readiness (listening when a restart
+          # returns), the settings merge into OpenRGB.json, and stock
+          # nixpkgs OpenRGB failing that unit's start; the module wiring
+          # and its readiness assertion are checked at instantiation.
+          openrgb-readiness = import ./nix/vm/tests/openrgb-readiness.nix { inherit pkgs self; };
         }
       );
 
