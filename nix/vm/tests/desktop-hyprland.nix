@@ -20,6 +20,8 @@
 #                       at session start, read back from the compositor
 #   mode-border-stall   an engine started while the compositor has not
 #                       answered yet still paints it, once it answers
+#   mode-border-reload  a config reload resets the border; the engine
+#                       paints the mode's colour again
 #   network-backend     NetworkManager starting after the shell restarts
 #                       the shell exactly once, cleanly, and it attaches
 #   keyboard-active     the LANG cell lights the keyboard's active layout by
@@ -445,6 +447,17 @@ pkgs.testers.nixosTest {
                f"the mode's colour {want} is painted once the compositor answers")
 
 
+    def gate_mode_border_reload(d: Desktop) -> None:
+        # A config reload, as Hyprland's autoreload runs after a switch,
+        # resets every value set at runtime; the engine paints the mode's
+        # border again.
+        want = mode_border(d)
+        d.poll(GET_BORDER, lambda o: border_colour(o) == want, 5, "the mode's colour before the reload")
+        d.run("hyprctl reload")
+        d.poll(GET_BORDER, lambda o: border_colour(o) == want, 5,
+               f"the mode's colour {want} is painted again after a config reload")
+
+
     def set_layouts(d: Desktop, layouts: str) -> None:
         if d.dialect == "lua":
             d.run("hyprctl eval " + shlex.quote(f'hl.config({{ input = {{ kb_layout = "{layouts}" }} }})'))
@@ -654,6 +667,7 @@ pkgs.testers.nixosTest {
     gate("lua lock-sampling", lambda: gate_lock_sampling(lua_desktop))
     gate("lua network-lock", lambda: gate_network_lock(lua_desktop))
     gate("lua mode-border-stall", lambda: gate_mode_border_stall(lua_desktop))
+    gate("lua mode-border-reload", lambda: gate_mode_border_reload(lua_desktop))
     lua.shutdown()
 
     hyprlang_desktop = Desktop(hyprlang, "hyprlang")
@@ -663,6 +677,7 @@ pkgs.testers.nixosTest {
     gate("hyprlang keyboard-reload", lambda: gate_keyboard_reload(hyprlang_desktop))
     gate("hyprlang workspace-click", lambda: gate_workspace_click(hyprlang_desktop))
     gate("hyprlang mode-border-stall", lambda: gate_mode_border_stall(hyprlang_desktop))
+    gate("hyprlang mode-border-reload", lambda: gate_mode_border_reload(hyprlang_desktop))
     hyprlang.shutdown()
 
     if failures:

@@ -789,12 +789,17 @@ fn read_window_events(
     stream: &mut std::os::unix::net::UnixStream,
     buf: &mut String,
     router: &mut Router,
-) -> bool {
+) -> EventRead {
     use std::io::Read;
     let mut chunk = [0u8; 4096];
+    let mut read = EventRead::default();
     loop {
         match stream.read(&mut chunk) {
-            Ok(0) => return true, // EOF — the compositor closed the stream.
+            Ok(0) => {
+                // EOF — the compositor closed the stream.
+                read.closed = true;
+                return read;
+            }
             Ok(n) => {
                 buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
                 while let Some(nl) = buf.find('\n') {
@@ -803,13 +808,31 @@ fn read_window_events(
                         // Some(class) → that window; None (empty class / focus
                         // lost) → fail-safe to non-terminal.
                         router.set_active_class(super::hypr::parse_activewindow_event(&line));
+                    } else if line.starts_with("configreloaded>>") {
+                        read.config_reloaded = true;
                     }
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return false,
-            Err(_) => return true, // real error → reconnect
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return read,
+            Err(_) => {
+                // A real error: reconnect.
+                read.closed = true;
+                return read;
+            }
         }
     }
+}
+
+/// What one read of the compositor's event stream saw.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EventRead {
+    /// The stream ended or failed: drop it and reconnect.
+    closed: bool,
+    /// The compositor reloaded its config, which resets every value set at
+    /// runtime, the mode's border colour among them. Hyprland posts this
+    /// only for a reload, never for a `keyword` or `eval`, so repainting on
+    /// it cannot feed back.
+    config_reloaded: bool,
 }
 
 // ── I/O shell ────────────────────────────────────────────────────────────────
@@ -1186,6 +1209,14 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
                         router.set_active_class(class);
                         win_events = Some(s);
                         log::debug!("vogix input: active-window stream (re)connected");
+                        // A compositor that appeared or restarted starts from
+                        // its config's border, not the mode's.
+                        execute(
+                            &mut vdev,
+                            &mut hypr,
+                            &mut undelivered,
+                            router.paint_current_mode(),
+                        );
                     }
                     // Connect failed: drop the (possibly stale) handle so the next
                     // pass re-discovers the live instance after a compositor restart.
@@ -1224,13 +1255,25 @@ pub fn run(schema: Schema) -> crate::errors::Result<()> {
             std::thread::sleep(std::time::Duration::from_millis(20));
             return Ok(());
         }
-        // Active-window class updates from Hyprland's event stream (drives the
-        // terminal-aware Super→Ctrl remap). On close/error → drop + reconnect.
-        if win_events.is_some()
-            && pollfds[event_idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
-            && read_window_events(win_events.as_mut().unwrap(), &mut win_buf, &mut router)
+        // Hyprland's event stream: active-window class updates (the
+        // terminal-aware Super→Ctrl remap), and config reloads, which reset
+        // the mode's border, so it is painted again. On close/error → drop +
+        // reconnect.
+        if pollfds[event_idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
+            && let Some(stream) = win_events.as_mut()
         {
-            win_events = None;
+            let read = read_window_events(stream, &mut win_buf, &mut router);
+            if read.config_reloaded {
+                execute(
+                    &mut vdev,
+                    &mut hypr,
+                    &mut undelivered,
+                    router.paint_current_mode(),
+                );
+            }
+            if read.closed {
+                win_events = None;
+            }
         }
         // Device fds: map each ready poll entry back to its STABLE slot. Done
         // BEFORE the hotplug pass below so an unplugged slot is cleared first —
@@ -1930,6 +1973,35 @@ mod tests {
                 .any(|e| matches!(e, Effect::Keyword { key, .. } if key.contains("border"))),
             "an unresolvable slot must not paint, got {fx:?}"
         );
+    }
+
+    #[test]
+    fn the_event_stream_reports_a_config_reload() {
+        use std::io::Write;
+        let (mut hyprland, mut ours) = std::os::unix::net::UnixStream::pair().unwrap();
+        ours.set_nonblocking(true).unwrap();
+        let mut r = router();
+        let mut buf = String::new();
+        hyprland
+            .write_all(b"workspace>>2\nactivewindow>>kitty,shell\n")
+            .unwrap();
+        assert_eq!(
+            read_window_events(&mut ours, &mut buf, &mut r),
+            EventRead::default(),
+            "no reload, stream open"
+        );
+        hyprland
+            .write_all(b"configreloaded>>\nactivewindow>>firefox,x\n")
+            .unwrap();
+        assert_eq!(
+            read_window_events(&mut ours, &mut buf, &mut r),
+            EventRead {
+                closed: false,
+                config_reloaded: true
+            }
+        );
+        drop(hyprland);
+        assert!(read_window_events(&mut ours, &mut buf, &mut r).closed);
     }
 
     #[test]
