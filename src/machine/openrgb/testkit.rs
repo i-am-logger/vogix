@@ -1,14 +1,20 @@
 //! Test support for the OpenRGB client: the server-side block layout (so tests
-//! can build description payloads), controller fixtures, a seeded generator of
-//! arbitrary controllers, and an allocation probe.
+//! can build description payloads), builders for the frames a server sends,
+//! controller fixtures, a seeded generator of arbitrary controllers, and an
+//! allocation probe.
+//!
+//! The frame builders script byte streams for the state-machine tests in
+//! `session`; they are not a server and prove nothing about protocol
+//! compatibility, which the real-server VM checks establish.
 
 use super::codec::encode_mode;
 use super::model::{
-    ColorMode, ControllerDescription, ControllerFlags, ControllerV6, DeviceType, Direction,
-    LedDescription, MatrixMap, ModeDescription, ModeFlags, ProtocolVersion, SegmentDescription,
-    SegmentFlags, SegmentV6, UpdateReason, ZoneDescription, ZoneFlags, ZoneType, ZoneV6,
+    AckStatus, ColorMode, ControllerDescription, ControllerFlags, ControllerV6, DeviceType,
+    Direction, LedDescription, MatrixMap, ModeDescription, ModeFlags, ProtocolVersion,
+    SegmentDescription, SegmentFlags, SegmentV6, UpdateReason, ZoneDescription, ZoneFlags,
+    ZoneType, ZoneV6,
 };
-use super::wire::{RgbColor, WireString, Writer};
+use super::wire::{Frame, PacketId, RgbColor, WireString, Writer};
 
 /// Largest-allocation probe: a global allocator that, while armed on the
 /// current thread, records the largest single allocation or reallocation size
@@ -215,6 +221,122 @@ pub fn signal_update_device_payload(
     w.u32(reason.to_wire());
     encode_device(&mut w, description, version);
     with_data_size(w.into_inner())
+}
+
+/// Scripted server frames.
+pub mod server {
+    use super::*;
+
+    pub fn frame(dev_id: u32, pkt_id: PacketId, payload: Vec<u8>) -> Vec<u8> {
+        Frame {
+            dev_id,
+            pkt_id,
+            payload,
+        }
+        .encode()
+        .unwrap()
+    }
+
+    pub fn version_reply(max: u32) -> Vec<u8> {
+        frame(
+            0,
+            PacketId::RequestProtocolVersion,
+            max.to_le_bytes().to_vec(),
+        )
+    }
+
+    pub fn server_name(name: &str) -> Vec<u8> {
+        let mut payload = name.as_bytes().to_vec();
+        payload.push(0);
+        frame(0, PacketId::SetServerName, payload)
+    }
+
+    pub fn server_flags(bits: u32) -> Vec<u8> {
+        frame(0, PacketId::SetServerFlags, bits.to_le_bytes().to_vec())
+    }
+
+    pub fn ack(dev_id: u32, acked: PacketId, status: AckStatus) -> Vec<u8> {
+        let mut payload = acked.to_wire().to_le_bytes().to_vec();
+        payload.extend(status.to_wire().to_le_bytes());
+        frame(dev_id, PacketId::Ack, payload)
+    }
+
+    pub fn ok(dev_id: u32, acked: PacketId) -> Vec<u8> {
+        ack(dev_id, acked, AckStatus::Ok)
+    }
+
+    pub fn count_v5(count: u32) -> Vec<u8> {
+        frame(
+            0,
+            PacketId::RequestControllerCount,
+            count.to_le_bytes().to_vec(),
+        )
+    }
+
+    pub fn count_v6(ids: &[u32]) -> Vec<u8> {
+        let mut payload = (ids.len() as u32).to_le_bytes().to_vec();
+        for id in ids {
+            payload.extend(id.to_le_bytes());
+        }
+        frame(0, PacketId::RequestControllerCount, payload)
+    }
+
+    pub fn controller_data(
+        dev_id: u32,
+        description: &ControllerDescription,
+        version: ProtocolVersion,
+    ) -> Vec<u8> {
+        frame(
+            dev_id,
+            PacketId::RequestControllerData,
+            controller_data_payload(description, version),
+        )
+    }
+
+    pub fn device_list_updated() -> Vec<u8> {
+        frame(0, PacketId::DeviceListUpdated, Vec::new())
+    }
+
+    pub fn detection_started() -> Vec<u8> {
+        frame(0, PacketId::DetectionStarted, Vec::new())
+    }
+
+    pub fn detection_complete() -> Vec<u8> {
+        frame(0, PacketId::DetectionComplete, Vec::new())
+    }
+
+    pub fn detection_progress(percent: u32, text: &str) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.u32(percent);
+        w.string_u16(&WireString::from(text), "detection_string")
+            .unwrap();
+        frame(
+            0,
+            PacketId::DetectionProgressChanged,
+            with_data_size(w.into_inner()),
+        )
+    }
+
+    pub fn signal_update_leds(dev_id: u32, colours: &[RgbColor]) -> Vec<u8> {
+        frame(
+            dev_id,
+            PacketId::SignalUpdate,
+            signal_update_leds_payload(colours),
+        )
+    }
+
+    pub fn signal_update_device(
+        dev_id: u32,
+        reason: UpdateReason,
+        description: &ControllerDescription,
+        version: ProtocolVersion,
+    ) -> Vec<u8> {
+        frame(
+            dev_id,
+            PacketId::SignalUpdate,
+            signal_update_device_payload(reason, description, version),
+        )
+    }
 }
 
 fn mode(

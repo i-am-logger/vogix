@@ -10,9 +10,15 @@
 //!   descriptions.
 //! - [`codec`]: version-gated decoders for every block and reply vogix reads,
 //!   and encoders for the packets it sends.
+//! - [`select`]: device selection, the server's mode acceptance rule, write
+//!   plans and read-back confirmation.
+//! - [`session`]: the connection state machine that drives them, performing no
+//!   I/O of its own.
 
 pub mod codec;
 pub mod model;
+pub mod select;
+pub mod session;
 pub mod wire;
 
 #[cfg(test)]
