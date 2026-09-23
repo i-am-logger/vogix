@@ -266,11 +266,13 @@ fn handle_theme_undo() -> Result<()> {
                 &config,
                 &prev,
             )?;
+            // state.toml is the commit the machine surfaces follow: publish
+            // once it is saved, whether or not the history write then fails.
             prev.save()?;
-            hist.save()?;
             if let Some(applied) = &applied {
                 publish_machine_palette(&prev, applied);
             }
+            hist.save()?;
             info!("Undo → {}", prev.describe());
             Ok(())
         }
@@ -298,11 +300,13 @@ fn handle_theme_redo() -> Result<()> {
                 &config,
                 &next,
             )?;
+            // state.toml is the commit the machine surfaces follow: publish
+            // once it is saved, whether or not the history write then fails.
             next.save()?;
-            hist.save()?;
             if let Some(applied) = &applied {
                 publish_machine_palette(&next, applied);
             }
+            hist.save()?;
             info!("Redo → {}", next.describe());
             Ok(())
         }

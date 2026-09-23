@@ -873,12 +873,12 @@
           # server with Debug, DDP and Govee devices (colours observed on
           # OpenRGB's own DDP and Govee wire output, confirmed at protocol 6
           # and sent at protocol 5 after a switch); theme changes, a set
-          # whose commit fails, another user's apply, a planted palette,
-          # SIGHUP and the resume unit, openrgb restarts and a killed server,
-          # and a reboot that applies the palette before
-          # systemd-user-sessions. `vogix machine inspect` captures the raw
-          # controller payloads into $out/capture and the published palette
-          # into $out/published (tests/fixtures).
+          # whose commit fails and an undo or redo whose history write fails,
+          # another user's apply, a planted palette, SIGHUP and the resume
+          # unit, openrgb restarts and a killed server, and a reboot that
+          # applies the palette before systemd-user-sessions. `vogix machine
+          # inspect` captures the raw controller payloads into $out/capture
+          # and the published palette into $out/published (tests/fixtures).
           machine-release = import ./nix/vm/tests/machine-release.nix testArgs;
         }
       );

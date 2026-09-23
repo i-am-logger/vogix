@@ -39,7 +39,8 @@
 #   not republished; a user without state applies their configured theme on
 #   their first refresh; another user's apply does not reach the machine;
 # - with history.json immutable, a theme set whose commit fails publishes
-#   nothing;
+#   nothing; an undo or a redo whose state.toml is saved before its history
+#   write fails is published;
 # - a hot-added hidraw node of the probe's ids re-runs it; SIGHUP and
 #   vogix-machine-resume.service make both owners re-apply;
 # - `vogix machine inspect` lists the controllers and captures their raw
@@ -407,6 +408,24 @@ pkgs.testers.nixosTest {
         machine.succeed(f"{CHATTR} -i {HISTORY} && rm -f {HISTORY}.tmp")
         machine.succeed("su - vogix -c 'vogix theme refresh'")
         assert machine.succeed(f"stat -c %i {PALETTE}").strip() == inode
+        settled("nordic")
+
+    with subtest("an undo or redo whose state is committed is published though its history write fails"):
+        # The last set that committed pushed matrix.
+        machine.succeed(f"{CHATTR} +i {HISTORY}")
+        fails_at_history("vogix theme undo")
+        assert state_theme() == "matrix", state_theme()
+        assert published()["theme"]["name"] == "matrix", published()
+        settled("matrix")
+        machine.succeed(f"{CHATTR} -i {HISTORY} && rm -f {HISTORY}.tmp")
+        set_theme("vogix", "nordic")
+        machine.succeed("su - vogix -c 'vogix theme undo'")
+        settled("matrix")
+        machine.succeed(f"{CHATTR} +i {HISTORY}")
+        fails_at_history("vogix theme redo")
+        assert state_theme() == "nordic", state_theme()
+        assert published()["theme"]["name"] == "nordic", published()
+        machine.succeed(f"{CHATTR} -i {HISTORY} && rm -f {HISTORY}.tmp")
         settled("nordic")
 
     with subtest("a hidraw node of the probe's USB ids re-runs it"):
