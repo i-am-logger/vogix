@@ -94,6 +94,10 @@ nix build .#checks.x86_64-linux.desktop-qmllint -L --no-link   # lint the QML
 nix build .#checks.x86_64-linux.desktop-logic -L --no-link     # Qt Quick Test over the pure logic
 nix build .#checks.x86_64-linux.desktop-smoke -L --no-link     # the real shell under a headless compositor
 nix build .#checks.x86_64-linux.desktop-options -L --no-link   # the desktop.json pin and module assertions
+nix build .#checks.x86_64-linux.desktop-taps -L --no-link      # the audio taps against a real PipeWire
+
+# The desktop shell on a real Hyprland session (a VM; about two minutes of test time)
+nix build .#checks.x86_64-linux.desktop-hyprland -L --no-link
 ```
 
 ### VM Testing
@@ -212,8 +216,10 @@ vogix/
 │   │   │                       #   and the pinned default desktop.json
 │   │   └── nixos.nix           # NixOS module
 │   ├── checks/                 # Desktop checks too large for flake.nix
+│   │   ├── desktop-smoke.nix   # The real shell under a headless compositor
 │   │   ├── desktop-taps.nix    # The audio taps against a real PipeWire
-│   │   └── desktop-geometry-probe.qml # desktop-smoke's canvas-size probe
+│   │   ├── desktop-geometry-probe.qml # desktop-smoke's widget size and fit probe
+│   │   └── desktop-state-probe.qml    # desktop-smoke's window-title, mode and card probe
 │   ├── packages/
 │   │   ├── vogix.nix           # Package definition
 │   │   └── vogix-desktop-qml.nix # The desktop shell's QML tree
@@ -387,25 +393,33 @@ The shell is the QML tree in `desktop/` (see
   pure function goes in `desktop/Services/lib/*.js` with a `tst_*.qml` case in
   `tests/desktop/`; a sysfs probe goes in `desktop/data/*.sh` with a fixture
   case in `tests/desktop/probes.sh`.
+- **What needs a compositor** (clicks, layer-shell placement, the session
+  lock, screencasts, keyboard layouts, NetworkManager): `desktop-hyprland`
+  runs the shell on a real Hyprland session in a VM, on both config
+  providers.
 - **A default changed**: `desktop-options` fails until
   `nix/modules/desktop/desktop-json.pin.json` matches the new rendering, so
   every change to what the shell receives is a reviewed edit of that file.
 - **A new widget**: add its QML under `desktop/Bar/widgets/` (declare
   `property BarAxis axis` to receive the bar's context, and hold any data
-  source through a `Lease` on `axis.live`), register its name where
-  `desktop/Bar/Section.qml` maps names to files and in `KNOWN_WIDGETS` in
-  `src/commands/desktop.rs` (what `vogix desktop check` accepts), and list it
-  in `docs/desktop.md`. A widget that reads only horizontally also joins the
-  horizontal-only lists in those two files and in the home-manager module's
-  assertion.
+  source through a `Lease` on `axis.live`), give it an entry in
+  `desktop/Bar/widgets/registry.json` (its name, its component, and
+  `"horizontalOnly": true` when it reads only horizontally), and list it in
+  `docs/desktop.md`. The registry is the only list of widget names: the shell
+  resolves names through it, the layout options and the home-manager
+  assertion are typed from it, and `vogix desktop check` compiles it in.
+  `desktop-smoke` places every registry widget and its geometry probe measures
+  each one, so a new widget is loaded and measured without editing the check.
 - **A new verb**: add the subcommand in `src/cli.rs`, its relay in
-  `src/commands/desktop.rs`, the IPC function in `desktop/shell.qml`, and an
-  example in `docs/cli.md` (the unit tests require one).
+  `src/commands/desktop.rs` (an `IpcCall` through the `Shell` seam, with a
+  case in the `relayed_verbs` table its tests drive), the IPC function in
+  `desktop/shell.qml`, and an example in `docs/cli.md` (the unit tests require
+  one).
 - **On a real session**, a home-manager switch that changes the QML package
   restarts `vogix-desktop.service`; one that changes only `desktop.json`
-  reloads it in place. `vogix desktop check`, `status`, `meters` and
-  `keyboard` show what the running shell sees, and warnings go to
-  `journalctl --user -u vogix-desktop`.
+  reloads it in place. `vogix desktop check`, `status`, `meters`, `stats`,
+  `privacy`, `keyboard` and `bar geometry` show what the running shell sees,
+  and warnings go to `journalctl --user -u vogix-desktop`.
 
 ### Debugging
 

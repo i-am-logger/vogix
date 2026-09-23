@@ -275,8 +275,10 @@ this CLI's own parser.
   (`desktop-logic`).
 - `desktop/Bar/`: `Bar` creates the four bars on every screen (horizontal
   bars first, so the rails fit between their exclusive zones); `Section`
-  maps widget names to `desktop/Bar/widgets/*.qml` and injects each widget's
-  `BarAxis` (orientation, thickness, edge, window, and `live`).
+  resolves widget names through the widget registry
+  (`desktop/Bar/widgets/registry.json`, the same list the Nix layout options
+  and `vogix desktop check` read) and injects each widget's `BarAxis`
+  (orientation, thickness, edge, window, and `live`).
 - `desktop/Components/`: the Flight Deck primitives (segmented meters,
   sparklines, fixed-width readouts, labels, the scanline overlay) and the
   meter ballistics; `desktop/Bar/widgets/FrameCell.qml` is the framed cell
@@ -287,7 +289,8 @@ this CLI's own parser.
 A bar that cannot be seen (parked, or the session locked, the screensaver
 up, the displays off) has `live` false. Widgets hold their data sources
 through a `Lease` on it, and the services count references, so every
-sampler and audio tap runs only while some live widget wants it.
+sampler and audio tap runs only while some live widget wants it. A custom
+cell's command likewise runs only while a live bar carries the cell.
 
 ### The system side
 

@@ -102,8 +102,11 @@ programs.vogix.desktop.bars.right = {
   them.
 - `window`, `media`, `weather` and `theme` read horizontally, so they are
   rejected on `left` and `right` at build time.
-- A name the shell does not know renders as a magenta `?name` tile, so a
-  mistake is visible rather than silently dropped.
+- The layout options accept only the names in the shell's widget registry
+  (`desktop/Bar/widgets/registry.json`) and `custom/<name>`. A name that
+  still reaches the shell unresolved renders as a magenta `?name` tile, with
+  a journal warning saying why, so a mistake is visible rather than silently
+  dropped.
 - `bars.<edge>.enable = false` turns an edge off; `vogix desktop bar status`
   reports it as `off`.
 
@@ -278,6 +281,8 @@ the meters' reference level against a test tone.
 
 The spectrum is cava at 25 frames a second, `meters.spectrum.bars` bands per
 stereo channel (48 by default); `meters.spectrum.enable = false` removes it.
+A spectrum's size follows that band count, not the latest frame, so it
+keeps its size while nothing plays.
 The scope reads the output's monitor with `pw-record` at 8 kHz, one update
 per 256 samples (about 31 a second). Both run only while their widget's bar
 is on screen and something is playing, and restart on their own after an
@@ -349,14 +354,21 @@ programs.vogix.desktop = {
 | `onClick` | A command run on click; the cell re-runs its own command after it. Without one, a click re-runs the command. |
 | `widest` | A sample of the widest value; its width is reserved so the bar never reflows. |
 
-A command runs when its first cell appears, then on its interval, on a watched
-file's change, after a click, and on `vogix desktop custom refresh <name>`. A
-trigger during a run queues exactly one more run. One command serves every
-bar and screen that places the cell. It keeps running while any bar carries
-the cell, including a hidden bar or a locked screen. `vogix desktop custom
-status <name>` prints what the cell shows. The build rejects a placement that
-names no defined cell, and a cell name other than letters, digits, `-` and
-`_`.
+One command serves every bar and screen that places the cell, and it runs
+only while one of those bars is live (see [What runs when](#what-runs-when)):
+nothing runs while every bar carrying the cell is hidden, the session is
+locked or the screens are off. While live, the command runs on its interval,
+on a watched file's change, after a click, and on
+`vogix desktop custom refresh <name>`; a trigger during a run queues exactly
+one more run. When the cell comes back on screen it runs only if its result
+is older than its interval, or a watched file changed, a refresh arrived or a
+run was cut short while it was away; otherwise it waits out the rest of its
+interval. A refresh while every bar carrying the cell is hidden answers
+`queued: custom/<name> runs once its bar is on screen`. A `stream` command
+stays up while the cell is live and starts again each time it returns.
+`vogix desktop custom status <name>` prints what the cell shows. The build
+rejects a placement that names no defined cell, and a cell name other than
+letters, digits, `-` and `_`.
 
 ## Notifications
 
@@ -548,11 +560,11 @@ stay loaded, so it returns instantly, but they hold nothing:
   its graph history is cleared, so a returning graph never joins two periods
   of time.
 - **The clock** ticks seconds only while its bar is live.
+- **Custom cells** run their commands only while a bar carrying them is live
+  (see [Custom cells](#custom-cells)).
 
 Some sources do not depend on a bar:
 
-- custom cells run while any bar carries them (see
-  [Custom cells](#custom-cells))
 - the tailnet state is sampled every 30 seconds
 - the weather refreshes every 30 minutes, the reboot check runs every 5
   minutes, and pending reminders are checked every 15 seconds
@@ -578,5 +590,8 @@ vogix desktop status                     # is the shell running, and the bar sta
 vogix desktop check                      # does desktop.json match what the shell expects
 vogix desktop meters                     # which taps, monitors and samplers run
 vogix desktop keyboard                   # the keyboard, layouts and CapsLock the LANG cell shows
+vogix desktop stats                      # the stat cells' readings, as JSON
+vogix desktop privacy                    # what the PRIVACY cell shows: mic:off screencast:off
+vogix desktop bar geometry               # where each placed widget sits on its screen
 journalctl --user -u vogix-desktop -b    # the shell's warnings
 ```

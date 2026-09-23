@@ -105,7 +105,7 @@ A quickshell-rendered shell for Hyprland, enabled with `programs.vogix.desktop.e
 - **Lock and idle**: a PAM-backed session lock that refuses to engage without its PAM service, and staged idle (screensaver, dim, lock, screens off, suspend).
 - **Launcher and menus**: apps, files, calc, emoji, ssh, clipboard, theme and background pickers, a root menu from your configuration, a power menu, and dmenu mode for scripts.
 - **Panels, OSD, polkit agent, wallpaper and focus brackets**, all driven by `vogix desktop …` verbs.
-- **Quiet out of sight**: the audio taps run only while something plays and their widget is on screen, and the system samplers stop while their bar is hidden, the session is locked or the screens are off (custom cells and a few slow polls keep running).
+- **Quiet out of sight**: the audio taps run only while something plays and their widget is on screen, and the system samplers stop while their bar is hidden, the session is locked or the screens are off, and so do custom cells (a few slow polls keep running).
 
 ## Quick Start
 
