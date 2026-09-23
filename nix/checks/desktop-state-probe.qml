@@ -3,9 +3,10 @@ pragma ComponentBehavior: Bound
 // the shipped QML tree (like the geometry probe), it loads the real
 // `window` and `mode` widgets through the real Section and the real
 // notification popups, and follows what they show while their inputs
-// change. Each check prints `STATE <check> <value>` once it holds, or
-// `STATE-FAIL <check> …` when it does not within the deadline; the exit
-// status is the verdict.
+// change. Each check prints `STATE <check> <value>` once it holds; the
+// probe exits 0 once all have. There is no deadline: the smoke's overall
+// timeout is the only bound, and what each open check sees is logged
+// each time that changes (`STATE waiting for <check>: …`).
 //
 // - window-title: the title comes from `hyprctl -j activewindow` (the
 //   smoke's hyprctl fixture). Hyprland.activeToplevel stays null without
@@ -30,7 +31,8 @@ import "Notifications"
 ShellRoot {
     id: root
 
-    readonly property real deadline: Date.now() + 15000
+    // What the open checks saw when last logged.
+    property string waitingFor: ""
     // check → the value it passed with; a check absent here has not.
     property var passed: ({})
     readonly property list<string> checks:
@@ -104,16 +106,18 @@ ShellRoot {
         const open = root.checks.filter(c => root.passed[c] === undefined);
         if (open.length === 0) {
             Qt.exit(0);
-        } else if (Date.now() > root.deadline) {
+        } else {
             const seen = {
                 "window-title": "title '" + (title?.text ?? "") + "'",
                 "mode-label": "label '" + (mode?.modeLabel ?? "") + "'",
                 "mode-label-after-failure": "label '" + (mode?.modeLabel ?? "") + "', mode '" + Mode.mode + "'",
                 "card-scanlines": lit + " live scanline overlays on " + cards + " cards"
             };
-            for (const c of open)
-                console.error("STATE-FAIL", c, seen[c]);
-            Qt.exit(1);
+            const waiting = open.map(c => c + ": " + seen[c]).join("; ");
+            if (waiting !== root.waitingFor) {
+                root.waitingFor = waiting;
+                console.info("STATE waiting for", waiting);
+            }
         }
     }
 

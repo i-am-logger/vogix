@@ -81,7 +81,9 @@ let
     # Custom cells over every trigger but a click: first show (text, json,
     # a stream), a watched file's creation and change, the IPC refresh,
     # the timer (one cell due every 2 s, one hourly) and a parked bar's
-    # return. @RT@ becomes the runtime dir once the file is in place.
+    # return. The top bar's pulse, due every 2 s like the ticker, is the
+    # clock a parked rail is watched against. @RT@ becomes the runtime
+    # dir once the file is in place.
     custom = {
       smoke = { title = "SMK"; command = "echo SMOKE-42"; };
       gauge = {
@@ -101,9 +103,13 @@ let
         command = "n=$(cat @RT@/smoke-slow 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-slow; echo SLOW-$n";
         interval = 3600;
       };
+      pulse = {
+        command = "n=$(cat @RT@/smoke-pulse 2>/dev/null || echo 0); n=$((n + 1)); echo $n > @RT@/smoke-pulse; echo PULSE-$n";
+        interval = 2;
+      };
     };
     bars = {
-      top.layout.center = pin.bars.top.layout.center ++ extras "horizontal" ++ [ "custom/smoke" "custom/gauge" ];
+      top.layout.center = pin.bars.top.layout.center ++ extras "horizontal" ++ [ "custom/smoke" "custom/gauge" "custom/pulse" ];
       right.layout.center = pin.bars.right.layout.center ++ extras "vertical"
         ++ [ "custom/watched" "custom/counter" "custom/stream" "custom/ticker" "custom/slow" ];
     };
@@ -258,6 +264,7 @@ pkgs.runCommand "vogix-desktop-smoke"
     pkgs.libnotify
     pkgs.mpv
     pkgs.playerctl
+    pkgs.procps
     qsPkgs.quickshell
     qsPkgs.vogix
     hyprctlFixture
@@ -302,6 +309,17 @@ pkgs.runCommand "vogix-desktop-smoke"
   # No GPU and no GL in the build sandbox: Qt's software scene graph.
   export QT_QUICK_BACKEND=software
   R=$TMPDIR/result
+  # Every step waits for an event: an answer from the shell, a state a
+  # verb reports, a file's content, a process's exit. None waits a fixed
+  # time: the run's overall timeout is the only bound, and the result
+  # names what a run it stopped was waiting for.
+  waiting() { echo "$*" > $TMPDIR/awaiting; }
+  # Runs its command every 0.1 s until it succeeds.
+  await() {
+    waiting "$1"
+    shift
+    until "$@" > $TMPDIR/last 2>&1; do sleep 0.1; done
+  }
   # The shell, as the unit runs it; LOG names its log.
   launch() {
     ${execStart} > $TMPDIR/$1 2>&1 &
@@ -317,12 +335,58 @@ pkgs.runCommand "vogix-desktop-smoke"
     shift
     vogix desktop "$@" 2>&1 | sed "s|^|$label |" >> $R
   }
+  # A verb, asked every 0.1 s until its reply matches the extended regex
+  # EXPECTED; LABEL prefixes the reply that did.
+  vuntil() {
+    local label=$1 expected=$2 reply
+    shift 2
+    waiting "vogix desktop $* to answer /$expected/"
+    while :; do
+      reply=$(vogix desktop "$@" 2>&1)
+      [[ $reply =~ $expected ]] && break
+      printf '%s\n' "$reply" > $TMPDIR/last
+      sleep 0.1
+    done
+    printf '%s\n' "$reply" | sed "s|^|$label |" >> $R
+  }
+  # A verb, asked every 0.1 s while its whole reply matches the extended
+  # regex BEFORE (an earlier state); LABEL prefixes the first reply that
+  # does not.
+  vnext() {
+    local label=$1 before=$2 reply
+    shift 2
+    waiting "vogix desktop $* to answer other than /$before/"
+    while :; do
+      reply=$(vogix desktop "$@" 2>&1)
+      [[ $reply =~ ^($before)$ ]] || break
+      sleep 0.1
+    done
+    printf '%s\n' "$reply" | sed "s|^|$label |" >> $R
+  }
   # A transport-only IPC function (no verb reaches it).
   ipc() {
     label=$1
     shift
     qs -c vogix ipc call "$@" 2>&1 | sed "s|^|$label |" >> $R
   }
+  # The same, asked every 0.1 s until it answers ANSWER.
+  ipcuntil() {
+    local label=$1 answer=$2 reply
+    shift 2
+    waiting "qs ipc call $* to answer $answer"
+    while :; do
+      reply=$(qs -c vogix ipc call "$@" 2>&1)
+      [ "$reply" = "$answer" ] && break
+      printf '%s\n' "$reply" > $TMPDIR/last
+      sleep 0.1
+    done
+    echo "$label $reply" >> $R
+  }
+  # How many times a custom cell's command has run: the count it keeps in
+  # its file (0 before the first run).
+  count() { cat $XDG_RUNTIME_DIR/smoke-$1 2>/dev/null || echo 0; }
+  # No custom command whose command line matches the regex is running.
+  none_running() { ! pgrep -f "$1" > /dev/null; }
 
   # An MPRIS player on the session bus before the shell starts: the
   # media cell comes up with a player to show and control.
@@ -330,27 +394,38 @@ pkgs.runCommand "vogix-desktop-smoke"
     --script=${pkgs.mpvScripts.mpris}/share/mpv/scripts/mpris.so \
     av://lavfi:sine=frequency=440 > $TMPDIR/mpv.log 2>&1 &
   MPVPID=$!
+  await "the player to play" sh -c '[ "$(playerctl status)" = Playing ]'
   launch qs.log
-  sleep 5
+  # The shell answers with the bar state once it has read desktop.json.
+  vuntil status 'bar: top:' status
   kill -0 $QSPID 2>/dev/null && echo ALIVE >> $R
+  # Each custom cell's first run, on first show, lands before any bar
+  # hides: hiding a bar cuts its cells' runs short and they run again,
+  # which would move the counts the counter and the hourly cell are
+  # checked by. (The 2 s ticker and pulse are counted only from a known
+  # point.)
+  for cell in smoke gauge watched; do
+    vnext custom-$cell 'inactive|pending' custom status $cell
+  done
+  vuntil custom-stream '^S-2$' custom status stream
+  for cell in counter:RUN-1 slow:SLOW-1; do
+    await "custom/''${cell%:*}'s first run" sh -c "[ \"\$(vogix desktop custom status ''${cell%:*})\" = ''${cell#*:} ]"
+  done
   # The player changes state under the shell.
   playerctl pause
-  sleep 1
+  await "the player to pause" sh -c '[ "$(playerctl status)" = Paused ]'
   playerctl play
-  sleep 1
+  await "the player to play again" sh -c '[ "$(playerctl status)" = Playing ]'
   echo "media $(playerctl status 2>&1)" >> $R
-  v status status
   v bar-hide-left bar hide left
   v bar-show bar show
   v bar-toggle bar toggle
   v bar-toggle-back bar toggle
   # A bar nobody can see samples nothing; shown again, it samples.
   v bars-hidden bar hide
-  sleep 1
-  v meters-hidden meters
+  vuntil meters-hidden '^spectrum:off scope:off vu-out:off vu-mic:off stats:none$' meters
   v bars-shown bar show
-  sleep 2
-  v meters-shown meters
+  vuntil meters-shown ' stats:cpu,memory,net,disk,gpu,uptime,temp,fans,mounts$' meters
   v reload reload
   ipc launcher launcher status
   v power power
@@ -369,48 +444,50 @@ pkgs.runCommand "vogix-desktop-smoke"
   ipc gallery-status gallery status
   v gallery-close gallery --close
   v reminders remind list
-  vogix desktop stats > $TMPDIR/stats.json 2>&1
+  # The shown bars' samplers have delivered: memory, CPU and the df table.
+  await "the stats' first samples" sh -c 'vogix desktop stats > $TMPDIR/stats.json 2>&1 &&
+    jq -e ".memory != null and .cpu != null and (.mounts | length) > 0" $TMPDIR/stats.json'
   v privacy privacy
-  for cell in smoke gauge stream watched; do
-    v custom-$cell custom status $cell
-  done
   v custom-undefined custom status undefined
   echo W-1 > $XDG_RUNTIME_DIR/smoke-watch
-  sleep 1
-  v custom-watched-created custom status watched
+  vnext custom-watched-created 'failed: exited 1' custom status watched
   echo W-2 > $XDG_RUNTIME_DIR/smoke-watch
-  sleep 1
-  v custom-watched-changed custom status watched
+  vnext custom-watched-changed W-1 custom status watched
   v custom-counter-refresh custom refresh counter
-  sleep 1
-  v custom-counter custom status counter
+  vnext custom-counter RUN-1 custom status counter
   # Custom cells run only while their bar is on screen. The 2 s ticker
   # has ticked; with the right rail parked, nothing on it runs, and a
   # watched change and a refresh wait. Back on screen, the ticker (its
   # result older than its interval), the watched cell and the refreshed
   # counter run at once, and the hourly cell does not.
-  for _ in $(seq 60); do
-    [ "$(cat $XDG_RUNTIME_DIR/smoke-tick 2>/dev/null || echo 0)" -ge 2 ] && break
-    sleep 0.1
-  done
+  await "the 2 s ticker to run twice" sh -c "[ \$(cat $XDG_RUNTIME_DIR/smoke-tick 2>/dev/null || echo 0) -ge 2 ]"
   v park-right bar hide right
-  sleep 1
-  t0=$(cat $XDG_RUNTIME_DIR/smoke-tick)
-  s0=$(cat $XDG_RUNTIME_DIR/smoke-slow)
+  # A run the parking cut short has exited.
+  await "the parked rail's commands to exit" none_running 'smoke-(tick|count|slow|watch)'
+  t0=$(count tick)
+  s0=$(count slow)
   echo W-3 > $XDG_RUNTIME_DIR/smoke-watch
   v custom-parked-refresh custom refresh counter
-  sleep 3
-  echo "custom-parked-ticks $t0 $(cat $XDG_RUNTIME_DIR/smoke-tick)" >> $R
+  # Parked while the top bar's 2 s pulse runs twice: the shell's timers
+  # ran for a whole interval, in which the parked ticker was due.
+  p0=$(count pulse)
+  await "the pulse to run twice" sh -c "[ \$(cat $XDG_RUNTIME_DIR/smoke-pulse) -ge $((p0 + 2)) ]"
+  echo "custom-parked-ticks $t0 $(count tick)" >> $R
   v custom-parked-watched custom status watched
   v custom-parked-counter custom status counter
-  t1=$(cat $XDG_RUNTIME_DIR/smoke-tick)
+  t1=$(count tick)
   v unpark-right bar show right
-  sleep 1
-  echo "custom-unparked-ticks $(($(cat $XDG_RUNTIME_DIR/smoke-tick) - t1))" >> $R
-  echo "custom-unparked-slow $s0 $(cat $XDG_RUNTIME_DIR/smoke-slow)" >> $R
-  v custom-unparked-watched custom status watched
-  v custom-unparked-counter custom status counter
-  v keyboard keyboard
+  # The ticker's run on return, counted by the same read that sees it: a
+  # second run would come an interval later.
+  await "the ticker to run on return" sh -c "n=\$(cat $XDG_RUNTIME_DIR/smoke-tick); [ \$n -gt $t1 ] && echo \$n > $TMPDIR/tick-seen"
+  echo "custom-unparked-ticks $(($(cat $TMPDIR/tick-seen) - t1))" >> $R
+  vnext custom-unparked-watched W-2 custom status watched
+  vnext custom-unparked-counter RUN-2 custom status counter
+  # Had the hourly cell started with the others, its run would still be
+  # going or would have counted.
+  await "no hourly run in flight" none_running smoke-slow
+  echo "custom-unparked-slow $s0 $(count slow)" >> $R
+  vnext keyboard 'device:- layouts:- active:- caps:unknown' keyboard
   # The input engine's lock document, handled as the engine does:
   # written tmp + rename, rewritten the same way, removed on stop. The
   # LANG cell must follow every step through its file watch.
@@ -418,30 +495,23 @@ pkgs.runCommand "vogix-desktop-smoke"
     printf '%s' "$1" > $XDG_STATE_HOME/vogix/input-locks.json.tmp
     mv $XDG_STATE_HOME/vogix/input-locks.json.tmp $XDG_STATE_HOME/vogix/input-locks.json
   }
-  caps_until() {
-    for _ in $(seq 50); do
-      s=$(vogix desktop keyboard)
-      case "$s" in *" caps:$1") break ;; esac
-      sleep 0.1
-    done
-    echo "$2 $s" >> $R
-  }
   put_locks '{"capsLock":true,"numLock":false,"scrollLock":null}'
-  caps_until on locks-on
+  vuntil locks-on ' caps:on$' keyboard
   put_locks '{"capsLock":false,"numLock":false,"scrollLock":null}'
-  caps_until off locks-off
+  vuntil locks-off ' caps:off$' keyboard
   put_locks '{"capsLock":null,"numLock":null,"scrollLock":null}'
-  caps_until unknown locks-null
+  vuntil locks-null ' caps:unknown$' keyboard
   put_locks '{"capsLock":true,"numLock":false,"scrollLock":null}'
-  caps_until on locks-back
+  vuntil locks-back ' caps:on$' keyboard
   rm $XDG_STATE_HOME/vogix/input-locks.json
-  caps_until unknown locks-gone
+  vuntil locks-gone ' caps:unknown$' keyboard
   # Two notifications, a critical one whose body wraps: cards in the
   # popup column, and the live set mirrored to the state file.
   notify-send -u critical -a smoke-critical "Critical summary" \
     "a body long enough to wrap across more than one line of the card, which exercises the wrapped text height path"
   notify-send -a smoke-normal -t 60000 "Normal summary" "short body"
-  sleep 3
+  await "both notifications in the state file" \
+    jq -e 'length == 2' $XDG_STATE_HOME/vogix/desktop/notifications.json
   ipc notify-count notify count
   cp $XDG_STATE_HOME/vogix/desktop/notifications.json $TMPDIR/notifications-1.json
   stop
@@ -450,60 +520,58 @@ pkgs.runCommand "vogix-desktop-smoke"
   # Restart run: the live notifications come back, each with the time it
   # arrived.
   launch qs-restart.log
-  sleep 4
-  ipc restart-notify-count notify count
+  ipcuntil restart-notify-count 2 notify count
   cp $XDG_STATE_HOME/vogix/desktop/notifications.json $TMPDIR/notifications-2.json
   stop
 
   # Scanlines run: the texture on the bars and the restored cards.
   cp $TMPDIR/scanlines.json $XDG_STATE_HOME/vogix/desktop.json
   launch qs-scanlines.log
-  sleep 4
+  ipcuntil scanlines-notify-count 2 notify count
   kill -0 $QSPID 2>/dev/null && echo SCANLINES-ALIVE >> $R
-  ipc scanlines-notify-count notify count
   stop
   # Geometry run, on the shipped default desktop.json's bar and font
   # sizes, with every data source fed (desktop-geometry-feed.nix) and a
   # player on the bus, so every widget shows and is measured: the probe
-  # exits on its own with its verdict; the timeout only bounds a probe
-  # that never completes.
+  # exits on its own with its verdict.
   install -m 644 $pinJson $XDG_STATE_HOME/vogix/desktop.json
   mpv --no-config --really-quiet --idle=no --loop=inf --ao=null --vo=null \
     --script=${pkgs.mpvScripts.mpris}/share/mpv/scripts/mpris.so \
     av://lavfi:sine=frequency=440 > $TMPDIR/mpv-geometry.log 2>&1 &
   MPVPID=$!
-  for _ in $(seq 50); do
-    [ "$(playerctl status 2>/dev/null)" = Playing ] && break
-    sleep 0.1
-  done
+  await "the geometry run's player to play" sh -c '[ "$(playerctl status)" = Playing ]'
   . ${geometryFeed.script}
   feed_start && echo FEED-OK >> $R
-  feed_run timeout 60 ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
+  waiting "the geometry probe to exit"
+  feed_run ${desktopEnv} qs -p $TMPDIR/geometry > $TMPDIR/qs-geometry.log 2>&1
   echo "GEOMETRY-EXIT $?" >> $R
   feed_stop
   kill $MPVPID 2>/dev/null
-  cp $TMPDIR/desktop.json $XDG_STATE_HOME/vogix/desktop.json
 
   # State run, with the scanline texture on: the window title, the mode
   # cell's table and then its loss, and the restored cards' texture.
   cp $TMPDIR/scanlines.json $XDG_STATE_HOME/vogix/desktop.json
   cp $inputJsonPath $XDG_STATE_HOME/vogix/input.json
   echo normal > $XDG_STATE_HOME/vogix/current-mode
-  timeout 60 ${desktopEnv} qs -p $TMPDIR/state > $TMPDIR/qs-state.log 2>&1
+  waiting "the state probe to exit"
+  ${desktopEnv} qs -p $TMPDIR/state > $TMPDIR/qs-state.log 2>&1
   echo "STATE-EXIT $?" >> $R
 
   # Rejection run: a schema-1 desktop.json is refused, loudly, without
   # taking the shell down.
   cp $schema1JsonPath $XDG_STATE_HOME/vogix/desktop.json
   launch qs-schema1.log
-  sleep 3
+  await "the schema-1 refusal" grep -q 'desktop.json schema 1 is not supported' $TMPDIR/qs-schema1.log
+  vuntil schema1 '^top:' bar status
   kill -0 $QSPID 2>/dev/null && echo SCHEMA1-ALIVE >> $R
-  v schema1 bar status
   stop
+  echo DONE >> $R
   INNER
   chmod +x inner.sh
+  # The run's one bound. A step whose event never comes holds the run
+  # until here, and the result names it.
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
-    cage -- dbus-run-session --config-file=${pkgs.dbus}/share/dbus-1/session.conf -- ${pkgs.runtimeShell} ./inner.sh || true
+    timeout -k 10 900 cage -- dbus-run-session --config-file=${pkgs.dbus}/share/dbus-1/session.conf -- ${pkgs.runtimeShell} ./inner.sh || true
 
   echo "── result:"; cat $TMPDIR/result || true
   echo "── stats:"; cat $TMPDIR/stats.json || true
@@ -512,6 +580,13 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo "── Hyprland requests:"; cat $TMPDIR/feed/hypr-requests.log || true
   echo "── notification arrival times:"
   jq -c '[.[].at]' $TMPDIR/notifications-1.json $TMPDIR/notifications-2.json || true
+  grep -qx DONE $TMPDIR/result || {
+    echo "── the run stopped waiting for $(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
+    for log in qs-geometry.log qs-state.log; do
+      grep -h 'waiting for' $TMPDIR/$log 2>/dev/null | tail -n 1
+    done
+    exit 1
+  }
 
   # The log gate. A failure is a script error, a binding problem, a
   # component that did not load, a program the shell could not start, or
@@ -556,7 +631,7 @@ pkgs.runCommand "vogix-desktop-smoke"
   r 'bar-toggle top:hidden bottom:hidden left:hidden right:hidden'
   r 'bar-toggle-back top:shown bottom:shown left:shown right:shown'
   r 'meters-hidden spectrum:off scope:off vu-out:off vu-mic:off stats:none'
-  grep -qE '^meters-shown .* stats:[a-z]' $TMPDIR/result
+  grep -q '^meters-shown .* stats:cpu,memory,net,disk,gpu,uptime,temp,fans,mounts$' $TMPDIR/result
   r 'launcher closed'
   r 'power open'
   r 'power-status open'

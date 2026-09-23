@@ -38,7 +38,9 @@
 #   the desktop mode current, and CAPS latched in its lock document.
 #
 # feed_start sets it all up, feed_run runs a command inside it, and
-# feed_stop takes it down again.
+# feed_stop takes it down again. feed_start waits for each part to come
+# up with no bound of its own, naming the part through the caller's
+# `waiting` function.
 { pkgs }:
 
 let
@@ -528,17 +530,13 @@ in
     feed_bus=unix:path=$feed/system_bus_socket
     feed_hypr=vogix-geometry
 
-    # Polls every 0.1 s, for up to 60 s, until its command succeeds; says
-    # which part of the feed never came up otherwise.
+    # Polls every 0.1 s until its command succeeds, naming what it waits
+    # for through the caller's `waiting`: the caller's overall timeout is
+    # the only bound.
     feed_until() {
-      local what=$1 _
+      waiting "the feed: $1"
       shift
-      for _ in $(seq 600); do
-        "$@" > /dev/null 2>&1 && return 0
-        sleep 0.1
-      done
-      echo "feed: $what never came up"
-      return 1
+      until "$@" > /dev/null 2>&1; do sleep 0.1; done
     }
 
     # Stops at the first part that fails, with a non-zero status.
@@ -554,8 +552,9 @@ in
       DBUS_SYSTEM_BUS_ADDRESS=$feed_bus python3 -m dbusmock --system --template bluez5 \
         > $feed/bluez.log 2>&1 &
       echo $! > $feed/bluez.pid
-      gdbus wait --address $feed_bus --timeout 60 org.freedesktop.UPower
-      gdbus wait --address $feed_bus --timeout 60 org.bluez
+      waiting "the feed: UPower and BlueZ on the system bus"
+      gdbus wait --address $feed_bus org.freedesktop.UPower
+      gdbus wait --address $feed_bus org.bluez
       local path
       ${pkgs.lib.concatStrings (pkgs.lib.mapAttrsToList (name: props: ''
         path=/org/freedesktop/UPower/devices/${name}

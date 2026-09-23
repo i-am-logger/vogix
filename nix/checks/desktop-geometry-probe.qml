@@ -167,11 +167,6 @@ ShellRoot {
 
     function measureFit(s: var): void {
         for (const w of root.loaded(s.edge, s.section, false)) {
-            if (!w.item.visible) {
-                console.error("FIT", s.edge, w.name, "never showed: its data did not arrive");
-                root.failures++;
-                continue;
-            }
             const across = s.vertical ? w.item.width : w.item.height;
             const line = `${w.item.width}x${w.item.height} in ${s.size}`;
             if (across > s.size) {
@@ -225,10 +220,11 @@ ShellRoot {
     }
 
     // Measured once all four edges are laid out and every widget shows
-    // the data it is fed, checked every 100 ms. After giveUpMs the probe
-    // measures what shows and fails on each widget still hidden.
-    readonly property int giveUpMs: 30000
+    // the data it is fed, checked every 100 ms. There is no deadline: the
+    // smoke's overall timeout is the only bound, and what the probe still
+    // waits for is logged each time that changes (`GEOMETRY waiting for`).
     readonly property real startedAt: Date.now()
+    property string waitingFor: ""
 
     Timer {
         id: ready
@@ -237,36 +233,28 @@ ShellRoot {
         repeat: true
         running: true
         onTriggered: {
-            const waited = Date.now() - root.startedAt;
-            const shown = root.sections.length === 4 && root.hidden().length === 0 && root.missing().length === 0;
-            if (!shown && waited < root.giveUpMs)
+            const pending = (root.sections.length === 4 ? [] : [`${root.sections.length} of 4 bar edges`])
+                .concat(root.hidden().map(p => `${p} (hidden)`), root.missing());
+            if (pending.length > 0) {
+                if (pending.join(", ") !== root.waitingFor) {
+                    root.waitingFor = pending.join(", ");
+                    console.info("GEOMETRY waiting for", root.waitingFor);
+                }
                 return;
+            }
             ready.stop();
-            console.info("GEOMETRY", shown ? "every widget showing after" : "gave up after", waited, "ms");
-            if (root.sections.length !== 4) {
-                console.error("GEOMETRY", root.sections.length, "of 4 bar edges laid out");
-                root.failures++;
-            }
-            for (const part of root.missing()) {
-                console.error("GEOMETRY", part, "data incomplete after", waited, "ms");
-                root.failures++;
-            }
+            console.info("GEOMETRY every widget showing after", Date.now() - root.startedAt, "ms");
             for (const s of root.sections)
                 root.polishAll(s.section);
             for (const s of root.sections) {
                 root.measureCanvases(s, true);
                 root.measureFit(s);
             }
+            // A frame of audio data. No tap is held here, so Cava's
+            // ballistics do not run and the spectrums draw the frame
+            // itself: it reaches every canvas through its bindings, and
+            // the layout pass below settles any size it moved.
             Cava.values = Array(Cava.bars * 2).fill(0.5);
-            second.start();
-        }
-    }
-
-    Timer {
-        id: second
-
-        interval: 500
-        onTriggered: {
             for (const s of root.sections) {
                 root.polishAll(s.section);
                 root.measureCanvases(s, false);
