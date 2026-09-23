@@ -1,7 +1,7 @@
 //! `vogix greeter` — the SDDM greeter's runtime follow.
 //!
-//! The greeter is themed at BUILD time from the first vogix user's palette
-//! (theme.conf); `greeter sync` layers the runtime on top: it COPIES the
+//! The greeter is themed at BUILD time from the machine owner's palette
+//! (vogix.machine.owner; theme.conf); `greeter sync` layers the runtime on top: it COPIES the
 //! live theme.json and the current background reference into
 //! /var/lib/vogix/greeter (group-writable, tmpfiles from vogix's NixOS
 //! module), which the greeter QML prefers over its build-time palette.

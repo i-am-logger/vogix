@@ -152,6 +152,7 @@ terminal's 16 ANSI colours and its foreground and background from
 4. **ansi16-import.nix**: Imports TOML themes from iTerm2-Color-Schemes fork
 5. **vogix16-import.nix**: Imports TOML themes from vogix16-themes repo
 6. **Application Generators** (`nix/modules/applications/`): Multi-scheme generators
+7. **NixOS module** (`nix/modules/nixos.nix`): the console colours, Plymouth and the greeter; `machine.nix` (the machine owner, `machine.json`, the drop zone and the owner units), `openrgb.nix` (the OpenRGB SDK server) and `hardware/` (the hardware modules and `vogix.hardware.devices`)
 
 ### Runtime Components (Rust)
 1. **Commands** (`src/commands/`): cache, completions, daemon, desktop (the desktop shell's verbs and `desktop check`), greeter, hypr (dialect-aware Hyprland IPC), input, list, machine (the machine owners, `status`, `validate`, `inspect`), modes, refresh, session, shader, status, theme_change
@@ -365,10 +366,11 @@ machine owner's vogix CLI (theme set / undo / redo / refresh)
 ### Ownership and the drop zone
 
 - `vogix.machine.owner` names the user the machine surfaces follow. It
-  defaults to the alphabetically first home-manager user with
+  defaults to the first home-manager user, by name, with
   `programs.vogix.enable`, and must be one of those users. The build-time
   console colours, the Plymouth theme and the greeter's palette follow the
-  same user.
+  same user. The machine surfaces exist when `vogix.enable` is set and the
+  owner is not `null`; declaring devices without both fails evaluation.
 - The drop zone `/var/lib/vogix/machine` belongs to the machine owner (mode
   0755), so only the owner can publish into it. Once a theme change is
   committed (for a refresh, once its side effects ran), the owner's CLI
@@ -482,12 +484,15 @@ vogix.hardware.devices = {
 };
 ```
 
-- A device name and a slot are 1 to 64 characters of `A-Z a-z 0-9 _ -`.
+- A device name and a slot are 1 to 64 characters of `A-Z a-z 0-9 _ -`;
+  `slot` has no default.
 - `provider` is exactly one of `openrgb` and `command`.
-- A command's `argv[0]` is an absolute `/nix/store` path; an argument that
-  is exactly `{{color}}` becomes the colour as `rrggbb`, and `{{color}}`
-  inside a longer argument is rejected. The command runs as root in the
-  local owner's sandbox, with no network.
+- A command's `argv[0]` is a path in the Nix store with no `..`
+  component; an argument that is exactly `{{color}}` becomes the colour as
+  `rrggbb`, and `{{color}}` inside a longer argument is rejected. The
+  command runs as root in the local owner's sandbox, with no network.
+- An openrgb device turns `vogix.openrgb.enable` on (as a default); setting
+  it off with an openrgb device declared fails evaluation.
 - `hotplug.hidraw` (default `null`) takes USB ids as four lowercase hex
   digits.
 
@@ -503,6 +508,8 @@ The rest of the machine configuration:
 
 - `vogix.machine.console.enable` (default `true`): whether `vogix-machine`
   writes the VT palette.
+- `vogix.machine.logLevel` (`error`, `warn`, `info`, `debug` or `trace`,
+  default `info`): `RUST_LOG=vogix=<level>` for both owner units.
 - `vogix.openrgb.client.maxProtocol` (`5` or `6`, default `6`): the highest
   SDK protocol the client offers; the session runs at the lower of this and
   the server's.
@@ -518,7 +525,9 @@ The rest of the machine configuration:
 
 `/etc/vogix/machine.json` is rendered by the NixOS module from the options
 above; the owners read it with a typed loader that rejects unknown fields,
-and `vogix machine validate` runs that loader on any file:
+and `vogix machine validate` runs that loader on any file. The system build
+runs it on the rendered file, so a `machine.json` the owners would reject
+fails the build:
 
 ```json
 {
@@ -545,8 +554,10 @@ and `vogix machine validate` runs that loader on any file:
 }
 ```
 
-`openrgb` is `null` when no device uses OpenRGB, and its `host` is a
-loopback address.
+`openrgb` is `null` when `vogix.openrgb.enable` is off; otherwise its `port`
+is `services.hardware.openrgb.server.port` and its `host` a loopback
+address, so `vogix machine inspect` reaches the server even on a host that
+declares no openrgb device.
 
 `/var/lib/vogix/machine/palette.json` is what the machine owner's CLI
 publishes: the theme, every slot the theme defines, and the 16 VT colours

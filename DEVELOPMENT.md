@@ -209,7 +209,8 @@ vogix/
 │   │   ├── lib/                # Shared libraries
 │   │   │   ├── applications.nix  # App discovery
 │   │   │   ├── colors.nix        # Color utilities
-│   │   │   └── vogix16.nix       # vogix16 helpers
+│   │   │   ├── vogix16.nix       # vogix16 helpers
+│   │   │   └── vogix-users.nix   # The home-manager users with programs.vogix.enable
 │   │   ├── home-manager/       # Home-manager module (split)
 │   │   │   ├── default.nix
 │   │   │   ├── generators.nix
@@ -223,9 +224,11 @@ vogix/
 │   │   ├── hardware/           # vogix.hardware.* modules (DRAM, Keychron, Kraken) and their devices
 │   │   ├── desktop/            # programs.vogix.desktop.* options, defaults,
 │   │   │                       #   and the pinned default desktop.json
+│   │   ├── machine.nix         # vogix.machine: machine.json, the drop zone and the machine owner units
 │   │   ├── openrgb.nix         # vogix.openrgb: the OpenRGB SDK server and its settings
 │   │   └── nixos.nix           # NixOS module
-│   ├── checks/                 # Desktop checks too large for flake.nix
+│   ├── checks/                 # Checks too large for flake.nix
+│   │   ├── machine-contract.nix # The machine module at evaluation and through the owners' loader
 │   │   ├── desktop-smoke.nix   # The real shell under a headless compositor
 │   │   ├── desktop-taps.nix    # The audio taps against a real PipeWire
 │   │   ├── desktop-geometry-probe.qml # desktop-smoke's widget size and fit probe
@@ -253,8 +256,7 @@ vogix/
 │       │   ├── input-engine.nix    # Input engine end-to-end
 │       │   ├── desktop-hyprland.nix # The desktop shell under Hyprland
 │       │   ├── openrgb-readiness.nix # openrgb.service readiness and settings
-│       │   ├── openrgb-owner.nix   # vogix-openrgb against the real OpenRGB server
-│       │   └── machine-local.nix   # vogix-machine: the VT palette and command devices
+│       │   └── machine-release.nix # Both machine owners as the module declares them, against the real OpenRGB server
 │       ├── test-vm.nix         # VM configuration
 │       └── home.nix            # Test user config
 │
