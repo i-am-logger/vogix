@@ -39,7 +39,7 @@ symlink.
 
 | Check | What it proves |
 |---|---|
-| `nix-unit` | The config generators: appearance, behavior, the Hyprland render in both config dialects (hyprlang and Lua), and the theme.json contract pinned to the same golden line as the Rust template test. Runs at evaluation, so `--no-build` covers it. |
+| `nix-unit` | The config generators: appearance, behavior, the Hyprland render in both config dialects (hyprlang and Lua), and the theme.json contract pinned to the same golden line as the Rust template tests, one of which renders it through praxis's semantic mapping. Runs at evaluation, so `--no-build` covers it. |
 | `appearance-options` | `programs.vogix.appearance.*` reaches the rendered Hyprland config through the module system. |
 | `desktop-options` | The default `desktop.json` equals `nix/modules/desktop/desktop-json.pin.json` byte for byte; each bar's layout options take exactly the widget registry's names (`desktop/Bar/widgets/registry.json`) that render on that bar's orientation, plus `custom/<name>`, so a widget the registry confines to the other orientation (a title or the oscilloscope on a rail, a rail meter on a horizontal bar), an unknown name, an undefined `custom/<name>` placement or a bad cell name fails evaluation; a `desktop.json` that `vogix desktop check` rejects fails the home-manager build, and the check rejects a misplaced widget in a document that never went through the options; the shell's unit restarts on exit status 75, waits for PipeWire, and runs quickshell without detailed logs. |
 | `desktop-runtime` | Every program the shell's QML starts by name is on the `vogix-desktop` unit's own `PATH` (or is a base-system tool or a client of a host daemon), and the NixOS module enables UPower and power-profiles-daemon exactly while a user runs the shell. |
@@ -63,7 +63,7 @@ symlink.
 | `session` | Session save/restore behavior |
 | `runtime-size` | Runtime footprint / generated-config size bounds |
 | `stress` | Rapid theme/variant switching |
-| `templates` | Template architecture; templates bundled in the Nix package |
+| `templates` | Template architecture; templates bundled in the Nix package; for a real theme of each scheme (vogix16 in both polarities, base16, base24, ansi16) the `theme.json` `vogix theme set` renders into the cache is byte-identical to the one home-manager built into the theme package |
 | `input-engine` | The evdev-grab → uinput re-emit / mock-compositor dispatch engine (below) |
 | `desktop-hyprland` | The desktop shell in a real Hyprland 0.56 session (greetd, virtio-gpu) with PipeWire, NetworkManager and the input engine, with every gate on the Lua config provider and the three whose command path differs (the workspace click and both LANG gates) also on hyprlang: a workspace click, a tray icon's menu, notification and panel placement beside the bars, the focus brackets, the PRIVACY cell during a screencast, the LANG cell across a layout switch and a runtime layout change, the taps across a PipeWire restart, sampling stopped under the session lock, and the restart NetworkManager's arrival triggers, deferred while locked |
 

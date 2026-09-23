@@ -19,8 +19,10 @@
 #
 # The generators return a JSON STRING (the theme-file-only branch, the
 # console/ripgrep precedent). A Tera template per scheme renders the same
-# bytes into the on-demand cache; contract-tests.nix (checks.nix-unit) and
-# the Rust template test pin both layers to one golden line.
+# bytes into the on-demand cache: checks.templates renders a real theme of
+# every scheme through both layers and requires identical files, and
+# contract-tests.nix (checks.nix-unit) and the Rust template tests pin the
+# vogix16 output to one golden line.
 { lib, ... }:
 
 let

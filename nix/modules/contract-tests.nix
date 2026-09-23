@@ -5,8 +5,11 @@
 #
 # - the vogix16 branch's output equals the GOLDEN line that
 #   src/template/tests.rs::theme_json_template_matches_nix_generator_bytes
-#   also pins the Tera template to, so the two render layers (Nix-built theme
-#   package, on-demand cache) provably produce identical bytes;
+#   also pins the Tera template to, and that
+#   praxis_semantics_render_the_nix_golden_line renders from praxis's
+#   semantic mapping, so the Nix tables and praxis agree on every key and
+#   slot (checks.templates compares the two render layers on real themes
+#   of every scheme);
 # - every scheme branch yields valid JSON carrying all 16 praxis semantic
 #   keys and all 16 palette slots;
 # - the per-scheme semantic tables map the slots lib/vogix16.nix documents.

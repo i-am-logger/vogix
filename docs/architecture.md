@@ -231,8 +231,11 @@ input engine              ─────────────────▶
   (`nix/modules/applications/vogix-desktop.nix`, and a Tera template per
   scheme for the on-demand cache). Its `semantic` keys are praxis's
   `Vogix16Semantic` keys, derived per scheme, so the shell never sees a scheme
-  difference. The Nix and template render layers are pinned to one golden
-  line (`nix/modules/contract-tests.nix`, `src/template/tests.rs`).
+  difference. The Nix and template render layers produce identical files:
+  the `templates` VM suite renders a real theme of every scheme through both
+  and compares them, and the vogix16 output of the Nix tables, of the
+  template and of praxis's mapping is pinned to one golden line
+  (`nix/modules/contract-tests.nix`, `src/template/tests.rs`).
 - **backgrounds.json** sits beside theme.json because its entries carry store
   paths only Nix knows, and theme.json must stay identical between the two
   render layers.

@@ -291,16 +291,32 @@ fn test_hex_to_rgb_filter_lowercase() {
     assert_eq!(result, "0xab,0xcd,0xef");
 }
 
+/// The vogix16 theme.json for base00..base0F = #101010..#1f1f1f (theme
+/// goldtest, night, dark): the Nix generator's output for that fixture.
+/// nix/modules/contract-tests.nix pins the Nix side to the identical string
+/// (without the trailing newline the file layer adds on both sides).
+const THEME_JSON_GOLDEN: &str = concat!(
+    r##"{"backgrounds":[],"palette":{"base00":"#101010","base01":"#111111","base02":"#121212","base03":"#131313","base04":"#141414","base05":"#151515","base06":"#161616","base07":"#171717","base08":"#181818","base09":"#191919","base0A":"#1a1a1a","base0B":"#1b1b1b","base0C":"#1c1c1c","base0D":"#1d1d1d","base0E":"#1e1e1e","base0F":"#1f1f1f"},"polarity":"dark","schema":1,"scheme":"vogix16","semantic":{"active":"#1c1c1c","background":"#101010","background_selection":"#121212","background_surface":"#111111","danger":"#1b1b1b","foreground_border":"#141414","foreground_bright":"#171717","foreground_comment":"#131313","foreground_heading":"#161616","foreground_text":"#151515","highlight":"#1e1e1e","link":"#1d1d1d","notice":"#1a1a1a","special":"#1f1f1f","success":"#181818","warning":"#191919"},"theme":"goldtest","variant":"night"}"##,
+    "\n"
+);
+
+const THEME_JSON_TEMPLATE: &str = include_str!("../../templates/vogix16/theme.json.vogix");
+
+fn golden_meta() -> HashMap<String, String> {
+    HashMap::from([
+        ("theme".to_string(), "goldtest".to_string()),
+        ("variant".to_string(), "night".to_string()),
+        ("scheme".to_string(), "vogix16".to_string()),
+        ("polarity".to_string(), "dark".to_string()),
+    ])
+}
+
 /// The theme.json contract template must render BYTE-IDENTICAL to the Nix
 /// generator's `builtins.toJSON` output — the desktop shell reads whichever
 /// render layer produced the file (Nix-built theme package or the on-demand
-/// cache), so the two may never drift. The golden line below is the Nix
-/// generator's output for the same fixture (nix/modules/contract-tests.nix
-/// pins the Nix side to the identical string).
+/// cache), so the two may never drift.
 #[test]
 fn theme_json_template_matches_nix_generator_bytes() {
-    let template = include_str!("../../templates/vogix16/theme.json.vogix");
-
     // base00..base0F = #101010..#1f1f1f, keyed by the SNAKE semantic names
     // the runtime colors map carries for vogix16.
     let semantic_by_slot = [
@@ -329,17 +345,42 @@ fn theme_json_template_matches_nix_generator_bytes() {
             (key.to_string(), format!("#{b}{b}{b}"))
         })
         .collect();
-    let meta = HashMap::from([
-        ("theme".to_string(), "goldtest".to_string()),
-        ("variant".to_string(), "night".to_string()),
-        ("scheme".to_string(), "vogix16".to_string()),
-        ("polarity".to_string(), "dark".to_string()),
-    ]);
+    let rendered = render_template_string(THEME_JSON_TEMPLATE, &colors, &golden_meta()).unwrap();
+    assert_eq!(rendered, THEME_JSON_GOLDEN);
+}
 
-    let rendered = render_template_string(template, &colors, &meta).unwrap();
-    let golden = concat!(
-        r##"{"backgrounds":[],"palette":{"base00":"#101010","base01":"#111111","base02":"#121212","base03":"#131313","base04":"#141414","base05":"#151515","base06":"#161616","base07":"#171717","base08":"#181818","base09":"#191919","base0A":"#1a1a1a","base0B":"#1b1b1b","base0C":"#1c1c1c","base0D":"#1d1d1d","base0E":"#1e1e1e","base0F":"#1f1f1f"},"polarity":"dark","schema":1,"scheme":"vogix16","semantic":{"active":"#1c1c1c","background":"#101010","background_selection":"#121212","background_surface":"#111111","danger":"#1b1b1b","foreground_border":"#141414","foreground_bright":"#171717","foreground_comment":"#131313","foreground_heading":"#161616","foreground_text":"#151515","highlight":"#1e1e1e","link":"#1d1d1d","notice":"#1a1a1a","special":"#1f1f1f","success":"#181818","warning":"#191919"},"theme":"goldtest","variant":"night"}"##,
-        "\n"
-    );
-    assert_eq!(rendered, golden);
+/// The cache layer from a vogix16 theme FILE, as it renders a real theme:
+/// the runtime loader derives the semantic keys and their slots from
+/// praxis's Vogix16Semantic, and the result is the golden line the Nix
+/// tables (nix/modules/lib/vogix16.nix) render in contract-tests.nix. So
+/// praxis and the Nix tables agree on every key and every slot, and the
+/// golden line carries exactly praxis's keys.
+#[test]
+fn praxis_semantics_render_the_nix_golden_line() {
+    use pr4xis::category::FinitelyGenerated;
+    use pr4xis_domains::applied::hmi::theming::schemes::Vogix16Semantic;
+
+    let mut file = NamedTempFile::new().unwrap();
+    writeln!(file, "polarity = \"dark\"\n[colors]").unwrap();
+    for i in 0..16 {
+        let b = format!("{:02x}", 0x10 + i);
+        writeln!(file, "base{i:02X} = \"#{b}{b}{b}\"").unwrap();
+    }
+    let colors =
+        crate::theme::load_theme_colors(file.path(), crate::scheme::Scheme::Vogix16).unwrap();
+    let rendered = render_template_string(THEME_JSON_TEMPLATE, &colors, &golden_meta()).unwrap();
+    assert_eq!(rendered, THEME_JSON_GOLDEN);
+
+    let golden: serde_json::Value = serde_json::from_str(THEME_JSON_GOLDEN).unwrap();
+    let golden_keys: std::collections::BTreeSet<&str> = golden["semantic"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let praxis_keys: std::collections::BTreeSet<&str> = Vogix16Semantic::variants()
+        .iter()
+        .map(|s| s.key())
+        .collect();
+    assert_eq!(golden_keys, praxis_keys);
 }
