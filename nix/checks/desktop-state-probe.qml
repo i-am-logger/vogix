@@ -21,9 +21,13 @@ pragma ComponentBehavior: Bound
 //   runs carries the live scanline texture.
 // - card-times: the arrival times the restored cards carry, in order (the
 //   smoke compares them with the state file its first run wrote).
+// - media-first: the shell sees one player, paused (an mpv the smoke
+//   started); the smoke then starts a second, playing.
 // - media-playing, media-paused, media-resumed: the real media cell shows
-//   the player (an mpv the smoke started) playing, then paused and
-//   playing again as `playerctl` pauses and resumes it.
+//   the second player playing, then paused and playing again as
+//   `playerctl` pauses and resumes it.
+// - media-transport: with that player paused again, the cell's
+//   play/pause (Media.playPause) resumes it, not the first player.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -43,12 +47,13 @@ ShellRoot {
     property var passed: ({})
     readonly property list<string> checks:
         ["window-title", "mode-label", "mode-label-after-failure", "card-scanlines", "card-times",
-            "media-playing", "media-paused", "media-resumed"]
+            "media-first", "media-playing", "media-paused", "media-resumed", "media-transport"]
     // The mode checks run in order: the table must show before its file
     // goes away.
     property int modeStage: 0
     // The media checks run in order, each once the `playerctl` call before
-    // it has returned: 0 playing, 1 paused, 2 resumed.
+    // it has returned: 0 first, 1 playing, 2 paused, 3 resumed, 4 paused
+    // again, 5 transport.
     property int mediaStage: 0
     property var mediaPlayer: null
     property int mediaNext: 0
@@ -120,15 +125,28 @@ ShellRoot {
         if (cards >= 2)
             root.pass("card-times", popups.visiblePopups.map(p => p.at).join(","));
 
-        if (root.mediaStage === 0 && playing && Media.active?.isPlaying) {
+        const players = Media.players;
+        if (root.mediaStage === 0 && players.length === 1 && !players[0].isPlaying) {
+            root.pass("media-first", "paused");
+            root.mediaStage = 1;
+        } else if (root.mediaStage === 1 && players.length === 2 && playing && Media.active?.isPlaying) {
             root.pass("media-playing", playing);
             root.mediaPlayer = Media.active;
-            root.control("pause", 1);
-        } else if (root.mediaStage === 1 && !playing) {
+            root.control("pause", 2);
+        } else if (root.mediaStage === 2 && !playing) {
             root.pass("media-paused", playing);
-            root.control("play", 2);
-        } else if (root.mediaStage === 2 && playing) {
+            root.control("play", 3);
+        } else if (root.mediaStage === 3 && playing) {
             root.pass("media-resumed", playing);
+            root.control("pause", 4);
+        } else if (root.mediaStage === 4 && !playing && !root.mediaPlayer.isPlaying) {
+            root.mediaStage = 5;
+            Media.playPause();
+        } else if (root.mediaStage === 5) {
+            const on = players.filter(p => p.isPlaying);
+            if (on.length > 0)
+                root.pass("media-transport", on.length === 1 && on[0] === root.mediaPlayer
+                    ? "the player last playing" : "another player");
         }
 
         const open = root.checks.filter(c => root.passed[c] === undefined);
@@ -141,9 +159,11 @@ ShellRoot {
                 "mode-label-after-failure": "label '" + (mode?.modeLabel ?? "") + "', mode '" + Mode.mode + "'",
                 "card-scanlines": lit + " live scanline overlays on " + cards + " cards",
                 "card-times": cards + " cards",
-                "media-playing": "playing " + playing + ", " + Media.players.length + " players",
+                "media-first": players.length + " players",
+                "media-playing": "playing " + playing + ", " + players.length + " players",
                 "media-paused": "playing " + playing,
-                "media-resumed": "playing " + playing
+                "media-resumed": "playing " + playing,
+                "media-transport": players.filter(p => p.isPlaying).length + " playing"
             };
             const waiting = open.map(c => c + ": " + seen[c]).join("; ");
             if (waiting !== root.waitingFor) {
