@@ -641,6 +641,10 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo "── result:"; cat $TMPDIR/result || true
   echo "── stats:"; cat $TMPDIR/stats.json || true
   echo "── geometry:"; grep -hE "GEOMETRY|FOOTPRINT|FIT" $TMPDIR/qs-geometry.log || true
+  # A geometry run that failed prints its whole log: a probe that never
+  # started (bwrap refused, say) writes none of the lines above.
+  grep -qx 'GEOMETRY-EXIT 0' $TMPDIR/result 2>/dev/null \
+    || { echo "── geometry run log:"; cat $TMPDIR/qs-geometry.log || true; }
   echo "── state:"; grep -h 'STATE' $TMPDIR/qs-state.log || true
   echo "── Hyprland requests:"; cat $TMPDIR/feed/hypr-requests.log || true
   echo "── notification arrival times:"; jq -c '[.[].at]' $TMPDIR/notifications-1.json || true
