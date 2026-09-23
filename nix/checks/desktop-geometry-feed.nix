@@ -11,19 +11,31 @@
 # - BlueZ: the bluez5 template, an adapter with a headset connected;
 # - the kernel, bound over the probe's view by bwrap: a /sys with an
 #   amdgpu card busy at 100 % and a k10temp sensor (shaped as
-#   desktop-logic's probe fixtures are), the sandbox's own /proc/meminfo
-#   with 16 GiB of swap half in use, and a /run whose booted-system and
+#   desktop-logic's probe fixtures are), and the tachometers of three
+#   chips: an AIO cooler's labelled pump and fan (nzxt-kraken3), a
+#   Super I/O's five headers, three of them empty (it87), and the card's
+#   own fan with its top speed (amdgpu); the sandbox's own /proc/meminfo
+#   with 16 GiB of swap half in use; a /run whose booted-system and
 #   current-system are different generations (an update applied, a reboot
-#   pending);
+#   pending); and the mounts an impermanent host has: a RAM-backed root
+#   (bwrap's own), /nix and /tmp on disk, and /persist and /boot each a
+#   filesystem of its own;
 # - PipeWire (pipewire-daemon.nix): an analog sink and source named as a
 #   desktop's HD Audio codec is, and a program recording: the microphone
 #   in use;
-# - Hyprland: its event socket, announcing a screencast as Hyprland 0.56
-#   does; nothing in the probe asks the request socket for anything it
-#   needs, so there is none;
+# - Hyprland 0.56: its event socket, announcing a screencast, and its
+#   request socket, answering what quickshell asks at startup with two
+#   monitors, ten workspaces and a special one, and a window on each; the
+#   requests it received are logged;
+# - a tray application: Qt's own StatusNotifierItem (QSystemTrayIcon over
+#   D-Bus) with an icon and a menu, started once the shell's watcher is
+#   on the bus, as an application started after the shell is;
 # - wttrbar: the real one, reading a wttr.in answer (format=j1) from its
 #   own cache: heavy snow showers at -23 °C;
-# - do-not-disturb on, in the file the shell keeps it in.
+# - do-not-disturb, night light and stay-awake on, and three reminders
+#   pending, each in the file the shell keeps it in;
+# - the input engine: the behavior module's mode table in input.json,
+#   the desktop mode current, and CAPS latched in its lock document.
 #
 # feed_start sets it all up, feed_run runs a command inside it, and
 # feed_stop takes it down again.
@@ -31,6 +43,10 @@
 
 let
   python = pkgs.python3.withPackages (p: [ p.python-dbusmock ]);
+
+  # input.json's mode table, as the behavior module writes it: each mode's
+  # border slot and bar label.
+  modeTable = builtins.toJSON { inherit ((import ../modules/behavior/defaults.nix { })) modeColors; };
 
   # upowerd's property set for a device (org.freedesktop.UPower.Device.xml),
   # as GVariant text.
@@ -222,6 +238,201 @@ let
     exec cat > /dev/null
   '';
 
+  # Hyprland's answers (HyprCtl.cpp, JSON format), for a desktop with two
+  # monitors: workspaces 1-5 and the console's special workspace on the
+  # first, 6-10 on the second, a window or two on each.
+  hyprMonitor = { id, name, make, model, serial, width, height, physical, refreshRate, x, scale, active, focused, modes }: {
+    inherit id name make model serial width height x scale focused;
+    description = "${make} ${model} ${serial}";
+    physicalWidth = builtins.elemAt physical 0;
+    physicalHeight = builtins.elemAt physical 1;
+    inherit refreshRate;
+    y = 0;
+    activeWorkspace = { id = active; name = toString active; };
+    specialWorkspace = { id = 0; name = ""; };
+    # The shell's bars: left, top, right, bottom.
+    reserved = [ 128 96 114 96 ];
+    transform = 0;
+    dpmsStatus = true;
+    vrr = false;
+    solitary = "0";
+    solitaryBlockedBy = [ "CANDIDATE" ];
+    activelyTearing = false;
+    tearingBlockedBy = [ "NOT_TORN" "USER" ];
+    directScanoutTo = "0";
+    directScanoutBlockedBy = [ "USER" ];
+    disabled = false;
+    currentFormat = "XRGB8888";
+    mirrorOf = "none";
+    availableModes = modes;
+    colorManagementPreset = "srgb";
+    sdrBrightness = 1;
+    sdrSaturation = 1;
+    sdrMinLuminance = 0.2;
+    sdrMaxLuminance = 80;
+    hardwareCursorsInUse = true;
+  };
+  hyprMonitors = [
+    (hyprMonitor {
+      id = 0;
+      name = "DP-1";
+      make = "Dell Inc.";
+      model = "DELL U2723QE";
+      serial = "5KC0R34";
+      width = 3840;
+      height = 2160;
+      physical = [ 600 340 ];
+      refreshRate = 59.99600;
+      x = 0;
+      scale = 1.5;
+      active = 3;
+      focused = true;
+      modes = [ "3840x2160@60.00Hz" "3840x2160@59.94Hz" "3840x2160@30.00Hz" "2560x1440@59.95Hz" "1920x1080@60.00Hz" "1920x1080@59.94Hz" ];
+    })
+    (hyprMonitor {
+      id = 1;
+      name = "HDMI-A-1";
+      make = "LG Electronics";
+      model = "LG ULTRAGEAR";
+      serial = "112NTXRAB297";
+      width = 2560;
+      height = 1440;
+      physical = [ 600 340 ];
+      refreshRate = 143.97300;
+      x = 2560;
+      scale = 1;
+      active = 7;
+      focused = false;
+      modes = [ "2560x1440@143.97Hz" "2560x1440@120.00Hz" "2560x1440@59.95Hz" "1920x1080@60.00Hz" ];
+    })
+  ];
+  # A window: [ address workspace-id workspace-name monitor class title pid ].
+  hyprWindows = [
+    [ "55e3b1d2c4a0" 1 "1" 0 "org.wezfurlong.wezterm" "nvim ~/Code/logger/vogix" 4211 ]
+    [ "55e3b1f08e10" 2 "2" 0 "firefox" "Hyprland Wiki — Mozilla Firefox" 5120 ]
+    [ "55e3b20a7c30" 3 "3" 0 "org.wezfurlong.wezterm" "cargo test — vogix" 6034 ]
+    [ "55e3b21b4f70" 3 "3" 0 "code" "desktop-smoke.nix - vogix - Visual Studio Code" 6310 ]
+    [ "55e3b2286a90" 4 "4" 0 "Slack" "Slack | general | cosmic" 7021 ]
+    [ "55e3b23c1d50" 5 "5" 0 "mpv" "sine.flac - mpv" 7488 ]
+    [ "55e3b2468b20" 6 "6" 1 "thunderbird" "Inbox - Mozilla Thunderbird" 8102 ]
+    [ "55e3b25a13f0" 7 "7" 1 "spotify" "Spotify Premium" 8350 ]
+    [ "55e3b2615e60" 7 "7" 1 "org.pwmt.zathura" "rfc9110.pdf" 8517 ]
+    [ "55e3b27c0a80" 8 "8" 1 "obsidian" "vogix - Obsidian v1.9.12" 8744 ]
+    [ "55e3b2831c40" 9 "9" 1 "steam" "Steam" 9010 ]
+    [ "55e3b29e2710" 10 "10" 1 "org.kde.dolphin" "Downloads — Dolphin" 9233 ]
+    [ "55e3b2a54e90" (-98) "special:console" 0 "vogix-console" "tmux" 3802 ]
+  ];
+  hyprClients = pkgs.lib.imap0
+    (i: w:
+      let
+        at = builtins.elemAt w;
+        # The mpv window is fullscreen; the rest tile.
+        fullscreen = if at 4 == "mpv" then 2 else 0;
+      in
+      {
+        address = "0x${at 0}";
+        mapped = true;
+        hidden = false;
+        visible = true;
+        acceptsInput = true;
+        at = if fullscreen == 2 then [ 0 0 ] else [ (136 + (at 3) * 2560) 104 ];
+        size = if fullscreen == 2 then [ 2560 1440 ] else [ 2302 1232 ];
+        workspace = { id = at 1; name = at 2; };
+        floating = false;
+        monitor = at 3;
+        class = at 4;
+        title = at 5;
+        initialClass = at 4;
+        initialTitle = at 5;
+        pid = at 6;
+        xwayland = at 4 == "steam";
+        pinned = false;
+        pinFullscreened = false;
+        inherit fullscreen;
+        fullscreenClient = fullscreen;
+        fullscreenHandler = "default";
+        allowedOverFullscreen = false;
+        grouped = [ ];
+        tags = [ ];
+        swallowing = "0x0";
+        focusHistoryID = i;
+        inhibitingIdle = fullscreen == 2;
+        xdgTag = "";
+        xdgDescription = "";
+        contentType = if fullscreen == 2 then "video" else "none";
+        tearingHint = false;
+        stableId = pkgs.lib.toLower (pkgs.lib.toHexString (40 + i));
+      })
+    hyprWindows;
+  hyprWorkspaces = map
+    (ws:
+      let
+        on = builtins.filter (w: builtins.elemAt w 1 == ws) hyprWindows;
+        last = builtins.head on;
+        monitor = builtins.elemAt last 3;
+      in
+      {
+        id = ws;
+        name = builtins.elemAt last 2;
+        monitor = (builtins.elemAt hyprMonitors monitor).name;
+        monitorID = monitor;
+        windows = builtins.length on;
+        hasfullscreen = builtins.elemAt last 4 == "mpv";
+        lastwindow = "0x${builtins.elemAt last 0}";
+        lastwindowtitle = builtins.elemAt last 5;
+        ispersistent = false;
+        tiledLayout = "dwindle";
+      })
+    [ 1 2 3 4 5 6 7 8 9 10 (-98) ];
+  hyprAnswers = {
+    "j/status" = { configProvider = "lua"; backend = "drm"; };
+    "j/monitors" = hyprMonitors;
+    "j/workspaces" = hyprWorkspaces;
+    "j/clients" = hyprClients;
+  };
+  # Hyprland's request socket: one request per connection, read in one go
+  # (HyprCtl.cpp reads up to 1023 bytes, and more only after a full
+  # read), one reply, and the connection closed. $1 is the file each
+  # request is appended to; a request it has no answer for gets
+  # Hyprland's own reply to one.
+  hyprRequests = pkgs.writeShellScript "hyprland-requests" ''
+    request=$(${pkgs.coreutils}/bin/dd bs=1023 count=1 status=none)
+    printf '%s\n' "$request" >> "$1"
+    case $request in
+      ${pkgs.lib.concatStrings (pkgs.lib.mapAttrsToList (req: answer: ''
+        ${req}) exec cat ${pkgs.writeText "hyprland-${builtins.replaceStrings [ "/" ] [ "-" ] req}.json" (builtins.toJSON answer)} ;;
+      '') hyprAnswers)}
+      *) printf 'unknown request' ;;
+    esac
+  '';
+
+  # A tray application's StatusNotifierItem as Qt exports one: the item,
+  # its icon as pixmaps, and its menu over com.canonical.dbusmenu.
+  trayQml = pkgs.writeText "desktop-geometry-tray.qml" ''
+    import QtQuick
+    import Qt.labs.platform
+
+    SystemTrayIcon {
+        visible: true
+        icon.source: "file://${pkgs.mpv}/share/icons/hicolor/32x32/apps/mpv.png"
+        tooltip: "mpv"
+        menu: Menu {
+            MenuItem { text: "Pause" }
+            MenuItem { text: "Quit" }
+        }
+    }
+  '';
+  # Started once the shell's watcher is on the session bus: Qt exports a
+  # tray icon over D-Bus only if a watcher is there when the icon is
+  # created.
+  trayClient = pkgs.writeShellScript "desktop-geometry-tray" ''
+    export QT_PLUGIN_PATH=${pkgs.qt6.qtbase}/${pkgs.qt6.qtbase.qtPluginPrefix}:${pkgs.qt6.qtwayland}/${pkgs.qt6.qtbase.qtPluginPrefix}
+    export QML_IMPORT_PATH=${pkgs.qt6.qtdeclarative}/${pkgs.qt6.qtbase.qtQmlPrefix}
+    export QT_QPA_PLATFORM=wayland
+    ${pkgs.glib.bin}/bin/gdbus wait --session org.kde.StatusNotifierWatcher
+    exec ${pkgs.qt6.qtdeclarative}/bin/qml --apptype widget ${trayQml}
+  '';
+
   # A wttr.in answer (format=j1) with every field wttrbar reads. The
   # forecast days are dated when the feed starts: wttrbar drops a day
   # before today.
@@ -393,6 +604,39 @@ in
       echo k10temp > $feed/sys/class/hwmon/hwmon0/name
       echo Tctl > $feed/sys/class/hwmon/hwmon0/temp1_label
       echo 95250 > $feed/sys/class/hwmon/hwmon0/temp1_input
+      # The tachometers, each chip's hwmon under the device it belongs to:
+      # an AIO cooler on USB (nzxt-kraken3 labels its pump and fan), the
+      # board's Super I/O (it87: a reading per header, 0 where nothing is
+      # plugged in) and the card's fan (amdgpu reports its top speed).
+      local d chip=$feed/sys/devices/pci0000:00/0000:00:08.1/0000:0e:00.3/usb3/3-2/3-2:1.0/0003:1E71:300C.0005/hwmon/hwmon1
+      mkdir -p $chip
+      ln -s ../../devices/pci0000:00/0000:00:08.1/0000:0e:00.3/usb3/3-2/3-2:1.0/0003:1E71:300C.0005/hwmon/hwmon1 \
+        $feed/sys/class/hwmon/hwmon1
+      echo kraken2023elite > $chip/name
+      echo 'Pump speed' > $chip/fan1_label
+      echo 2640 > $chip/fan1_input
+      echo 'Fan speed' > $chip/fan2_label
+      echo 1210 > $chip/fan2_input
+      echo 'Coolant temp' > $chip/temp1_label
+      echo 33900 > $chip/temp1_input
+      chip=$feed/sys/devices/platform/it87.2624/hwmon/hwmon2
+      mkdir -p $chip
+      ln -s ../../devices/platform/it87.2624/hwmon/hwmon2 $feed/sys/class/hwmon/hwmon2
+      echo it8689 > $chip/name
+      for d in 1:1180 2:0 3:845 4:0 5:0; do
+        echo "''${d#*:}" > $chip/fan''${d%:*}_input
+        echo 0 > $chip/fan''${d%:*}_min
+      done
+      chip=$gpu/hwmon/hwmon3
+      mkdir -p $chip
+      ln -s ../../devices/pci0000:00/0000:78:00.0/hwmon/hwmon3 $feed/sys/class/hwmon/hwmon3
+      echo amdgpu > $chip/name
+      echo 1650 > $chip/fan1_input
+      echo 0 > $chip/fan1_min
+      echo 3300 > $chip/fan1_max
+      echo 1 > $chip/fan1_enable
+      echo edge > $chip/temp1_label
+      echo 61000 > $chip/temp1_input
       # /proc/meminfo with 16 GiB of swap, half of it in use.
       awk '/^SwapTotal:/ { printf "SwapTotal:      %8d kB\n", 16777212; next }
            /^SwapFree:/ { printf "SwapFree:       %8d kB\n", 8388604; next }
@@ -412,11 +656,20 @@ in
       echo $! > $feed/record.pid
       feed_until "the recording stream" sh -c "pw-cli ls Node | grep -q 'Stream/Input/Audio'"
 
-      # Hyprland's event socket.
+      # Hyprland's event socket, and its request socket. A reply goes out
+      # in one write, as Hyprland writes it.
       mkdir -p $XDG_RUNTIME_DIR/hypr/$feed_hypr
       socat UNIX-LISTEN:$XDG_RUNTIME_DIR/hypr/$feed_hypr/.socket2.sock,fork EXEC:${hyprEvents} &
       echo $! > $feed/hypr.pid
+      socat -b 65536 UNIX-LISTEN:$XDG_RUNTIME_DIR/hypr/$feed_hypr/.socket.sock,fork \
+        EXEC:"${hyprRequests} $feed/hypr-requests.log" &
+      echo $! > $feed/hyprctl.pid
       feed_until "Hyprland's event socket" test -S $XDG_RUNTIME_DIR/hypr/$feed_hypr/.socket2.sock
+      feed_until "Hyprland's request socket" test -S $XDG_RUNTIME_DIR/hypr/$feed_hypr/.socket.sock
+
+      # The tray application, waiting for the shell's watcher.
+      ${trayClient} > $feed/tray.log 2>&1 &
+      echo $! > $feed/tray.pid
 
       # wttrbar's cache of a wttr.in answer, fresh (under ten minutes old).
       sed -e "s/@D0@/$(date +%F)/" -e "s/@D1@/$(date -d tomorrow +%F)/" \
@@ -424,10 +677,26 @@ in
 
       mkdir -p $XDG_STATE_HOME/vogix/desktop
       printf '{"dnd":true}' > $XDG_STATE_HOME/vogix/desktop/dnd.json
+      # Night light and stay-awake on, and three reminders pending (due
+      # tomorrow, so none fires during the run).
+      printf '{"on":true}' > $XDG_STATE_HOME/vogix/desktop/nightlight.json
+      printf '{"on":true}' > $XDG_STATE_HOME/vogix/desktop/stay-awake.json
+      local due=$((($(date +%s) + 86400) * 1000))
+      printf '{"reminders":[{"text":"standup","at":%s},{"text":"renew the TLS certificate","at":%s},{"text":"call the dentist","at":%s}]}' \
+        $due $((due + 3600000)) $((due + 7200000)) > $XDG_STATE_HOME/vogix/desktop/reminders.json
+      # The input engine's documents: the mode table the behavior module
+      # ships, the desktop mode current, and CAPS latched.
+      printf '%s' ${pkgs.lib.escapeShellArg modeTable} > $XDG_STATE_HOME/vogix/input.json
+      echo desktop > $XDG_STATE_HOME/vogix/current-mode
+      printf '{"capsLock":true,"numLock":true,"scrollLock":null}' > $XDG_STATE_HOME/vogix/input-locks.json
     )
 
     # Runs its arguments on the fed data: the system bus and Hyprland's
-    # socket in the environment, the kernel's files bound in place.
+    # sockets in the environment, the kernel's files bound in place, and
+    # the mounts. bwrap's own root is a tmpfs, and each top-level
+    # directory bound into it (/nix, /tmp) is a mount point on the
+    # sandbox's disk; /persist and /boot are filesystems of their own,
+    # sized as a disk partition and an EFI system partition are.
     feed_run() {
       local binds=() d
       for d in /*; do
@@ -436,15 +705,19 @@ in
       DBUS_SYSTEM_BUS_ADDRESS=$feed_bus HYPRLAND_INSTANCE_SIGNATURE=$feed_hypr \
         bwrap "''${binds[@]}" --dev-bind /dev /dev --proc /proc \
         --ro-bind $feed/meminfo /proc/meminfo --ro-bind $feed/sys /sys --ro-bind $feed/run /run \
+        --size ${toString (512 * 1024 * 1024 * 1024)} --tmpfs /persist \
+        --size ${toString (1024 * 1024 * 1024)} --tmpfs /boot \
         -- "$@"
     }
 
     feed_stop() {
       local f
-      for f in record pipewire hypr upower bluez bus; do
+      for f in tray record pipewire hyprctl hypr upower bluez bus; do
         kill "$(cat $feed/$f.pid)" 2>/dev/null
       done
-      rm -f /tmp/wttrbar--wttr.in.json $XDG_STATE_HOME/vogix/desktop/dnd.json
+      rm -f /tmp/wttrbar--wttr.in.json
+      rm -f $XDG_STATE_HOME/vogix/desktop/{dnd,nightlight,stay-awake,reminders}.json \
+        $XDG_STATE_HOME/vogix/{input.json,current-mode,input-locks.json}
     }
   '';
 }

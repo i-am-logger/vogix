@@ -21,6 +21,8 @@ pragma ComponentBehavior: Bound
 //   <size>` per widget.
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
+import Quickshell.Services.SystemTray
 import Quickshell.Services.UPower
 import qs.Bar.widgets
 import qs.Services
@@ -91,12 +93,44 @@ ShellRoot {
         return out;
     }
 
-    // The widgets whose content arrives in parts have all of it: every
-    // UPower device's properties (one row per battery), and both privacy
-    // flags (a glyph each), which come from two sources.
-    function complete(): bool {
-        return UPower.displayDevice.ready && [...UPower.devices.values].every(d => d.ready)
-            && Privacy.micInUse && Privacy.screencast;
+    // The data a widget shows only in part until all of it has arrived,
+    // named by what is still missing ([] once it all has): every UPower
+    // device's properties (one row per battery); both privacy flags (a
+    // glyph each), which come from two sources; a reading from every
+    // tachometer the fan probe found (a cell per fan that spins); a df
+    // answer for every mount point meters.mounts names (a cell each);
+    // Hyprland's monitors, workspaces and windows (a block per workspace,
+    // the focused one's label bold); a tray item (an icon); the night
+    // light, stay-awake and reminder states (an indicator each); the
+    // focused window's title; the keyboard's layouts and CAPS state (a
+    // cell each); and the mode's entry in the mode table (its label).
+    function missing(): list<string> {
+        const out = [];
+        if (!UPower.displayDevice.ready || ![...UPower.devices.values].every(d => d.ready))
+            out.push("upower");
+        if (!Privacy.micInUse || !Privacy.screencast)
+            out.push("privacy");
+        if (SysStat.fans.length === 0 || !SysStat.fans.every(f => SysStat.fanRpm[f.key] !== undefined))
+            out.push("fans");
+        if (!SysStat.mountPoints.every(p => SysStat.mountUsage[p] !== undefined))
+            out.push("mounts");
+        const workspaces = Hyprland.workspaces.values;
+        const windows = workspaces.reduce((n, w) => n + (w.lastIpcObject.windows ?? 0), 0);
+        if (Hyprland.focusedMonitor === null || workspaces.length === 0
+                || Hyprland.toplevels.values.length !== windows)
+            out.push("hyprland");
+        if (SystemTray.items.values.length === 0)
+            out.push("tray");
+        if (!Nightlight.on || !StayAwake.on || Reminders.entries.length === 0)
+            out.push("indicators");
+        if (ActiveWindow.title === "")
+            out.push("window");
+        if (KbLayout.layouts.length === 0 || !KbLayout.capsKnown)
+            out.push("keyboard");
+        if (!root.sections.every(s => root.loaded(s.edge, s.section, false)
+                .filter(w => w.name === "mode").every(w => w.item.entry !== null)))
+            out.push("mode");
+        return out;
     }
 
     // Lays every item under `item` out now, innermost first, rather than
@@ -149,11 +183,6 @@ ShellRoot {
         }
     }
 
-    // The probe's bars are not live, so their widgets start no samplers.
-    // The swap cell shows only once the memory sampler has read
-    // /proc/meminfo, so the probe holds that one, as a shown bar would.
-    Component.onCompleted: SysStat.acquire(["memory"])
-
     Variants {
         model: root.edges
 
@@ -163,6 +192,15 @@ ShellRoot {
             required property string modelData
             readonly property bool vertical: barWindow.modelData === "left" || barWindow.modelData === "right"
             readonly property int size: Config.bars[barWindow.modelData].size
+
+            // The probe's bars are not live, so their widgets start no
+            // samplers. Each bar holds the ones whose readings decide what
+            // a cell shows, as a shown bar's stat cells would: memory (the
+            // swap cell), fans (the fan cells) and the df gauges with their
+            // I/O (the mount cells). Like a real bar, it exists only once
+            // desktop.json has been read, so the first df already asks for
+            // every mount point meters.mounts names.
+            Component.onCompleted: SysStat.acquire(["memory", "fans", "mounts", "disk"])
 
             implicitWidth: barWindow.vertical ? barWindow.size : 1920
             implicitHeight: barWindow.vertical ? 1080 : barWindow.size
@@ -200,7 +238,7 @@ ShellRoot {
         running: true
         onTriggered: {
             const waited = Date.now() - root.startedAt;
-            const shown = root.sections.length === 4 && root.hidden().length === 0 && root.complete();
+            const shown = root.sections.length === 4 && root.hidden().length === 0 && root.missing().length === 0;
             if (!shown && waited < root.giveUpMs)
                 return;
             ready.stop();
@@ -209,8 +247,8 @@ ShellRoot {
                 console.error("GEOMETRY", root.sections.length, "of 4 bar edges laid out");
                 root.failures++;
             }
-            if (!root.complete()) {
-                console.error("GEOMETRY UPower or privacy data incomplete after", waited, "ms");
+            for (const part of root.missing()) {
+                console.error("GEOMETRY", part, "data incomplete after", waited, "ms");
                 root.failures++;
             }
             for (const s of root.sections)

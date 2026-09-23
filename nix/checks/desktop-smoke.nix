@@ -20,7 +20,7 @@
 # daemon runs): desktop-hyprland covers it on a real Hyprland session, and
 # desktop-taps covers the taps against a real PipeWire. The geometry run is
 # the exception: it feeds every widget the widest realistic data it shows
-# (desktop-geometry-feed.nix), PipeWire and Hyprland's events included,
+# (desktop-geometry-feed.nix), PipeWire and Hyprland's sockets included,
 # so each placement is measured showing it.
 { pkgs, qsPkgs, home-manager, hmModule }:
 
@@ -509,14 +509,16 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo "── stats:"; cat $TMPDIR/stats.json || true
   echo "── geometry:"; grep -hE "GEOMETRY|FOOTPRINT|FIT" $TMPDIR/qs-geometry.log || true
   echo "── state:"; grep -h 'STATE' $TMPDIR/qs-state.log || true
+  echo "── Hyprland requests:"; cat $TMPDIR/feed/hypr-requests.log || true
   echo "── notification arrival times:"
   jq -c '[.[].at]' $TMPDIR/notifications-1.json $TMPDIR/notifications-2.json || true
 
   # The log gate. A failure is a script error, a binding problem, a
   # component that did not load, a program the shell could not start, or
-  # a warning the shell logged itself; only the exact lines a fixture
-  # provokes are allowed, per log.
-  failures='TypeError|ReferenceError|SyntaxError|RangeError|Binding loop|Unable to assign|Cannot assign|is not a type|is not installed|Failed to load configuration|Type [^ ]+ unavailable|Script [^ ]+ unavailable|\]: File not found|Process failed to start|^(WARN|ERROR|CRIT) +qml:'
+  # a warning the shell logged itself or quickshell's Hyprland IPC logged
+  # (a request Hyprland's socket did not answer); only the exact lines a
+  # fixture provokes are allowed, per log.
+  failures='TypeError|ReferenceError|SyntaxError|RangeError|Binding loop|Unable to assign|Cannot assign|is not a type|is not installed|Failed to load configuration|Type [^ ]+ unavailable|Script [^ ]+ unavailable|\]: File not found|Process failed to start|^(WARN|ERROR|CRIT) +qml:|^(WARN|ERROR|CRIT) +quickshell\.hyprland\.ipc:'
   # The watched cell's command fails until its file exists.
   watched='WARN qml: vogix: custom/watched: exited 1'
   gate() {
@@ -622,15 +624,19 @@ pkgs.runCommand "vogix-desktop-smoke"
   r 'scanlines-notify-count 2'
   # A canvas instrument never lays out collapsed nor resizes when audio
   # arrives, and every placement the registry permits shows its fed data
-  # and fits its bar: the probe's verdict, with a measured FIT line for
-  # each of those placements, the oscilloscope measured and the media
-  # cell shown.
+  # and fits its bar: the probe's verdict, with a FIT line measuring each
+  # of those placements at a size (neither side 0), the oscilloscope
+  # measured and the media cell shown. Hyprland's request socket was
+  # asked for exactly what quickshell asks at startup, and answered all
+  # of it.
   r FEED-OK
   r 'GEOMETRY-EXIT 0'
   for placement in ${lib.escapeShellArgs placements}; do
-    grep -q "FIT $placement [0-9]" $TMPDIR/qs-geometry.log \
-      || { echo "no measured FIT line for $placement"; exit 1; }
+    grep -qE "FIT $placement [1-9][0-9.]*x[1-9][0-9.]* in " $TMPDIR/qs-geometry.log \
+      || { echo "no FIT line measuring $placement at a size:" $(grep "FIT $placement " $TMPDIR/qs-geometry.log); exit 1; }
   done
+  test "$(sort -u $TMPDIR/feed/hypr-requests.log | tr '\n' ' ')" = 'j/clients j/monitors j/status j/workspaces ' \
+    || { echo "Hyprland's request socket was asked:" $(sort -u $TMPDIR/feed/hypr-requests.log); exit 1; }
   grep -q 'GEOMETRY bottom oscilloscope [1-9][0-9.]*x[1-9][0-9.]*$' $TMPDIR/qs-geometry.log
   grep -q 'FIT bottom media [0-9]' $TMPDIR/qs-geometry.log
   # The window title from hyprctl; the mode label from input.json, then
