@@ -5,6 +5,11 @@ pragma ComponentBehavior: Bound
 // the Flight Deck board. A click focuses the workspace through
 // HyprlandWorkspace.activate(), which writes the dispatch in the dialect
 // of the compositor's config engine (hyprlang or Lua).
+//
+// A special workspace (Hyprland names it "special:<name>") reads by its
+// own name, in the muted color, so a scratchpad such as the console does
+// not read as a place in the numbered run. A block on a rail is never
+// wider than the rail leaves room for: a longer name is cut short.
 import QtQuick
 import Quickshell.Hyprland
 import qs.Bar.widgets
@@ -15,13 +20,19 @@ Loader {
 
     property BarAxis axis: null
     readonly property bool vertical: axis?.vertical ?? false
+    // The widest a block may be: the rail less a unit of margin each side.
+    readonly property real maxBoxWidth: vertical ? (axis?.thickness ?? 0) - Metrics.unit * 2 : Infinity
 
     component WsBox: Rectangle {
         id: ws
 
         required property HyprlandWorkspace modelData
 
-        implicitWidth: Math.max(Metrics.body + 6, label.implicitWidth + 10)
+        // The bar's limit on a block's width (maxBoxWidth).
+        property real maxWidth: Infinity
+        readonly property bool special: ws.modelData.name.startsWith("special:")
+
+        implicitWidth: Math.min(ws.maxWidth, Math.max(Metrics.body + 6, label.implicitWidth + 10))
         implicitHeight: Metrics.body + 6
         color: ws.modelData.focused ? Tokens.color("bar", "accent") : "transparent"
         border.width: 1
@@ -32,11 +43,13 @@ Loader {
         BarText {
             id: label
             anchors.centerIn: parent
-            text: ws.modelData.name
+            width: Math.min(label.implicitWidth, ws.width - 10)
+            elide: Text.ElideRight
+            text: ws.special ? ws.modelData.name.slice("special:".length) : ws.modelData.name
             font.pixelSize: Metrics.caption
             font.bold: ws.modelData.focused
-            color: ws.modelData.focused
-                ? Tokens.color("bar", "background")
+            color: ws.modelData.focused ? Tokens.color("bar", "background")
+                : ws.special ? Tokens.color("bar", "muted")
                 : Tokens.color("bar", "foreground")
         }
 
@@ -62,7 +75,9 @@ Loader {
                 Repeater {
                     model: Hyprland.workspaces.values
 
-                    WsBox {}
+                    WsBox {
+                        maxWidth: root.maxBoxWidth
+                    }
                 }
             }
         }
@@ -77,7 +92,9 @@ Loader {
             Repeater {
                 model: Hyprland.workspaces.values
 
-                WsBox {}
+                WsBox {
+                    maxWidth: root.maxBoxWidth
+                }
             }
         }
     }

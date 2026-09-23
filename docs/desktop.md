@@ -143,7 +143,7 @@ an empty reading.
 
 | Name | Shows | Interaction |
 |---|---|---|
-| `workspaces` | Hyprland's workspaces as square blocks: the focused one filled with the accent, an urgent one framed in the urgent color. A framed WS cell on a horizontal bar, a bare column on a rail. | Click focuses the workspace, under either of Hyprland's config engines (hyprlang or Lua). |
+| `workspaces` | Hyprland's workspaces as square blocks: the focused one filled with the accent, an urgent one framed in the urgent color. A special workspace (`special:<name>`, such as the console) reads by its own name, in the muted color. A framed WS cell on a horizontal bar, a bare column on a rail, where no block is wider than the rail leaves room for and a longer name is cut short. | Click focuses the workspace, under either of Hyprland's config engines (hyprlang or Lua). |
 | `mode` | The input engine's current mode (`~/.local/state/vogix/current-mode`), labelled and colored from `programs.vogix.behavior.modes.modeColors`, the table the engine colors window borders with. A MODE cell on a horizontal bar, a one-letter box framed in the mode's color on a rail. | |
 | `window` | The focused window's title, muted and elided. Horizontal bars only. | |
 | `menu` | A menu glyph. | Click opens the root menu. |
@@ -443,7 +443,9 @@ input engine reads the lock LEDs of the keyboards it grabs and publishes them
 in `~/.local/state/vogix/input-locks.json`; the cell watches that file, so it
 changes the moment the LED does. CAPS is hidden while the state is unknown:
 no input engine running, or no grabbed keyboard with a CapsLock LED.
-`vogix desktop keyboard` prints the same state.
+`vogix desktop keyboard` prints the same state. On a horizontal bar the
+layouts and CAPS sit in a row; on a rail, which is too narrow for them side
+by side, they stack.
 
 ## Panels and popups
 
