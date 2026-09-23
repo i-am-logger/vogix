@@ -31,17 +31,18 @@
 //! # Exits and faults
 //!
 //! - 0: stopped by SIGTERM or SIGINT.
-//! - 75 (`EX_TEMPFAIL`): OpenRGB refused the connection or closed it.
-//!   openrgb.service's own restart and readiness, with `Upholds=`, start the
-//!   owner again.
+//! - 75 (`EX_TEMPFAIL`): OpenRGB refused the connection or closed it, or the
+//!   drop zone was removed or moved ([`OwnerExit::drop_zone_gone`]). The unit
+//!   restarts on it, after openrgb.service is active again.
 //! - 78 (`EX_CONFIG`): the machine config was rejected or declares no OpenRGB
-//!   endpoint, or the drop zone is missing or was removed.
+//!   endpoint, or the drop zone is missing at start. The unit does not
+//!   restart on it.
 //!
 //! A protocol violation the client detects ([`super::session::mirror::Fault`])
 //! is deterministic, so it does not exit into a restart loop: the owner closes
 //! the connection (after outstanding writes are acknowledged), reports
 //! `faulted`, and stays so until SIGHUP, a stop, or a restart of openrgb.service
-//! (which stops and restarts the owner through `BindsTo=` and `Upholds=`).
+//! (which stops the owner through `BindsTo=` and starts it with the server).
 
 use super::connection::{self, Peer, READ_CHUNK};
 use super::model::{ClientName, ProtocolVersion};
@@ -96,7 +97,7 @@ pub fn serve(config_path: &Path) -> io::Result<OwnerExit> {
         Ok(watch) => watch,
         Err(e) => {
             error!("cannot watch the drop zone {}: {e}", zone.display());
-            return Ok(OwnerExit::Config);
+            return Ok(OwnerExit::drop_zone_unwatchable(&e));
         }
     };
     let mut owner = match Owner::new(config, endpoint) {
@@ -673,7 +674,7 @@ impl Owner {
                  be followed",
                 self.zone().display()
             );
-            self.exit.get_or_insert(OwnerExit::Config);
+            self.exit.get_or_insert(OwnerExit::drop_zone_gone());
             if let Some(session) = self.session.as_mut() {
                 session.begin_shutdown();
             }
@@ -1114,7 +1115,7 @@ mod tests {
     }
 
     #[test]
-    fn a_removed_drop_zone_ends_the_owner_with_78_after_the_drain() {
+    fn a_removed_drop_zone_ends_the_owner_with_75_after_the_drain() {
         let lo = Loopback::new();
         let mut owner = lo.owner();
         owner.connect();
@@ -1126,7 +1127,7 @@ mod tests {
         assert_eq!(owner.finished(), None, "the handshake is not written yet");
         owner.flush();
         owner.settle();
-        assert_eq!(owner.finished(), Some(OwnerExit::Config));
+        assert_eq!(owner.finished(), Some(OwnerExit::TempFail));
     }
 
     #[test]

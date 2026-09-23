@@ -25,7 +25,6 @@ use super::types::{DeviceName, Rgb, SlotName};
 use super::uevent::{Arrivals, HidrawMonitor};
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::io;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 
@@ -76,10 +75,7 @@ pub fn serve(config_path: &Path) -> OwnerExit {
         Ok(zone) => zone,
         Err(e) => {
             log::error!("cannot watch the drop zone {}: {e}", zone_path.display());
-            return match e.kind() {
-                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => OwnerExit::Config,
-                _ => OwnerExit::TempFail,
-            };
+            return OwnerExit::drop_zone_unwatchable(&e);
         }
     };
     let hotplug_declared = config
@@ -160,7 +156,7 @@ pub fn serve(config_path: &Path) -> OwnerExit {
                 "the drop zone {} was removed or moved; the watch on it is gone",
                 zone_path.display()
             );
-            return OwnerExit::TempFail;
+            return OwnerExit::drop_zone_gone();
         }
         let forced = delivered.contains(Signal::Hangup);
         if forced {
@@ -550,7 +546,7 @@ mod tests {
                 libc::WEXITED | libc::WNOWAIT,
             )
         };
-        assert_eq!(rc, 0, "waitid: {}", io::Error::last_os_error());
+        assert_eq!(rc, 0, "waitid: {}", std::io::Error::last_os_error());
     }
 
     /// A config with one command device that appends its colour to `log`

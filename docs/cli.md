@@ -444,14 +444,21 @@ substituted for its `{{color}}` argument: one run at a time per device, with
 changes during a run coalesced into one more run with the latest colour. A new
 palette, a hidraw node of a device's declared USB ids appearing, and `SIGHUP`
 (`systemctl reload`) re-apply; `SIGHUP` also re-runs every command device. It
-exits 78 when the machine config or the drop zone is unusable.
+exits 0 when stopped, 75 when an event source fails or the drop zone is
+removed or moved, and 78 when the machine config is rejected or the drop zone
+cannot be watched at start (missing, not a directory, not readable).
 
 The OpenRGB owner reads the same two files and applies each device's slot
 colour to the OpenRGB controllers its selector matches; `SIGHUP` forces a
 re-apply. It exits 0 when stopped, 75 when OpenRGB refuses or closes the
-connection, and 78 when machine.json is rejected or its drop zone is missing.
-A protocol violation it detects leaves it running and `faulted` (in `STATUS=`
-and `/run/vogix/openrgb/status.json`) until `SIGHUP` or a stop.
+connection or the drop zone is removed or moved, and 78 when machine.json is
+rejected or the drop zone cannot be watched at start. A protocol violation it
+detects leaves it running and `faulted` (in `STATUS=` and
+`/run/vogix/openrgb/status.json`) until `SIGHUP` or a stop.
+
+Both owner units restart after a 75 and not after a 78: a removed drop zone
+ends each owner with 75, and while the zone is missing its restart ends with
+78.
 
 `status` exits 1 when a surface is in error, an owner unit is faulted, an owner
 unit the machine config declares has no status (it is not running), or the

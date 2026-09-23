@@ -250,20 +250,20 @@ in
     })
 
     # The OpenRGB devices, through the SDK server. openrgb.service is active
-    # exactly when its SDK sockets listen (Type=notify), so Upholds= starts
-    # the owner then and BindsTo= stops it with the server; a refused
-    # connection or a closed one ends the owner (exit 75), and the server's
-    # next start brings it back.
+    # exactly when its SDK sockets listen (Type=notify). Every start of the
+    # server starts the owner (Wants=, from wantedBy), and BindsTo= stops the
+    # owner with it; a refused or closed connection ends the owner with 75,
+    # and a restart connects again. Both owner units restart on failure but
+    # a 78 (machine::exit::OwnerExit).
     (mkIf openrgbOwner {
       systemd.services.vogix-openrgb = {
         description = "vogix OpenRGB surfaces following the machine owner's palette";
+        wantedBy = [ "openrgb.service" ];
         bindsTo = [ "openrgb.service" ];
         after = [ "openrgb.service" ];
-        upheldBy = [ "openrgb.service" ];
         restartTriggers = [ machineJsonFile ];
-        # A switch restarts the owner after activation has installed the new
-        # machine.json. Stopped before activation instead (the default),
-        # Upholds= would start it again at once, reading the old file.
+        # A switch restarts the owner once activation has installed the new
+        # machine.json.
         stopIfChanged = false;
         inherit environment;
         unitConfig = {
@@ -276,7 +276,10 @@ in
           ExecStart = "${vogix} machine serve openrgb";
           ExecReload = "${kill} -HUP $MAINPID";
           NotifyAccess = "main";
-          Restart = "no";
+          # 78: machine.json or the drop zone is unusable; a restart cannot
+          # change that.
+          Restart = "on-failure";
+          RestartPreventExitStatus = 78;
           RuntimeDirectory = "vogix/openrgb";
           DynamicUser = true;
           CapabilityBoundingSet = "";

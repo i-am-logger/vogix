@@ -144,10 +144,10 @@ let
   openrgbWired =
     openrgbOwner.bindsTo == [ "openrgb.service" ]
     && openrgbOwner.after == [ "openrgb.service" ]
-    && openrgbOwner.upheldBy == [ "openrgb.service" ]
+    && openrgbOwner.wantedBy == [ "openrgb.service" ]
+    && openrgbOwner.upheldBy == [ ]
     && !openrgbOwner.stopIfChanged
     && openrgbOwner.restartTriggers == [ machineJsonFile ]
-    && openrgbOwner.wantedBy == [ ]
     && openrgbOwner.unitConfig.RequiresMountsFor == "/var/lib/vogix/machine"
     && openrgbOwner.unitConfig.StartLimitBurst == 3
     && openrgbOwner.unitConfig.StartLimitIntervalSec == 60
@@ -156,7 +156,8 @@ let
     Type == "exec"
     && hasSuffix "/bin/vogix machine serve openrgb" ExecStart
     && NotifyAccess == "main"
-    && Restart == "no"
+    && Restart == "on-failure"
+    && RestartPreventExitStatus == 78
     && RuntimeDirectory == "vogix/openrgb"
     && DynamicUser
     && CapabilityBoundingSet == ""
@@ -192,6 +193,12 @@ let
     && DevicePolicy == "closed"
     && DeviceAllow == [ "/dev/tty0 rw" "char-hidraw rw" "char-usb_device rw" ]
     && RestrictAddressFamilies == [ "AF_UNIX" "AF_NETLINK" ]);
+
+  # Both owner units act on machine::exit::OwnerExit alike: a restart after
+  # any failure but a 78 (EX_CONFIG).
+  restartAlike = builtins.all
+    (unit: unit.serviceConfig.Restart == "on-failure" && unit.serviceConfig.RestartPreventExitStatus == 78)
+    [ localOwner openrgbOwner ];
 
   resumeWired =
     resume.wantedBy == sleepTargets
@@ -293,6 +300,7 @@ let
     assert rendered || throw "machine.json for dram-rgb, keychron-k2-he and kraken-elite is not the expected document: ${builtins.toJSON machineJson}";
     assert openrgbWired || throw "vogix-openrgb.service or openrgb.service is not wired as the machine module specifies";
     assert localWired || throw "vogix-machine.service is not wired as the machine module specifies";
+    assert restartAlike || throw "vogix-machine.service and vogix-openrgb.service do not both restart after a failure but a 78";
     assert resumeWired || throw "vogix-machine-resume.service does not reload both owners after every sleep";
     assert dropZone || throw "the drop zone is not a tmpfiles directory owned by the machine owner";
     assert validatedAtBuild || throw "the system build does not validate machine.json with the Rust loader";

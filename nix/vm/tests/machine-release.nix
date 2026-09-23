@@ -46,9 +46,12 @@
 # - a palette the drop zone's owner did not write is rejected by both
 #   owners and `vogix machine status` exits 1 until the owner's refresh
 #   replaces it;
-# - openrgb restarted: vogix-openrgb stops cleanly first and Upholds= starts
-#   a new one that re-confirms; openrgb killed: the owner exits 75 and both
-#   come back; the server never refused a connection;
+# - the drop zone removed: both owners exit 75, both units restart them once
+#   and the restarts, finding no zone, exit 78 and stay failed; re-creating
+#   the zone recovers;
+# - openrgb restarted: vogix-openrgb stops cleanly first and starts again
+#   with the server, re-confirming; openrgb killed: the owner exits 75 and
+#   both come back; the server never refused a connection;
 # - a switch to maxProtocol 5 restarts both owners with the new
 #   machine.json; vogix-openrgb speaks protocol 5 to the protocol 6 server;
 # - after a reboot: vogix-machine is ready before systemd-user-sessions, so
@@ -442,7 +445,47 @@ pkgs.testers.nixosTest {
         settled("nordic")
         machine.succeed("vogix machine status")
 
-    with subtest("restarting openrgb stops vogix-openrgb cleanly and Upholds starts a new one"):
+    with subtest("a removed drop zone ends both owners with 75, and their restarts without it with 78"):
+        owners = ("vogix-machine.service", "vogix-openrgb.service")
+        machine.succeed("systemctl reset-failed " + " ".join(owners))
+
+        def show(unit, prop):
+            return machine.succeed(f"systemctl show -p {prop} --value {unit}").strip()
+
+        before = {
+            unit: (
+                int(show(unit, "NRestarts")),
+                count(journal(unit), "status=75/TEMPFAIL"),
+                count(journal(unit), "status=78/CONFIG"),
+            )
+            for unit in owners
+        }
+        machine.succeed(f"rm -r {ZONE}")
+        for unit in owners:
+            machine.wait_until_succeeds(f"systemctl is-failed {unit}")
+        for unit in owners:
+            restarts, tempfail, config = before[unit]
+            journal_text = journal(unit)
+            # The zone's removal ended the owner with 75, its unit restarted
+            # it once, and that start, with no zone, ended with 78.
+            assert count(journal_text, "status=75/TEMPFAIL") == tempfail + 1, (unit, journal_text)
+            assert count(journal_text, "status=78/CONFIG") == config + 1, (unit, journal_text)
+            assert int(show(unit, "NRestarts")) == restarts + 1, unit
+            assert show(unit, "ExecMainStatus") == "78", unit
+            assert show(unit, "Result") == "exit-code", unit
+            assert "was removed or moved" in journal_text, (unit, journal_text)
+            assert f"cannot watch the drop zone {ZONE}" in journal_text, (unit, journal_text)
+        # Re-creating the zone and starting the units recovers; the owner's
+        # refresh publishes into it.
+        machine.succeed("systemd-tmpfiles --create --prefix=/var/lib/vogix")
+        assert machine.succeed(f"stat -c '%U %G %a' {ZONE}").strip() == "vogix users 755"
+        machine.succeed("systemctl reset-failed " + " ".join(owners))
+        machine.succeed("systemctl start " + " ".join(owners))
+        machine.succeed("su - vogix -c 'vogix theme refresh'")
+        settled("nordic")
+        machine.succeed("vogix machine status")
+
+    with subtest("restarting openrgb stops vogix-openrgb cleanly and starts a new one with it"):
         first = invocation("vogix-openrgb.service")
         machine.succeed("systemctl reset-failed vogix-openrgb.service")
         machine.succeed("systemctl restart openrgb.service")

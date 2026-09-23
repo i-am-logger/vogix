@@ -406,7 +406,7 @@ machine owner's vogix CLI (theme set / undo / redo / refresh)
 | Unit | Runs | Owns | Exists when |
 |---|---|---|---|
 | `vogix-machine.service` | `vogix machine serve local` as root with `CAP_SYS_TTY_CONFIG` only, a closed device policy (`/dev/tty0`, hidraw, USB), no network; `Type=notify`, ordered before `systemd-user-sessions.service` | the VT palette and the command devices | `vogix.machine.console.enable`, or any command device |
-| `vogix-openrgb.service` | `vogix machine serve openrgb` as a dynamic user with no capabilities, loopback only; bound to, ordered after and upheld by `openrgb.service` | the OpenRGB controllers the openrgb devices select | any openrgb device |
+| `vogix-openrgb.service` | `vogix machine serve openrgb` as a dynamic user with no capabilities, loopback only; wanted by (started with), bound to and ordered after `openrgb.service` | the OpenRGB controllers the openrgb devices select | any openrgb device |
 | `vogix-machine-resume.service` | a oneshot after suspend and hibernate that reloads the owners | the re-apply after a resume | either owner |
 | `openrgb.service` | vogix's OpenRGB build as `Type=notify`: active once its SDK server listens | the SDK server | `vogix.openrgb.enable`, which any openrgb device turns on |
 
@@ -456,9 +456,14 @@ Nothing sleeps, retries on a timer or times out.
   so the owners see nothing; when the drop zone lost the palette, it
   publishes it again.
 - **OpenRGB stopped or restarted.** `vogix-openrgb` stops with it and is
-  started again once the server is active. A crashed server closes the
-  connection: `vogix-openrgb` logs `OpenRGB closed the connection`, exits
-  75, and comes back with the server's own restart.
+  started again with it, once the server is active. A crashed server closes
+  the connection: `vogix-openrgb` logs `OpenRGB closed the connection`, exits
+  75, and its restart connects once the server is active again.
+- **The drop zone removed or moved.** Both owners log it and exit 75; both
+  units restart them, and a restart that finds no drop zone exits 78, which
+  neither unit restarts. Re-creating the zone (`systemd-tmpfiles --create`)
+  and starting the units recovers; the owner's next apply publishes into
+  it.
 - **A device appearing.** OpenRGB's device-list updates re-apply; a
   matching hidraw node re-runs a command device.
 - **Resume from suspend or hibernate.** `vogix-machine-resume` reloads both
@@ -611,16 +616,16 @@ vogix machine status                       # both owners, the owner and the publ
   server below protocol 5) leaves it running and `faulted` until
   `systemctl reload vogix-openrgb`, a stop, or an OpenRGB restart; it does
   not retry by itself.
-- Exit statuses: `0` stopped; `75` temporary (OpenRGB refused or closed the
-  connection; for `vogix-machine`, an event source failed or the drop zone
-  went away); `78` configuration (`machine.json` rejected or the drop zone
-  missing; for `vogix-openrgb`, also the drop zone going away).
-  `vogix-machine` restarts after any failure but a `78`. `vogix-openrgb` has
-  no restart of its own: it is started again whenever it is down while
-  `openrgb.service` is active (`Upholds=`), at most 3 times in 60 seconds.
-  Past that limit (a `78` that repeats, or three OpenRGB crashes within a
-  minute) it stays failed until `systemctl reset-failed vogix-openrgb` or
-  the next boot.
+- Exit statuses (`machine::exit::OwnerExit`): `0` stopped; `75` temporary
+  (the drop zone removed or moved, for both owners; for `vogix-openrgb`,
+  OpenRGB refused or closed the connection; for `vogix-machine`, an event
+  source failed); `78` configuration (`machine.json` rejected, or the drop
+  zone missing, not a directory or not readable at start). Both units
+  restart after any failure but a `78` (`Restart=on-failure`,
+  `RestartPreventExitStatus=78`); `vogix-openrgb` at most 3 times in 60
+  seconds, past which (three OpenRGB crashes within a minute) it stays
+  failed until `systemctl reset-failed vogix-openrgb`, or until
+  `openrgb.service` starts again once that minute has passed.
 
 ### Moving off `vogix.hardware.themeApply`
 
