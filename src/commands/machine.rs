@@ -1,26 +1,44 @@
 //! `vogix machine` — the command-line side of the machine surfaces.
 //!
-//! `serve` runs a machine owner as its unit starts it. `status` reads the
-//! machine config, the published palette and each
-//! declared owner unit's status file. `validate` runs the loaders the
-//! machine owners use on a given file, so a rendered
-//! `/etc/vogix/machine.json` or a published `palette.json` is accepted or
-//! rejected here exactly as the owners would.
+//! - `serve local` and `serve openrgb` run a machine owner as its unit
+//!   starts it; the process exits with the owner's status
+//!   ([`OwnerExit::code`]).
+//! - `status` reads the machine config, the published palette and each
+//!   declared owner unit's status file.
+//! - `validate` runs the loaders the machine owners use on a given file, so a
+//!   rendered `/etc/vogix/machine.json` or a published `palette.json` is
+//!   accepted or rejected here exactly as the owners would.
+//! - `inspect` lists what the OpenRGB server serves through a read-only
+//!   client, and can capture the raw controller payloads.
 
 use crate::cli::{MachineCommands, ServeCommands};
 use crate::errors::{Result, VogixError};
 use crate::machine::config::{ConfigError, MACHINE_CONFIG_PATH, MachineConfig, Provider};
 use crate::machine::local;
+use crate::machine::openrgb::inspect;
+use crate::machine::openrgb::model::{ClientName, ProtocolVersion};
+use crate::machine::openrgb::owner::{self, OwnerExit};
+use crate::machine::openrgb::session::MirrorConfig;
 use crate::machine::palette::{MachinePalette, PALETTE_FILE, PaletteError};
 use crate::machine::status::{OwnerUnit, StatusError, StatusFile, SurfaceStatus};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+
+/// The name the inspect client announces, beside the owner's.
+const INSPECT_CLIENT_SUFFIX: &str = " inspect";
 
 pub fn handle_machine(command: &MachineCommands) -> Result<()> {
     match command {
         MachineCommands::Serve {
             owner: ServeCommands::Local,
         } => std::process::exit(local::serve(Path::new(MACHINE_CONFIG_PATH)).code()),
+        MachineCommands::Serve {
+            owner: ServeCommands::Openrgb,
+        } => match owner::serve(Path::new(MACHINE_CONFIG_PATH))? {
+            OwnerExit::Stopped => Ok(()),
+            // The owner logged why; its status is what systemd acts on.
+            exit => std::process::exit(exit.code()),
+        },
         MachineCommands::Status => {
             let report = status_report(Path::new(MACHINE_CONFIG_PATH), OwnerUnit::status_path);
             print!("{}", report.text);
@@ -32,6 +50,11 @@ pub fn handle_machine(command: &MachineCommands) -> Result<()> {
                 ))),
             }
         }
+        MachineCommands::Inspect {
+            json,
+            capture,
+            max_protocol,
+        } => handle_inspect(*json, capture.as_deref(), *max_protocol),
         MachineCommands::Validate {
             path,
             palette: false,
@@ -222,6 +245,51 @@ fn describe_surface(out: &mut String, name: &str, surface: &SurfaceStatus) {
         let _ = write!(out, " — {detail}");
     }
     let _ = writeln!(out);
+}
+
+fn handle_inspect(json: bool, capture: Option<&Path>, max_protocol: Option<u32>) -> Result<()> {
+    let config_path = Path::new(MACHINE_CONFIG_PATH);
+    let config = MachineConfig::load(config_path).map_err(|e| VogixError::Config(e.to_string()))?;
+    let Some(endpoint) = config.openrgb else {
+        return Err(VogixError::Config(format!(
+            "{} declares no OpenRGB endpoint (openrgb is null)",
+            config_path.display()
+        )));
+    };
+    let max_protocol = match max_protocol {
+        Some(number) => ProtocolVersion::try_from(number)
+            .map_err(|e| VogixError::Config(format!("--max-protocol: {e}")))?,
+        None => endpoint.max_protocol,
+    };
+    let client_name = ClientName::new(format!("{}{INSPECT_CLIENT_SUFFIX}", endpoint.client_name))
+        .map_err(|e| VogixError::Config(e.to_string()))?;
+    let snapshot = inspect::snapshot(
+        endpoint.host,
+        endpoint.port,
+        MirrorConfig {
+            max_protocol,
+            client_name,
+        },
+    )
+    .map_err(|e| VogixError::Generic(e.to_string()))?;
+    if let Some(dir) = capture {
+        let manifest = inspect::write_capture(dir, &snapshot)?;
+        eprintln!(
+            "captured {} controller payload(s) at protocol {}: {}",
+            snapshot.controllers.len(),
+            snapshot.protocol,
+            manifest.display()
+        );
+    }
+    if json {
+        print!("{}", inspect::render_json(&snapshot));
+    } else {
+        print!(
+            "{}",
+            inspect::render_text(&snapshot, endpoint.host, endpoint.port)
+        );
+    }
+    Ok(())
 }
 
 fn describe_config(path: &Path, config: &MachineConfig) -> String {

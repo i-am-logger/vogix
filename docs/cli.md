@@ -402,6 +402,7 @@ debug:
 
 ```bash
 vogix machine serve local    # vogix-machine.service (root): the VT palette and the command devices
+vogix machine serve openrgb  # vogix-openrgb.service: the OpenRGB controllers machine.json selects
 ```
 
 The local owner reads `/etc/vogix/machine.json` and the published palette,
@@ -413,6 +414,13 @@ changes during a run coalesced into one more run with the latest colour. A new
 palette, a hidraw node of a device's declared USB ids appearing, and `SIGHUP`
 (`systemctl reload`) re-apply; `SIGHUP` also re-runs every command device. It
 exits 78 when the machine config or the drop zone is unusable.
+
+The OpenRGB owner reads the same two files and applies each device's slot
+colour to the OpenRGB controllers its selector matches; `SIGHUP` forces a
+re-apply. It exits 0 when stopped, 75 when OpenRGB refuses or closes the
+connection, and 78 when machine.json is rejected or its drop zone is missing.
+A protocol violation it detects leaves it running and `faulted` (in `STATUS=`
+and `/run/vogix/openrgb/status.json`) until `SIGHUP` or a stop.
 
 `status` exits 1 when a surface is in error, an owner unit is faulted, an owner
 unit the machine config declares has no status (it is not running), or the
@@ -434,6 +442,16 @@ terms: a regular file (not a symlink) owned by its directory's owner, at most
 64 KiB, schema 1 with no unknown fields. `--palette` without a path reads the
 drop zone the installed machine config names and shows the colour each declared
 device resolves to.
+
+See what the OpenRGB server serves, through a read-only second SDK client that
+sends no writes (the endpoint and protocol come from machine.json):
+
+```bash
+vogix machine inspect                        # controllers, modes (active starred), zones, colours
+vogix machine inspect --json                 # the decoded descriptions as JSON
+vogix machine inspect --capture ~/openrgb-capture   # also each raw controller payload + manifest.json
+vogix machine inspect --max-protocol 5       # offer SDK protocol 5 instead of machine.json's maxProtocol
+```
 
 ### Modes
 

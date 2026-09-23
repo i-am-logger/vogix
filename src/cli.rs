@@ -468,6 +468,22 @@ pub enum MachineCommands {
         #[arg(long)]
         palette: bool,
     },
+
+    /// Show what the OpenRGB server serves — controllers, modes, colours —
+    /// through a read-only second SDK client that sends no writes
+    Inspect {
+        /// Print the decoded controller descriptions as JSON
+        #[arg(long)]
+        json: bool,
+        /// Also write each controller's raw REQUEST_CONTROLLER_DATA payload
+        /// and a manifest.json into DIR (created if needed)
+        #[arg(long, value_name = "DIR")]
+        capture: Option<std::path::PathBuf>,
+        /// Offer at most this SDK protocol version instead of machine.json's
+        /// maxProtocol
+        #[arg(long, value_name = "VERSION", value_parser = clap::value_parser!(u32).range(5..=6))]
+        max_protocol: Option<u32>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -477,6 +493,9 @@ pub enum ServeCommands {
     /// palette reconcile; SIGHUP forces a re-apply. Exits 78 when the
     /// machine config or the drop zone is unusable
     Local,
+    /// vogix-openrgb.service: apply the owner's published palette to the
+    /// OpenRGB controllers machine.json selects
+    Openrgb,
 }
 
 #[derive(Subcommand)]
@@ -1052,6 +1071,64 @@ mod tests {
             }
         ));
         assert!(Cli::try_parse_from(["vogix", "machine", "status", "extra"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_machine_serve_openrgb() {
+        let cli = Cli::try_parse_from(["vogix", "machine", "serve", "openrgb"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Serve {
+                    owner: ServeCommands::Openrgb
+                }
+            }
+        ));
+        assert!(Cli::try_parse_from(["vogix", "machine", "serve"]).is_err());
+        assert!(Cli::try_parse_from(["vogix", "machine", "serve", "openrgb", "extra"]).is_err());
+    }
+
+    #[test]
+    fn test_parse_machine_inspect() {
+        let cli = Cli::try_parse_from(["vogix", "machine", "inspect"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Inspect {
+                    json: false,
+                    capture: None,
+                    max_protocol: None
+                }
+            }
+        ));
+        let cli = Cli::try_parse_from([
+            "vogix",
+            "machine",
+            "inspect",
+            "--json",
+            "--capture",
+            "/tmp/cap",
+            "--max-protocol",
+            "5",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Commands::Machine {
+                command: MachineCommands::Inspect {
+                    json: true,
+                    capture: Some(ref dir),
+                    max_protocol: Some(5)
+                }
+            } if dir == std::path::Path::new("/tmp/cap")
+        ));
+        for bad in ["4", "7", "six"] {
+            assert!(
+                Cli::try_parse_from(["vogix", "machine", "inspect", "--max-protocol", bad])
+                    .is_err(),
+                "{bad}"
+            );
+        }
     }
 
     // ── Property: invalid subcommands fail gracefully ──
