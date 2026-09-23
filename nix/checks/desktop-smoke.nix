@@ -671,10 +671,16 @@ pkgs.runCommand "vogix-desktop-smoke"
   echo "── state:"; grep -h 'STATE' $TMPDIR/qs-state.log || true
   echo "── Hyprland requests:"; cat $TMPDIR/feed/hypr-requests.log || true
   echo "── notification arrival times:"; jq -c '[.[].at]' $TMPDIR/notifications-1.json || true
+  # A run that stopped short names the step it was on, and the last wait
+  # each probe that ran logged (a probe the run never reached has no log).
   grep -qx DONE $TMPDIR/result || {
-    echo "── the run stopped waiting for $(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
+    step="$(cat $TMPDIR/awaiting) (last: $(cat $TMPDIR/last 2>/dev/null))"
+    case $cage_status in
+      124 | 137) echo "── the run stopped at the 900 s bound, waiting for $step" ;;
+      *) echo "── the run ended with cage's status $cage_status before DONE; its last wait was for $step" ;;
+    esac
     for log in qs-geometry.log qs-state.log; do
-      grep -h 'waiting for' $TMPDIR/$log 2>/dev/null | tail -n 1
+      grep -h 'waiting for' $TMPDIR/$log 2>/dev/null | tail -n 1 || true
     done
     exit 1
   }
