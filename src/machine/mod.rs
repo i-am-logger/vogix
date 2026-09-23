@@ -10,6 +10,7 @@
 pub mod command;
 pub mod config;
 pub mod notify;
+pub mod openrgb;
 pub mod palette;
 pub mod reactor;
 pub mod status;
