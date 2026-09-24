@@ -8,7 +8,10 @@
 # - a playback stream starts both taps and the output VU, and they stop
 #   when it ends;
 # - a source reads off, idle or waiting only once its tap process is gone:
-#   a tap that cannot exit yet reads stopping;
+#   a tap that has not exited yet reads stopping;
+# - a tap that does not act on the stop's SIGTERM (the spectrum's cava and
+#   the scope's pw-record, frozen) is killed: both read idle within 5 s
+#   of the playback's end, the bound a locked session is held to;
 # - the shell's own taps and VU monitors never light the privacy cell's
 #   microphone flag; another program's capture stream does, until it ends;
 # - a tap that dies is relaunched;
@@ -26,8 +29,9 @@
 # Every run of the shell ends as the unit's stop ends it: every process
 # it started is signalled with it and must exit. Every step waits for an
 # event: a status the shell reports, a process exit, the shell's client on
-# the PipeWire daemon. None waits a fixed time, and the run's overall
-# timeout is the only bound; a run that reaches it fails, naming the step
+# the PipeWire daemon. None waits a fixed time. One step has a bound of its
+# own, the 5 s above, and fails on it; otherwise the run's overall
+# timeout is the only bound, and a run that reaches it fails, naming the step
 # it was waiting for or, once it is done, the processes still running.
 #
 # No session manager runs, so nothing links the streams: the taps and the
@@ -160,8 +164,8 @@ let
     # it started (end_run).
     . ${shellRuns}
     meters() { qs -p "$qml" ipc call meters status 2>&1; }
-    # Polls `meters status` every 0.5 s until it contains $1; the status
-    # that matched is left in $TMPDIR/matched.
+    # Polls `meters status` every $POLL s (0.5 unless set) until it
+    # contains $1; the status that matched is left in $TMPDIR/matched.
     await() {
       local s
       waiting "meters: $1"
@@ -169,7 +173,24 @@ let
         s=$(meters)
         case "$s" in *"$1"*) echo "$s" > "$TMPDIR/matched"; note "ok: $1"; return 0 ;; esac
         echo "$s" > "$TMPDIR/last"
-        sleep 0.5
+        sleep "''${POLL:-0.5}"
+      done
+    }
+    # Polls `meters status` every 0.1 s until it contains $2, for at most
+    # $1 s after $3 (a time in ns since the epoch); a status that has not
+    # matched by then fails the step.
+    await_within() {
+      local s end=$(( $3 + $1 * 1000000000 ))
+      waiting "meters: $2 within $1 s"
+      while :; do
+        s=$(meters)
+        case "$s" in *"$2"*) note "ok: $2 within $1 s"; return 0 ;; esac
+        echo "$s" > "$TMPDIR/last"
+        if [ "$(date +%s%N)" -gt "$end" ]; then
+          note "FAIL: not '$2' within $1 s (last: '$s'):" $(taps)
+          return 1
+        fi
+        sleep 0.1
       done
     }
     # Polls `stats status` every 0.5 s until it contains $1.
@@ -312,27 +333,29 @@ let
     await "$running vu-mic:on stats:cpu,uptime"
 
     # 6. Playback ends: back to idle, no taps. The taps are frozen first
-    # (SIGSTOP keeps the shell's SIGTERM pending), so they cannot exit:
-    # once the shell has seen the playback end (the output VU is idle),
-    # the spectrum and the scope read stopping, and idle only once their
-    # taps are thawed and gone.
+    # (SIGSTOP keeps the shell's SIGTERM pending), so they do not act on
+    # the stop, as a cava whose PipeWire stream delivers no buffer does
+    # not: once the shell has seen the playback end (the output VU is
+    # idle, polled every 0.1 s), the spectrum and the scope read
+    # stopping, and they read idle within 5 s of the playback's end, the
+    # frozen taps killed. A run that misses the bound thaws them, so the
+    # steps after it still run.
     cava6=$(tap_pid cava) pw6=$(tap_pid pw-record)
     kill -STOP $cava6 $pw6
+    waiting "cava $cava6 and pw-record $pw6 to be frozen"
+    until [ "$(ps -o stat= -p "$cava6,$pw6" | cut -c1 | tr -d '\n')" = TT ]; do sleep 0.1; done
     kill $PLAYPID
     wait $PLAYPID
-    await "vu-out:idle"
+    ended=$(date +%s%N)
+    POLL=0.1 await "vu-out:idle"
     s=$(cat "$TMPDIR/matched")
-    if [ "$(ps -o stat= -p "$cava6,$pw6" | cut -c1 | tr -d '\n')" != TT ]; then
-      note "FAIL: the taps are not both frozen:" $(taps)
-    else
-      case "$s" in
-        *"spectrum:stopping scope:stopping vu-out:idle"*) note "ok: stopping while the taps cannot exit" ;;
-        *) note "FAIL: '$s' while both taps are frozen:" $(taps) ;;
-      esac
-    fi
-    kill -CONT $cava6 $pw6
+    case "$s" in
+      *"spectrum:stopping scope:stopping vu-out:idle"*) note "ok: stopping while the taps cannot exit" ;;
+      *) note "FAIL: '$s' while both taps are frozen:" $(taps) ;;
+    esac
+    await_within 5 "$idle" "$ended" || kill -CONT $cava6 $pw6 2>/dev/null
     await "$idle"
-    notaps "playback ended"
+    notaps "playback ended with the taps frozen"
 
     # 7. A PipeWire restart: everything stops with it and returns with it.
     play
@@ -474,6 +497,6 @@ pkgs.runCommand "vogix-desktop-taps"
   fi
   # Done, and cage returned with it.
   cage_verdict $cage_status 600 || exit 1
-  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 36
+  test "$(grep -c '^ok: ' $TMPDIR/result)" -eq 37
   touch $out
 ''

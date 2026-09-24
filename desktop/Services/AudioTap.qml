@@ -1,7 +1,8 @@
 // A PipeWire capture subprocess (cava, pw-record) kept alive for as long
 // as it is wanted. The command execs into the tap, so the process
-// quickshell holds IS the tap: its exit is the tap's death and SIGTERM
-// stops it, with no pipeline stage left behind.
+// quickshell holds IS the tap: its exit is the tap's death, and a stop
+// ends it with no pipeline stage left behind. A stop is SIGTERM, and
+// SIGKILL once killAfterMs has passed without the tap exiting.
 //
 // Every tap captures the default sink's monitor, so it runs only while
 // quickshell's own PipeWire connection is ready and a default sink
@@ -35,6 +36,14 @@ Scope {
     readonly property bool running: proc.running
     readonly property int maxRelaunches: 5
     readonly property int stableMs: 30000
+    // cava acts on SIGTERM only in its PipeWire stream's process callback
+    // (0.10.7, input/pipewire.c): while its stream is streaming, a graph
+    // that delivers no buffer holds it in the stop, its main thread joined
+    // on the audio thread. A tap that acts on SIGTERM exits in about
+    // 0.1 s; 2 s is twenty times that, and leaves 3 of the 5 s within
+    // which a locked session samples nothing.
+    readonly property int killAfterMs: 2000
+    readonly property int _sigkill: 9
 
     // Consecutive exits, each within stableMs of its start.
     property int failures: 0
@@ -45,7 +54,8 @@ Scope {
     // The last line the tap wrote to stderr, quoted when it exits.
     property string _lastError: ""
 
-    // running · stopping: asked to stop, not exited yet · off: nothing
+    // running · stopping: asked to stop, not exited yet (killed once
+    // killAfterMs has passed) · off: nothing
     // wants it · waiting: wanted, PipeWire or a default sink is missing ·
     // retrying: a relaunch is scheduled · parked. The process counts until
     // quickshell has reaped it, so every state but the first two means no
@@ -73,10 +83,16 @@ Scope {
             return;
         }
         retry.stop();
-        if (proc.running && !root._stopping) {
-            root._stopping = true;
-            proc.running = false;
-        }
+        root._stop();
+    }
+
+    // SIGTERM, and the deadline for the exit.
+    function _stop(): void {
+        if (!proc.running || root._stopping)
+            return;
+        root._stopping = true;
+        proc.running = false;
+        deadline.restart();
     }
 
     // A fresh start on every readiness or demand edge: PipeWire came
@@ -110,12 +126,7 @@ Scope {
         // quickshell starts a new command only on the next start, and
         // emits this only when the list differs. The stop's exit runs
         // _sync, which starts the new command.
-        onCommandChanged: {
-            if (running && !root._stopping) {
-                root._stopping = true;
-                running = false;
-            }
-        }
+        onCommandChanged: root._stop()
 
         stdout: SplitParser {
             onRead: data => root.line(data)
@@ -128,6 +139,7 @@ Scope {
         onRunningChanged: {
             if (running)
                 return;
+            deadline.stop();
             if (root._stopping) {
                 root._stopping = false;
                 // Demand may have come back while it was stopping.
@@ -158,5 +170,17 @@ Scope {
         id: retry
         repeat: false
         onTriggered: root._sync()
+    }
+
+    // The stop's deadline: armed with its SIGTERM, cancelled by the exit.
+    Timer {
+        id: deadline
+        interval: root.killAfterMs
+        repeat: false
+        onTriggered: {
+            console.warn("vogix: " + root.name + " did not exit within " + root.killAfterMs / 1000
+                + " s of SIGTERM; killing it");
+            proc.signal(root._sigkill);
+        }
     }
 }
