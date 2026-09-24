@@ -94,6 +94,16 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # desktop-smoke's geometry run starts the shell under bwrap, which
+      # needs an unprivileged user namespace; Ubuntu's AppArmor refuses one
+      # ("setting up uid map: Permission denied") while
+      # apparmor_restrict_unprivileged_userns is 1.
+      - name: Allow unprivileged user namespaces (for bwrap)
+        run: |
+          if sysctl kernel.apparmor_restrict_unprivileged_userns 2>/dev/null; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Run nix flake check
         run: nix flake check --print-build-logs
 
