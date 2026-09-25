@@ -5,6 +5,97 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.11.0...vogix-v0.12.0) (2026-09-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **home-manager:** login shells no longer run `vogix theme refresh`. A text-only login restores nothing: the theme's files persist through current-theme, and the VT palette and the machine's LEDs are restored at boot by the NixOS module's machine owner units, which a home-manager-only install does not have.
+* **machine:** vogix.hardware.themeApply is removed. Machine hardware is declared in vogix.hardware.devices and applied by the machine owner units from the owner's published palette; a consumer that copied themeApply into programs.vogix.themeApply must drop that line.
+* **reload:** config.toml's [hardware."<name>"] tables are now [hooks."<name>"]; a hand-written [hardware] section is no longer read.
+* **desktop:** desktop.json no longer carries the single-bar `bar` object (schema 1's shape, mirrored from `bars.top` for one release), and the shell no longer synthesizes a four-edge table from it. A schema-1 desktop.json renders no bars; rebuilding regenerates the file as schema 2.
+
+### Features
+
+* **desktop:** `vogix desktop bar geometry` lists where each widget sits ([c51ea8a](https://github.com/i-am-logger/vogix/commit/c51ea8a32ccd6bbcdb33f3f48578e22fc3d68636))
+* **desktop:** `vogix desktop privacy` reports what the PRIVACY cell shows ([d2b1b03](https://github.com/i-am-logger/vogix/commit/d2b1b037ce5fad9a7c7f0299b4ca0dd11491957a))
+* **desktop:** `vogix desktop stats` and `privacy` report what those cells read ([3eedd52](https://github.com/i-am-logger/vogix/commit/3eedd52568ce8054a5e16c362ef87256eb0825a2))
+* **desktop:** `vogix desktop vu`, and the VU meters checked against a −6 dBFS tone ([eed5c4f](https://github.com/i-am-logger/vogix/commit/eed5c4feed2452b775c54b9cc987ea68155cfbf9))
+* **desktop:** custom cells run only while their bar is on screen ([cddadb6](https://github.com/i-am-logger/vogix/commit/cddadb6897a7bd2267b1a437d7e74b14aa4b5875))
+* **desktop:** custom cells show a configured command's output on any bar ([967b531](https://github.com/i-am-logger/vogix/commit/967b53152192d2384cca2eee89f158ed6f5bfa99))
+* **desktop:** desktop.json drops the schema-1 `bar` mirror; the shell reads schema 2 only ([ab5928d](https://github.com/i-am-logger/vogix/commit/ab5928d2c46493802cbe56fb4f1716ebb37ce979))
+* **desktop:** fan-speed cells, and configurable GPU thresholds ([4907b52](https://github.com/i-am-logger/vogix/commit/4907b520f5e0a4ff07eec7b117b9b62b2563f781))
+* **desktop:** home-manager runs `vogix desktop check` on the desktop.json it builds ([88c1716](https://github.com/i-am-logger/vogix/commit/88c1716a4f128162e2c3a17aa9080ab5d40359fa))
+* **desktop:** measure NVIDIA and Intel GPUs, not only amdgpu ([735eb0f](https://github.com/i-am-logger/vogix/commit/735eb0f9e968c3b72113a82105ea1a957d9cb4f5))
+* **desktop:** one widget registry types the layouts, the check and the shell ([fad8a73](https://github.com/i-am-logger/vogix/commit/fad8a7372984e5937e633b227025dc7f040ab3a4))
+* **desktop:** the media transport returns to the bottom bar, without the track title ([dd82b31](https://github.com/i-am-logger/vogix/commit/dd82b315f60859514fb9f80bf6913daeccb87566))
+* **desktop:** the widget registry says which bar orientation a widget renders on ([e0b64e7](https://github.com/i-am-logger/vogix/commit/e0b64e75842cfd4c955386fedfee78596a18db32))
+* **input:** publish the keyboard lock state; the LANG cell's CAPS follows it ([afe2a82](https://github.com/i-am-logger/vogix/commit/afe2a82e9a89ba72d1df6770dac48e43abe03b8d))
+* **machine:** `vogix machine serve local`, the VT palette and command-device owner ([c3a588a](https://github.com/i-am-logger/vogix/commit/c3a588af5c17dbda811fe96058792709b143c6ed))
+* **machine:** event reactor, single-flight command runner and hidraw uevents ([a3f1309](https://github.com/i-am-logger/vogix/commit/a3f130978f7438ae01b3af0bcf93dc580e9c884e))
+* **machine:** OpenRGB SDK wire format, model and codec ([94f242f](https://github.com/i-am-logger/vogix/commit/94f242f28c8911627a97a638a84f06b17d103c9d))
+* **machine:** OpenRGB session state machine, selection and write plans ([0ba5f32](https://github.com/i-am-logger/vogix/commit/0ba5f32ad02467158f0af60d4c570147f2f93d2b))
+* **machine:** publish the owner's palette after the state commit, and `vogix machine status` ([024af05](https://github.com/i-am-logger/vogix/commit/024af05099af9e4ba31c272efcbacb6841190807))
+* **machine:** systemd notifications and the owners' typed status file ([02c940c](https://github.com/i-am-logger/vogix/commit/02c940c423fe14af45552d0605096bb594075e26))
+* **machine:** the NixOS module declares the machine owner, typed devices and the owner units ([b624661](https://github.com/i-am-logger/vogix/commit/b6246610fb4aa17245702932d91f8ef7c1e663c7))
+* **machine:** typed machine config and palette, and `vogix machine validate` ([8bca90b](https://github.com/i-am-logger/vogix/commit/8bca90b6569ab9d3c3dbdcc88a4176bc108cf78a))
+* **machine:** vogix machine serve openrgb and a read-only vogix machine inspect ([fd01920](https://github.com/i-am-logger/vogix/commit/fd0192000bb8d206dc0928d6a3c611fdf6cafffa))
+* **openrgb:** run the SDK server as Type=notify on vogix's OpenRGB build ([8ee91b7](https://github.com/i-am-logger/vogix/commit/8ee91b71eba799c5b8d8214e202c5a6630c98572))
+* **reload:** user apply hooks under [hooks], and not-running apps are not failures ([d9c6760](https://github.com/i-am-logger/vogix/commit/d9c676028ecdeecbf8ff7f9b5f8fee31e02fcd3e))
+
+
+### Bug Fixes
+
+* **cli:** an undo or redo whose state is saved publishes it though its history write fails ([1826179](https://github.com/i-am-logger/vogix/commit/1826179cb26a8b1fa0f63228e57587aae468249b))
+* **console:** one ANSI mapping for console.colors, theme packages and the runtime render ([87ea81d](https://github.com/i-am-logger/vogix/commit/87ea81df286afa71ba817ea49e84f4bd328f8a00))
+* **desktop:** a hidden HUD samples nothing ([1f6f5c5](https://github.com/i-am-logger/vogix/commit/1f6f5c51d14ad5a8f4ed0656ab961e9df70cebe1))
+* **desktop:** a reload applies a custom cell's new command and interval ([d5669d6](https://github.com/i-am-logger/vogix/commit/d5669d6c8e7a2c48bd179382762d29d0bcfe5512))
+* **desktop:** a reload that changes the spectrum's band count restarts cava on it ([48d4e6f](https://github.com/i-am-logger/vogix/commit/48d4e6f56bd3c6f5aba8ab20cf436292932fafa6))
+* **desktop:** a tap's source reads idle only once the tap has exited ([bcd6cce](https://github.com/i-am-logger/vogix/commit/bcd6cce6da71af8b1c0cd0ae445dc910c5f1ac44))
+* **desktop:** kill an audio tap that has not exited 2 s after its stop ([420b7cf](https://github.com/i-am-logger/vogix/commit/420b7cf058c14de19288a03147147394e054d768))
+* **desktop:** notification cards and panel popups keep clear of the bars ([da9d766](https://github.com/i-am-logger/vogix/commit/da9d76647462359e87f9ade86d51487c43c525fe))
+* **desktop:** notification cards size their content from the card, not the FrameCell slot ([e18f386](https://github.com/i-am-logger/vogix/commit/e18f3863e9d2a9770e75de801328b3a74d896e01))
+* **desktop:** per-mount I/O on LUKS and LVM, and total I/O on every disk ([5f53637](https://github.com/i-am-logger/vogix/commit/5f5363739b0e0cd90b2796bdbcaae16b63a98eb6))
+* **desktop:** reattach to NetworkManager when it starts after the shell ([778a547](https://github.com/i-am-logger/vogix/commit/778a547532b94186b79ed26caa3384df8e2374e2))
+* **desktop:** restored notification cards keep their arrival time ([2ff01a1](https://github.com/i-am-logger/vogix/commit/2ff01a1bc7c7697e83fbc01d7370f34ea5b819f1))
+* **desktop:** scanlines texture the notification cards again; drop the primitives the HUD outgrew ([3ce9930](https://github.com/i-am-logger/vogix/commit/3ce993030ec02f070c51cd780674a22e31b8e7b3))
+* **desktop:** stopping a custom cell's command ends every process of its pipeline ([39a3e48](https://github.com/i-am-logger/vogix/commit/39a3e48f3e05d9014ae60523d95086d4ef0e04d0))
+* **desktop:** tailnet connection time is the connection's, and visible again ([feb271d](https://github.com/i-am-logger/vogix/commit/feb271d176b6c8245f3eaf823b9a60995fa612ab))
+* **desktop:** the audio taps wait for PipeWire and come back after they exit ([08b1cf3](https://github.com/i-am-logger/vogix/commit/08b1cf3e47e8ba0952e96a90c0b84c1344cdc651))
+* **desktop:** the GPU cell publishes the mean of its recent samples ([6724bfc](https://github.com/i-am-logger/vogix/commit/6724bfcf68dfe0990561db5053e5750ebd13ca6c))
+* **desktop:** the GPU cell stays on when its bar comes back before nvidia-smi has exited ([713dabf](https://github.com/i-am-logger/vogix/commit/713dabff47129b20ae4fc6f924fb2f4d29aa334e))
+* **desktop:** the LANG cell lights the layout Hyprland reports active, by index ([8e8cca9](https://github.com/i-am-logger/vogix/commit/8e8cca9e662f96f9ceb9b4d372eab53de55e7b26))
+* **desktop:** the media transport stays on the player it paused ([7210c08](https://github.com/i-am-logger/vogix/commit/7210c089cbffb6cf12431d9f5da1f6d5f0844745))
+* **desktop:** the mounts gauges lead with the root filesystem ([b492c14](https://github.com/i-am-logger/vogix/commit/b492c14e1427b1ad6bee815934c14c6a75c1dd8a))
+* **desktop:** the oscilloscope sizes its canvas from its own scale ([e3eeda3](https://github.com/i-am-logger/vogix/commit/e3eeda34a315a21e5f6d7f4dd9c76d2614134ff4))
+* **desktop:** the output VU reads the level applications send on every virtual sink ([8b736d5](https://github.com/i-am-logger/vogix/commit/8b736d5203f360a0f7b42dc3bf48fb03cb52bb35))
+* **desktop:** the privacy cell shows live screencasts ([812547a](https://github.com/i-am-logger/vogix/commit/812547a5b5818b5f67de7b658cb93b4a377908b3))
+* **desktop:** the Remind menu entry passes its delay as --in, and desktop check parses every menu command ([ef5ab09](https://github.com/i-am-logger/vogix/commit/ef5ab090d5529b98749d83d8fb823f5dcb85e63e))
+* **desktop:** the session lock's locked state follows a lock that engages ([254d455](https://github.com/i-am-logger/vogix/commit/254d455f1af5e080193ca2e0f3191591c8af1a38))
+* **desktop:** the shell runs without quickshell's detailed debug log ([64f9ad0](https://github.com/i-am-logger/vogix/commit/64f9ad0c939106ea67a93e8ec4b84ff005bf11e0))
+* **desktop:** the shell's unit declares the tools it spawns, and the NixOS module enables UPower and power-profiles-daemon ([15b00dd](https://github.com/i-am-logger/vogix/commit/15b00ddcaa627b3f5c648ecae0d90e86db348baf))
+* **desktop:** the spectrums keep their size while nothing plays ([fa9aa71](https://github.com/i-am-logger/vogix/commit/fa9aa710e104e6585fa9b0dca7db42cdd5d4705e))
+* **desktop:** the tailnet glyph opens its panel beside its bar ([e98d9ac](https://github.com/i-am-logger/vogix/commit/e98d9ac4f9c06b80992f9cc25e7adb24bcfa67b9))
+* **desktop:** the workspaces column and the LANG cell fit a rail ([b1ac4ad](https://github.com/i-am-logger/vogix/commit/b1ac4ad553fdbde9e751259318e5fe41f8dd57dd))
+* **desktop:** tray menus anchor to their icon and open away from the bar ([d9c936b](https://github.com/i-am-logger/vogix/commit/d9c936bad200eccd6eddc410db7a5a47f7fab7c2))
+* **desktop:** workspace clicks focus through the dialect-aware activate() ([1f16d77](https://github.com/i-am-logger/vogix/commit/1f16d770bb66b1dbe292da1b9f4cf004f24e463a))
+* **home-manager:** restore the theme once per graphical session, not in every login shell ([85d7043](https://github.com/i-am-logger/vogix/commit/85d7043ab92a3934da7cc0ce1b838211bb65d4b0))
+* **input:** Hyprland writes go out only in the dialect the compositor has stated ([d42f541](https://github.com/i-am-logger/vogix/commit/d42f541cbd80ca35a5571462b4d77df008d45699))
+* **input:** the mode's border is painted again after a config reload or compositor restart ([a759741](https://github.com/i-am-logger/vogix/commit/a75974151652a099176cc5594531670615fcd038))
+* **machine:** a command device ends on the published colour when the palette returns to it during a run ([2963290](https://github.com/i-am-logger/vogix/commit/2963290fb335625beb94b84e0a61dd9e870e21d3))
+* **machine:** a palette rejection and status text print no control characters ([9a3d82c](https://github.com/i-am-logger/vogix/commit/9a3d82cd30cba155f3b0a4f236650090564663e8))
+* **machine:** both owners end the same way when the drop zone goes, and both units restart alike ([d8eed46](https://github.com/i-am-logger/vogix/commit/d8eed469d93c578481fbb812af9147bcaca79a54))
+* **nix:** a cross-built system validates machine.json with the build platform's vogix ([8b5c06b](https://github.com/i-am-logger/vogix/commit/8b5c06b7ed13e901fe01b9635d0056486bd6add4))
+* **nix:** no user's theme apply writes the VT palette vogix-machine owns ([7c648b0](https://github.com/i-am-logger/vogix/commit/7c648b0cb9732257cc9198f09717085051db3696))
+* **openrgb:** a controller whose target changed reports pending until it is applied ([b14b83c](https://github.com/i-am-logger/vogix/commit/b14b83c160a3fce9534ac365f598f5a079d25dfa))
+* **openrgb:** the server keeps a client alive while anything still sends to it ([7e68b61](https://github.com/i-am-logger/vogix/commit/7e68b61f933d0949a0d5d92c63a9a7946285bd95))
+* **state:** a user without state starts at their configured theme ([aedf7bb](https://github.com/i-am-logger/vogix/commit/aedf7bb8562c77071b5d3b7ea884c6509f185a76))
+
+
+### Performance Improvements
+
+* **desktop:** the meters cost nothing while nothing plays ([7d35641](https://github.com/i-am-logger/vogix/commit/7d356415caeb9b96f8e81ddd49b9bc355c8d6675))
+
 ## [0.11.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.10.0...vogix-v0.11.0) (2026-09-04)
 
 
