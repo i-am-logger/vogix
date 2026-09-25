@@ -297,6 +297,86 @@ fn v6_handshake_sends_flags_and_name_after_the_version_reply_and_tolerates_inter
 }
 
 #[test]
+fn device_list_updates_before_the_version_reply_are_followed_by_one_resync() {
+    // A client that connects while the server's detection is registering
+    // controllers receives a DEVICE_LIST_UPDATED per controller before the
+    // reply to its version request.
+    let mut session = Session::new(config(ProtocolVersion::V6));
+    sent(&mut session);
+    feed(
+        &mut session,
+        &[
+            server::device_list_updated(),
+            server::device_list_updated(),
+            server::device_list_updated(),
+            server::version_reply(6),
+            server::server_name("OpenRGB"),
+            server::ok(0, PacketId::RequestProtocolVersion),
+            server::count_v6(&[1, 2, 3]),
+            server::ok(0, PacketId::RequestControllerCount),
+            server::server_flags(0x7f),
+            server::ok(0, PacketId::SetClientFlags),
+            server::ok(0, PacketId::SetClientName),
+        ],
+    );
+    assert_eq!(session.mirror().fault(), None);
+    assert_eq!(
+        ids(&sent(&mut session)),
+        [
+            (PacketId::SetClientFlags, 0),
+            (PacketId::SetClientName, 0),
+            (PacketId::RequestControllerData, 1),
+            (PacketId::RequestControllerData, 2),
+            (PacketId::RequestControllerData, 3)
+        ]
+    );
+
+    feed(
+        &mut session,
+        &[
+            server::controller_data(
+                1,
+                &testkit::ene_dram(ProtocolVersion::V6, 0),
+                ProtocolVersion::V6,
+            ),
+            server::ok(1, PacketId::RequestControllerData),
+            server::controller_data(
+                2,
+                &testkit::ene_dram(ProtocolVersion::V6, 1),
+                ProtocolVersion::V6,
+            ),
+            server::ok(2, PacketId::RequestControllerData),
+            server::controller_data(3, &testkit::govee(ProtocolVersion::V6), ProtocolVersion::V6),
+            server::ok(3, PacketId::RequestControllerData),
+        ],
+    );
+    assert_eq!(
+        ids(&sent(&mut session)),
+        [(PacketId::RequestControllerCount, 0)],
+        "the updates arrived during the first enumeration, so one resync follows"
+    );
+
+    feed(
+        &mut session,
+        &[
+            server::count_v6(&[1, 2, 3]),
+            server::ok(0, PacketId::RequestControllerCount),
+        ],
+    );
+    assert!(sent(&mut session).is_empty(), "the ids are unchanged");
+    assert_eq!(session.mirror().phase(), Phase::Ready);
+    assert_eq!(session.mirror().fault(), None);
+    let events = session.drain_events();
+    assert!(events.contains(&Event::Mirror(MirrorEvent::Negotiated {
+        server_max: 6,
+        protocol: ProtocolVersion::V6
+    })));
+    assert!(events.contains(&Event::Mirror(MirrorEvent::ListCommitted {
+        controllers: 3
+    })));
+}
+
+#[test]
 fn a_count_reply_before_any_version_reply_means_protocol_zero() {
     let mut session = Session::new(config(ProtocolVersion::V6));
     feed(&mut session, &[server::count_v5(3)]);
