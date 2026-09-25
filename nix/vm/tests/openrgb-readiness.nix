@@ -15,7 +15,10 @@
 #
 # In the guests:
 # - `server`: the unit reaches active through READY=1 and is listening
-#   the moment a (re)start returns; the declared Debug devices are the
+#   the moment a (re)start returns; a client that sends its version
+#   request once a rescan's first DEVICE_LIST_UPDATED has reached it gets
+#   the reply behind that frame, and every SDK check finds its reply by
+#   packet id behind such frames; the declared Debug devices are the
 #   controllers the server serves, at SDK protocol 6; the settings merge
 #   into OpenRGB.json recursively, keeping keys they do not set, and
 #   replace a file that is not one JSON object;
@@ -76,6 +79,48 @@ let
   stockRejected = readinessFails stockHost.config;
   pluginsKeepReadiness = (vogixOpenrgb.withPlugins [ ]).passthru.vogixReadiness;
 
+  # Reads an SDK byte stream on stdin and prints one line per frame:
+  # dev_id, pkt_id, pkt_size and the payload's first u32 ("-" when the
+  # payload is shorter). Fails on a frame without the "ORGB" magic. A
+  # frame the stream ends inside is not printed: when the client has
+  # half-closed, the server shuts the connection down without waiting for
+  # a send in progress on another thread, so the last frame can be cut
+  # between its header and its payload.
+  sdkFrames = pkgs.writeShellScript "sdk-frames" ''
+    ${pkgs.coreutils}/bin/od -An -v -tu1 | ${pkgs.gawk}/bin/awk '
+      function u32(at) { return b[at] + 256 * b[at + 1] + 65536 * b[at + 2] + 16777216 * b[at + 3] }
+      { for (f = 1; f <= NF; f++) b[n++] = $f }
+      END {
+        for (i = 0; i < n; i += 16 + size) {
+          if (i + 16 > n) exit
+          if (b[i] != 79 || b[i + 1] != 82 || b[i + 2] != 71 || b[i + 3] != 66) exit 1
+          size = u32(i + 12)
+          if (i + 16 + size > n) exit
+          print u32(i + 4), u32(i + 8), size, (size >= 4 ? u32(i + 16) : "-")
+        }
+      }'
+  '';
+
+  # An SDK client that connects, waits for the first frame the server
+  # sends unasked, then sends REQUEST_PROTOCOL_VERSION offering protocol 6
+  # and closes its sending side. socat carries the connection between two
+  # FIFOs, so closing the request FIFO is what ends the request stream.
+  # Every byte the server sends lands in /tmp/idle.bin; the script exits
+  # with socat's status once the server closes the connection.
+  idleClient = pkgs.writeShellScript "sdk-idle-client" ''
+    set -eu
+    dir=$(${pkgs.coreutils}/bin/mktemp -d)
+    ${pkgs.coreutils}/bin/mkfifo "$dir/request" "$dir/replies"
+    ${pkgs.socat}/bin/socat -t 30 - TCP4:127.0.0.1:6742 < "$dir/request" > "$dir/replies" &
+    socat_pid=$!
+    exec 3> "$dir/request" 4< "$dir/replies"
+    ${pkgs.coreutils}/bin/dd bs=16 count=1 iflag=fullblock status=none <&4 > /tmp/idle.bin
+    printf 'ORGB\x00\x00\x00\x00\x28\x00\x00\x00\x04\x00\x00\x00\x06\x00\x00\x00' >&3
+    exec 3>&-
+    ${pkgs.coreutils}/bin/cat <&4 >> /tmp/idle.bin
+    wait "$socat_pid"
+  '';
+
   # nixpkgs' openrgb.service with the unit settings vogix.openrgb adds,
   # never started at boot. Restart=no and a start timeout make the failed
   # start observable.
@@ -123,26 +168,39 @@ pkgs.testers.runNixOSTest {
     CONFIG = "/var/lib/OpenRGB/OpenRGB.json"
     MAGIC = 1111970383  # "ORGB" as a little-endian u32
 
+    FRAMES = "${sdkFrames}"
+
+    def send(request):
+        # Sends one SDK request and prints the bytes the server sends on
+        # that connection. The server closes the connection once the
+        # request stream ends.
+        return f"printf {shlex.quote(request)} | socat -t 5 - TCP4:127.0.0.1:6742"
+
     def sdk(request):
-        # Sends one SDK request and prints the first reply frame's header
-        # and first data word as five u32s. Everything after those 20
-        # bytes is drained, so socat never writes into a closed pipe; the
-        # server closes the connection when the request stream ends.
-        return (
-            f"printf {shlex.quote(request)} | socat -t 5 - TCP4:127.0.0.1:6742"
-            " | { head -c 20 | od -An -tu4 -w20 | tr -s ' ' | sed 's/^ //'; cat > /dev/null; }"
-        )
+        # The frames of send(request), one line each (see sdkFrames).
+        return f"set -o pipefail; {send(request)} | {FRAMES}"
 
     # REQUEST_PROTOCOL_VERSION (40) offering protocol 6.
     VERSION = r"ORGB\x00\x00\x00\x00\x28\x00\x00\x00\x04\x00\x00\x00\x06\x00\x00\x00"
     # REQUEST_CONTROLLER_COUNT (0); unnegotiated, so the reply is the count alone.
     COUNT = r"ORGB\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    # REQUEST_RESCAN_DEVICES (140).
+    RESCAN = r"ORGB\x00\x00\x00\x00\x8c\x00\x00\x00\x00\x00\x00\x00"
 
-    def sdk_ping():
-        return sdk(VERSION) + f" | grep -q '^{MAGIC} 0 40 4 '"
+    def reply(request, pkt_id):
+        # Prints the first frame with the reply's pkt_id. The server sends
+        # DEVICE_LIST_UPDATED (100) to every connected client whenever
+        # detection registers a controller, negotiated or not, so other
+        # frames can come before the reply.
+        return sdk(request) + f" | awk '$2 == {pkt_id} && !seen++'"
 
     def reply_is(request, words):
-        return sdk(request) + f" | grep -qx '{MAGIC} {words}'"
+        # The reply is exactly `words` (dev_id pkt_id pkt_size first_u32).
+        return reply(request, words.split()[1]) + f" | grep -qx '{words}'"
+
+    def sdk_ping():
+        # A PROTOCOL_VERSION reply at any version.
+        return reply(VERSION, 40) + " | grep -q '^0 40 4 '"
 
     start_all()
 
@@ -159,6 +217,31 @@ pkgs.testers.runNixOSTest {
         for _ in range(5):
             server.succeed("systemctl restart openrgb.service && ss -Hltn 'sport = :6742' | grep -q LISTEN")
             server.succeed(sdk_ping())
+
+    with subtest("the version reply is found behind the device list updates of a rescan"):
+        # A connected client that has not asked for anything receives a
+        # DEVICE_LIST_UPDATED for each controller a detection clears or
+        # registers. The idle client sends its version request only once
+        # the first of them has arrived. A rescan the server ignores (one
+        # is already running) or that runs before the idle client is
+        # accepted leaves /tmp/idle.bin empty, and the rescan is repeated.
+        server.succeed("rm -f /tmp/idle.bin && systemd-run --unit=sdk-idle -p RemainAfterExit=yes ${idleClient}")
+        server.wait_until_succeeds(f"{send(RESCAN)} > /dev/null && test -s /tmp/idle.bin")
+        server.wait_until_fails("systemctl show -p SubState --value sdk-idle.service | grep -qx running")
+        result = server.succeed("systemctl show -p Result --value sdk-idle.service").strip()
+        assert result == "success", result
+        frames = server.succeed(f"{FRAMES} < /tmp/idle.bin").splitlines()
+        ids = [frame.split()[1] for frame in frames]
+        assert "40" in ids, frames
+        version_at = ids.index("40")
+        assert frames[version_at] == "0 40 4 6", frames
+        assert "100" in ids[:version_at], frames
+        # The first 20 bytes of that stream are not the version reply.
+        server.fail(
+            "head -c 20 /tmp/idle.bin | od -An -tu4 -w20 | tr -s ' ' | sed 's/^ //'"
+            f" | grep -q '^{MAGIC} 0 40 4 '"
+        )
+        server.succeed("systemctl stop sdk-idle.service")
 
     with subtest("the declared Debug devices are the server's controllers, at protocol 6"):
         server.wait_until_succeeds(reply_is(COUNT, "0 0 4 3"))
