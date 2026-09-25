@@ -15,11 +15,16 @@ jobs:
   devenv-checks:
     name: Lint/UT
     runs-on: ubuntu-latest
-    # Skip CI for release-please PRs and release merges (only version bumps)
+    # Skip CI for release-please PRs and release merges (only version bumps).
+    # A release merge is recognised by its subject, which every merge method
+    # keeps; the release-please branch name appears only in a merge commit.
     if: |
       !(
         (github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, 'chore(master): release')) ||
-        (github.event_name == 'push' && contains(github.event.head_commit.message, 'release-please--branches--master'))
+        (github.event_name == 'push' && (
+          startsWith(github.event.head_commit.message, 'chore(master): release') ||
+          contains(github.event.head_commit.message, 'release-please--branches--master')
+        ))
       )
     steps:
       - name: Checkout code
