@@ -11,6 +11,10 @@ permissions:
   pull-requests: write
   actions: write
 
+env:
+  # The file:// binary cache every job substitutes from (.github/scripts/nix-cache.sh).
+  NIX_BINARY_CACHE: /home/runner/.cache/nix-binary-cache
+
 jobs:
   devenv-checks:
     name: Lint/UT
@@ -33,22 +37,31 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
         with:
+          # The file:// cache holds only unsigned paths, written by this
+          # workflow's master runs; `trusted` admits them without a signature.
+          # fallback: a path the cache cannot supply is built instead.
           extra-conf: |
-            extra-substituters = https://nix-community.cachix.org https://cache.nixos.org https://devenv.cachix.org
+            extra-substituters = file://${{ env.NIX_BINARY_CACHE }}?trusted=1&priority=10 https://nix-community.cachix.org https://cache.nixos.org https://devenv.cachix.org
             extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
+            fallback = true
 
-      - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v7
+      # The devenv shell's unsigned paths (the Rust toolchain rust-overlay
+      # assembles), keyed on what defines the shell.
+      - name: Restore Nix binary cache
+        id: nix-cache
+        uses: actions/cache/restore@v6
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          # Limit store size to 2GB before saving
-          gc-max-store-size-linux: 2G
+          path: ${{ env.NIX_BINARY_CACHE }}
+          key: nix-devenv-${{ hashFiles('devenv.nix', 'devenv.yaml', 'devenv.lock', 'nix/rust.nix') }}
+          restore-keys: nix-devenv-
 
+      # cargo's registry and target/ for `devenv test`, keyed on Cargo.lock
+      # (with the toolchain and job), written from master only.
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
 
       - name: Install devenv
         run: nix profile install nixpkgs#devenv
@@ -56,10 +69,61 @@ jobs:
       - name: Run format & lint checks
         run: devenv test
 
-  nix-checks:
-    name: Integration
+      - name: Export the devenv shell's unsigned paths
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.nix-cache.outputs.cache-hit != 'true'
+        # The shell's current paths replace the restored cache. The Nix daemon
+        # (root) owns what it created in that directory while substituting.
+        run: |
+          mapfile -t roots < <(readlink -f .devenv/profile .devenv/gc/*)
+          .github/scripts/nix-cache.sh export-closure "$RUNNER_TEMP/devenv-cache" "${roots[@]}"
+          sudo rm -rf "$NIX_BINARY_CACHE"
+          mv "$RUNNER_TEMP/devenv-cache" "$NIX_BINARY_CACHE"
+
+      - name: Save Nix binary cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.nix-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.NIX_BINARY_CACHE }}
+          key: ${{ steps.nix-cache.outputs.cache-primary-key }}
+
+      - name: Purge older devenv caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.nix-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ steps.nix-cache.outputs.cache-primary-key }}
+        run: |
+          gh cache list --ref refs/heads/master --key nix-devenv- --limit 100 --json id,key \
+            --jq ".[] | select(.key != \"$KEEP\") | .id" | xargs -r -n1 gh cache delete
+
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
-    needs: devenv-checks
+    # The same skip as Lint/UT: the Integration jobs need this one.
+    if: |
+      !(
+        (github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, 'chore(master): release')) ||
+        (github.event_name == 'push' && (
+          startsWith(github.event.head_commit.message, 'chore(master): release') ||
+          contains(github.event.head_commit.message, 'release-please--branches--master')
+        ))
+      )
+    outputs:
+      matrix: ${{ steps.groups.outputs.matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Group the checks
+        id: groups
+        run: echo "matrix=$(.github/scripts/check-groups.sh)" >> "$GITHUB_OUTPUT"
+
+  evaluate:
+    name: Evaluate
+    runs-on: ubuntu-latest
+    needs: plan
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -70,28 +134,48 @@ jobs:
           extra-conf: |
             extra-substituters = https://nix-community.cachix.org https://cache.nixos.org
             extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            # One derivation at a time, each with every core. Concurrent builds
-            # of OpenRGB, quickshell and vogix (each running a compiler per
-            # core) exhaust the hosted runner's memory, and a VM suite reserves
-            # up to 4 GiB on top.
+
+      # Every flake output, as `nix flake check` checks it (modules,
+      # overlays, packages, apps, the test VM's configuration), and every
+      # check's instantiation-time assertions. The Integration jobs build
+      # the checks.
+      - name: Run nix flake check --no-build
+        run: nix flake check --no-build
+
+  nix-checks:
+    name: Integration (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            extra-substituters = file://${{ env.NIX_BINARY_CACHE }}?trusted=1&priority=10 https://nix-community.cachix.org https://cache.nixos.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            fallback = true
+            # One derivation at a time, each with all 4 cores. A group
+            # compiles vogix, and the desktop, openrgb and desktop-hyprland
+            # groups also quickshell or OpenRGB: two of these compiling at
+            # once, a compiler per core each, exceed the runner's 16 GB. The
+            # VM suites run one at a time with the cores they declare, as
+            # they did on one runner. Parallelism comes from the matrix.
             max-jobs = 1
 
-      - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v7
+      # Written by the Save job on master; a pull request reads master's.
+      - name: Restore Nix binary cache
+        uses: actions/cache/restore@v6
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          # Limit store size to 2GB before saving
-          gc-max-store-size-linux: 2G
-          # Purge caches older than 7 days
-          purge: true
-          purge-prefixes: nix-${{ runner.os }}-
-          purge-created: 604800
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
+          path: ${{ env.NIX_BINARY_CACHE }}
+          key: nix-checks-${{ github.sha }}
+          restore-keys: nix-checks-
 
       - name: Enable KVM (for VM tests)
         run: |
@@ -109,8 +193,109 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
-      - name: Run nix flake check
-        run: nix flake check --print-build-logs
+      - name: Build the checks
+        env:
+          CHECKS: ${{ matrix.checks }}
+        # Each check is evaluated once: its derivation is built here and its
+        # build graph read from it by the export below.
+        run: |
+          installables=()
+          for check in $CHECKS; do installables+=(".#checks.x86_64-linux.$check"); done
+          nix path-info --derivation "${installables[@]}" | sed 's/$/^*/' > "$RUNNER_TEMP/checks"
+          mapfile -t drvs < "$RUNNER_TEMP/checks"
+          nix build --no-link --print-build-logs --keep-going "${drvs[@]}"
+
+      # The unsigned paths of this group's build graph that the restored
+      # cache lacks, for the Save job to merge.
+      - name: Export new unsigned paths
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          NIX_CACHE_BASE: ${{ env.NIX_BINARY_CACHE }}
+        run: |
+          mapfile -t drvs < "$RUNNER_TEMP/checks"
+          .github/scripts/nix-cache.sh export "$RUNNER_TEMP/export" "${drvs[@]}"
+
+      - name: Upload new unsigned paths
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: nix-export-${{ matrix.group }}
+          path: ${{ runner.temp }}/export
+          retention-days: 1
+          if-no-files-found: ignore
+          compression-level: 0
+
+  save-nix-cache:
+    name: Save Nix cache
+    runs-on: ubuntu-latest
+    needs: [plan, nix-checks]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # One save at a time, so each purge keeps the entry its own run wrote.
+    concurrency:
+      group: save-nix-cache
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            extra-substituters = https://nix-community.cachix.org https://cache.nixos.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
+      - name: Restore Nix binary cache
+        id: restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.NIX_BINARY_CACHE }}
+          key: nix-checks-${{ github.sha }}
+          restore-keys: nix-checks-
+
+      - name: List the restored entries
+        run: |
+          mkdir -p "$NIX_BINARY_CACHE"
+          find "$NIX_BINARY_CACHE" -maxdepth 1 -name '*.narinfo' -printf '%f\n' | sort > "$RUNNER_TEMP/before"
+
+      - name: Download new unsigned paths
+        uses: actions/download-artifact@v8
+        with:
+          pattern: nix-export-*
+          path: ${{ env.NIX_BINARY_CACHE }}
+          merge-multiple: true
+
+      # The cache keeps what the current checks' build graph contains, and
+      # nothing an older commit's graph alone contained.
+      - name: Merge and prune
+        id: merge
+        run: |
+          checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames | jq -r '.[] | ".#checks.x86_64-linux.\(.)"')
+          # shellcheck disable=SC2086
+          .github/scripts/nix-cache.sh graph $checks > "$RUNNER_TEMP/graph"
+          .github/scripts/nix-cache.sh prune "$NIX_BINARY_CACHE" "$RUNNER_TEMP/graph"
+          find "$NIX_BINARY_CACHE" -maxdepth 1 -name '*.narinfo' -printf '%f\n' | sort > "$RUNNER_TEMP/after"
+          if cmp -s "$RUNNER_TEMP/before" "$RUNNER_TEMP/after"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save Nix binary cache
+        if: steps.merge.outputs.changed == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.NIX_BINARY_CACHE }}
+          key: nix-checks-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Purge older Integration caches
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: nix-checks-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gh cache list --ref refs/heads/master --key nix-checks- --limit 100 --json id,key \
+            --jq ".[] | select(.key != \"$KEEP\") | .id" | xargs -r -n1 gh cache delete
 
   release-please:
     name: Release
@@ -118,13 +303,17 @@ jobs:
     # Run on push to master, regardless of whether CI was skipped (release merges) or passed (regular merges).
     # !cancelled() is what lets the result tests below decide: without a status
     # function GitHub adds success(), which is false once a needed job is skipped.
+    # nix-checks is the whole matrix: its result is success only when every
+    # group succeeded.
     if: |
       !cancelled() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       (needs.devenv-checks.result == 'success' || needs.devenv-checks.result == 'skipped') &&
+      (needs.plan.result == 'success' || needs.plan.result == 'skipped') &&
+      (needs.evaluate.result == 'success' || needs.evaluate.result == 'skipped') &&
       (needs.nix-checks.result == 'success' || needs.nix-checks.result == 'skipped')
-    needs: [devenv-checks, nix-checks]
+    needs: [devenv-checks, plan, evaluate, nix-checks]
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
