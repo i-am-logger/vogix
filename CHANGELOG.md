@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1](https://github.com/i-am-logger/vogix/compare/vogix-v0.12.0...vogix-v0.12.1) (2026-09-26)
+
+
+### Miscellaneous Chores
+
+* release 0.12.1 ([88bb5c7](https://github.com/i-am-logger/vogix/commit/88bb5c78cc514ec23d256bd957f50cfa938c5e76))
+
 ## [0.12.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.11.0...vogix-v0.12.0) (2026-09-25)
 
 
