@@ -1,0 +1,9 @@
+{
+  "desktop-hyprland": ["desktop-hyprland"],
+  "openrgb": ["machine-release", "openrgb-readiness"],
+  "desktop": ["desktop-backgrounds", "desktop-logic", "desktop-qmllint", "desktop-runtime", "desktop-smoke", "desktop-taps"],
+  "vm-1": ["architecture", "cli", "input-engine", "navigation"],
+  "vm-2": ["runtime-size", "scheme-switching", "session", "smoke"],
+  "vm-3": ["state", "stress", "templates", "theme-switching"],
+  "eval": ["appearance-options", "console-palette", "desktop-options", "login-profile", "machine-contract", "machine-contract-validate", "nix-unit"]
+}
