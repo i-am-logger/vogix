@@ -115,8 +115,11 @@ jobs:
   release-please:
     name: Release
     runs-on: ubuntu-latest
-    # Run on push to master, regardless of whether CI was skipped (release merges) or passed (regular merges)
+    # Run on push to master, regardless of whether CI was skipped (release merges) or passed (regular merges).
+    # !cancelled() is what lets the result tests below decide: without a status
+    # function GitHub adds success(), which is false once a needed job is skipped.
     if: |
+      !cancelled() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/master' &&
       (needs.devenv-checks.result == 'success' || needs.devenv-checks.result == 'skipped') &&
