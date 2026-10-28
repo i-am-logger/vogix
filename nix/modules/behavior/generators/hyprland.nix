@@ -151,7 +151,7 @@ let
         input = {
           kb_layout = inputCfg.kbLayout or "us";
           kb_options = inputCfg.kbOptions or "";
-          repeat_delay = inputCfg.repeatDelay or 200;
+          repeat_delay = inputCfg.repeatDelay or 600;
           sensitivity = inputCfg.sensitivity or 0.0;
           left_handed = inputCfg.leftHanded or false;
           natural_scroll = if inputCfg.naturalScroll or true then "yes" else "no";
@@ -268,7 +268,7 @@ let
           input = {
             kb_layout = inputCfg.kbLayout or "us";
             kb_options = inputCfg.kbOptions or "";
-            repeat_delay = inputCfg.repeatDelay or 200;
+            repeat_delay = inputCfg.repeatDelay or 600;
             sensitivity = inputCfg.sensitivity or 0.0;
             left_handed = inputCfg.leftHanded or false;
             natural_scroll = inputCfg.naturalScroll or true;
