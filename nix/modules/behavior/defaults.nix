@@ -42,7 +42,11 @@ rec {
   # theme system, so they default neutral here; a consumer (mynixos) wires them
   # from its per-user input options.
   input = {
-    repeatDelay = 200;
+    # Milliseconds a key must be held before auto-repeat starts. An ordinary
+    # keypress runs 70-150ms, so a delay anywhere near that turns a
+    # slower-than-usual press into a repeat and the character lands twice.
+    # 600 is Hyprland's own default and clears the typing range.
+    repeatDelay = 600;
     sensitivity = 0.0;
     naturalScroll = true;
     leftHanded = false;
