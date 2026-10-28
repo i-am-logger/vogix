@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.3](https://github.com/i-am-logger/vogix/compare/vogix-v0.12.2...vogix-v0.12.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **behavior:** raise repeatDelay so a slow keypress is not a repeat ([#209](https://github.com/i-am-logger/vogix/issues/209)) ([22b1a9a](https://github.com/i-am-logger/vogix/commit/22b1a9a2ebc1752c8dc59b6f8a3735dfc49031fa))
+
 ## [0.12.2](https://github.com/i-am-logger/vogix/compare/vogix-v0.12.1...vogix-v0.12.2) (2026-09-26)
 
 
