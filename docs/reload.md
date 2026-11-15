@@ -57,7 +57,9 @@ Adding support for a new application only requires adding its reload configurati
 command = """/nix/store/…-vogix/bin/vogix greeter sync"""
 ```
 
-On every theme apply (`theme set`, `refresh`, `undo`, `redo`) the CLI runs all hooks in parallel, each as `sh -c` with every `{{slot}}` placeholder (e.g. `{{base01}}`, `{{active}}`) replaced by that slot's colour as `rrggbb`. A hook that cannot start or exits non-zero is reported and does not fail the apply.
+On every theme apply (`theme set`, `refresh`, `undo`, `redo`) the CLI runs all hooks in parallel, each as `sh -c` with every `{{slot}}` placeholder (e.g. `{{base01}}`, `{{active}}`) replaced by that slot's colour as `rrggbb`, and `{{polarity}}` by the variant's polarity (`dark` or `light`, from the `config.toml` manifest). A hook that cannot start or exits non-zero is reported and does not fail the apply.
+
+`programs.vogix.colorScheme.enable` adds a `color-scheme` hook that writes `'prefer-{{polarity}}'` to dconf `/org/gnome/desktop/interface/color-scheme`; the XDG desktop portal reports it as `org.freedesktop.appearance` `color-scheme`, which Chromium-based browsers and GTK/libadwaita apps follow.
 
 Hooks run as the user, for that user's own applies. Hardware that belongs to
 the machine (RGB LEDs, cooler rings) is not a hook: it is declared with the

@@ -320,7 +320,8 @@
           # RemainAfterExit, wanted by and ordered after
           # graphical-session.target, running the profile's
           # `vogix theme refresh` at its log level; config.toml carries the
-          # apply hooks (the greeter's included) as [hooks."<name>"] tables
+          # apply hooks (the greeter's and colorScheme's dconf write
+          # included) as [hooks."<name>"] tables
           # and no [hardware.*] table. Checked at instantiation, so
           # `--no-build` covers it.
           login-profile =
@@ -349,6 +350,7 @@
                         };
                         logLevel = "debug";
                         greeter.sync = true;
+                        colorScheme.enable = true;
                         themeApply.probe = "printf %s {{base01}}";
                         enableDaemon = false;
                       };
@@ -377,6 +379,9 @@
                 && lib.hasInfix ''
                 [hooks."probe"]
                 command = """printf %s {{base01}}"""''
+                setup
+                && lib.hasInfix ''[hooks."color-scheme"]'' setup
+                && lib.hasInfix ''/bin/dconf write /org/gnome/desktop/interface/color-scheme "'prefer-{{polarity}}'""""''
                 setup
                 && !(lib.hasInfix "[hardware" setup);
             in

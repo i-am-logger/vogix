@@ -533,9 +533,17 @@ in
       # (warn-only by design — a broken greeter sync never fails a theme
       # switch). The verb copies theme.json + the current background into
       # /var/lib/vogix/greeter for the SDDM theme's XHR read.
-      programs.vogix.themeApply = lib.mkIf cfg.greeter.sync {
-        greeter = "${cfg.package}/bin/vogix greeter sync";
-      };
+      programs.vogix.themeApply = lib.mkMerge [
+        (lib.mkIf cfg.greeter.sync {
+          greeter = "${cfg.package}/bin/vogix greeter sync";
+        })
+        # Desktop light/dark preference: the portal's appearance color-scheme
+        # reads this key. vogix-theme-restore's `vogix theme refresh` reruns
+        # the hook at every graphical session start, so no activation seed.
+        (lib.mkIf cfg.colorScheme.enable {
+          color-scheme = "${pkgs.dconf}/bin/dconf write /org/gnome/desktop/interface/color-scheme \"'prefer-{{polarity}}'\"";
+        })
+      ];
 
       # Create theme symlinks in ~/.local/share/vogix/themes/
       xdg.dataFile = lib.mkMerge [

@@ -502,7 +502,12 @@ fn execute_side_effects(
                                 warn!("Theme axiom: {}", failure);
                             }
 
-                            reload_dispatcher.run_apply_hooks(config, &colors, *quiet);
+                            let polarity = theme::variant_polarity(
+                                &state.current_scheme,
+                                &state.current_theme,
+                                &state.current_variant,
+                            );
+                            reload_dispatcher.run_apply_hooks(config, &colors, &polarity, *quiet);
                             Some(colors)
                         }
                         Err(e) => {

@@ -228,7 +228,8 @@ in
         rendered into config.toml as `[hooks."<name>"]`. Keys are hook names;
         values are shell commands in which each `{{slot}}` placeholder (e.g.
         `{{base01}}`, `{{active}}`) is replaced by that slot's colour as
-        `rrggbb`. The hooks run in parallel, and one that fails is reported
+        `rrggbb`, and `{{polarity}}` by the variant's polarity (`dark` or
+        `light`). The hooks run in parallel, and one that fails is reported
         without failing the apply. They run as the user, for the user's own
         applies only; machine hardware (LEDs, coolers) is declared through
         the NixOS option `vogix.hardware.devices` and follows the machine
@@ -244,6 +245,20 @@ in
           switch (`vogix greeter sync` through the themeApply hook), so the
           SDDM greeter shows the CURRENT palette instead of the build-time
           one. Needs the host's vogix.greeter.enable (the drop zone)'';
+      };
+    };
+
+    colorScheme = mkOption {
+      default = { };
+      description = "The desktop-wide light/dark preference.";
+      type = types.submodule {
+        options.enable = mkEnableOption ''
+          writing the theme's polarity to the GNOME color-scheme
+          (dconf /org/gnome/desktop/interface/color-scheme, as `prefer-dark`
+          or `prefer-light`) on every theme apply, through the themeApply
+          hook. The XDG desktop portal reports it as
+          org.freedesktop.appearance color-scheme, which Chromium-based
+          browsers and libadwaita/GTK apps follow'';
       };
     };
 

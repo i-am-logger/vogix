@@ -46,24 +46,8 @@ pub fn render_to_cache(
     let colors = theme::load_theme_colors(&variant_path, *scheme)?;
 
     // The theme identity for `meta.*` template variables (the vogix-desktop
-    // theme.json contract embeds it). Polarity is read from the config.toml
-    // manifest — the SAME value the Nix render layer wrote there — so the two
-    // layers cannot disagree on it; the "dark" fallback mirrors the Nix
-    // side's `variantData.polarity or "dark"`.
-    let polarity = crate::theme::discover_themes()
-        .ok()
-        .and_then(|themes| {
-            themes
-                .into_iter()
-                .find(|t| t.name == theme && t.scheme == *scheme)
-        })
-        .and_then(|t| {
-            t.variants
-                .into_iter()
-                .find(|v| v.name == variant)
-                .map(|v| v.polarity)
-        })
-        .unwrap_or_else(|| "dark".to_string());
+    // theme.json contract embeds it).
+    let polarity = theme::variant_polarity(scheme, theme, variant);
     let meta = std::collections::HashMap::from([
         ("theme".to_string(), theme.to_string()),
         ("variant".to_string(), variant.to_string()),
