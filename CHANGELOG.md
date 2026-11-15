@@ -5,6 +5,14 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.13.0...vogix-v0.14.0) (2026-11-15)
+
+
+### Features
+
+* **baud:** theme baud from the vogix palette ([#213](https://github.com/i-am-logger/vogix/issues/213)) ([7355214](https://github.com/i-am-logger/vogix/commit/7355214c57321ea284b51af817818ef9bb6c2d64))
+* **fcitx5:** classicui theme from the vogix palette ([#214](https://github.com/i-am-logger/vogix/issues/214)) ([510ce29](https://github.com/i-am-logger/vogix/commit/510ce2976bb8f67bf33f5aead2519224b2bcfd8c))
+
 ## [0.13.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.12.3...vogix-v0.13.0) (2026-11-15)
 
 
