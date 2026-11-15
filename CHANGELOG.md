@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.12.3...vogix-v0.13.0) (2026-11-15)
+
+
+### Features
+
+* **appearance:** write the GNOME color-scheme from the theme polarity ([#211](https://github.com/i-am-logger/vogix/issues/211)) ([8eda98b](https://github.com/i-am-logger/vogix/commit/8eda98b50e9b25c20c65ca438cd0e6863a4883c4))
+
 ## [0.12.3](https://github.com/i-am-logger/vogix/compare/vogix-v0.12.2...vogix-v0.12.3) (2026-10-28)
 
 
