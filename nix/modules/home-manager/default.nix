@@ -30,6 +30,7 @@ let
     flatten
     mapAttrsToList
     concatMapStringsSep
+    concatStringsSep
     optionalString
     ;
 
@@ -99,6 +100,21 @@ let
 
   # Apps that will be themed
   themedApps = builtins.filter (isAppEnabled config cfg) availableApps;
+
+  # Shell test that empties _vogix_palette (so the OSC push is skipped) in a
+  # terminal whose palette a themed app writes: by TERM_PROGRAM, or
+  # alacritty's own variable
+  configThemedTerminal =
+    let
+      programs = lib.optional (builtins.elem "baud" themedApps) "baud"
+        ++ lib.optional (builtins.elem "wezterm" themedApps) "WezTerm";
+    in
+    concatStringsSep "\n" (
+      lib.optional (programs != [ ])
+        ''case "''${TERM_PROGRAM:-}" in ${concatStringsSep "|" programs}) _vogix_palette= ;; esac''
+      ++ lib.optional (builtins.elem "alacritty" themedApps)
+        ''[ -n "''${ALACRITTY_WINDOW_ID:-}" ] && _vogix_palette=''
+    );
 
   # Default theme-variant for initial current-theme symlink
   defaultThemeVariant = "${acfg.theme}-${themeUtils.getVariantName selectedTheme acfg.variant}";
@@ -184,7 +200,11 @@ let
       app:
       let
         appModule = appGenerators.${app} or null;
-        configFileName = if appModule != null then appModule.configFile or "config" else "config";
+        # A multi-file app's first file stands for it as config_path
+        configFileName =
+          if appModule == null then "config"
+          else if appModule ? files then builtins.head appModule.files
+          else appModule.configFile or "config";
         themeFileName = if appModule != null then appModule.themeFile or null else null;
         reloadMethod =
           if appModule == null then null
@@ -603,7 +623,22 @@ in
               then "${config.xdg.dataHome}/${dataDir}"
               else "${config.xdg.configHome}/${app}";
             stateDir = "${config.xdg.stateHome}/vogix/current-theme/${app}";
+            # A multi-file app (baud) names every file it generates
+            appFiles = if appModule != null then appModule.files or null else null;
           in
+          if appFiles != null then
+            concatMapStringsSep "\n"
+              (path: ''
+                # Setup ${app}: ${path}
+                $DRY_RUN_CMD mkdir -p "$(dirname "${configDir}/${path}")"
+                _appFile="${configDir}/${path}"
+                if [ -L "$_appFile" ] || [ ! -e "$_appFile" ]; then
+                  $DRY_RUN_CMD ln -sfT "${stateDir}/${path}" "$_appFile"
+                  $VERBOSE_ECHO "Created symlink: $_appFile -> ${stateDir}/${path}"
+                fi
+              '')
+              appFiles
+          else
           ''
             # Setup ${app}
             $DRY_RUN_CMD mkdir -p "${configDir}"
@@ -633,11 +668,15 @@ in
     }
 
     # Apply ANSI 16 colors to terminal via OSC 4 sequences on every interactive shell
-    # Reads palette from current-theme/console/palette and sets colors 0-15
+    # Reads palette from current-theme/console/palette and sets colors 0-15.
+    # Not in a terminal whose palette vogix writes into its config: colours
+    # set by OSC hold for the life of the shell, so a theme switch would not
+    # reach its open windows.
     {
       programs.bash.initExtra = mkIf (config.programs.bash.enable or false) ''
         # Vogix: set terminal ANSI colors from theme palette
         _vogix_palette="''${XDG_STATE_HOME:-$HOME/.local/state}/vogix/current-theme/console/palette"
+        ${configThemedTerminal}
         if [ -f "$_vogix_palette" ]; then
           _i=0
           while IFS= read -r _color; do
@@ -657,6 +696,7 @@ in
       programs.zsh.initExtra = mkIf (config.programs.zsh.enable or false) ''
         # Vogix: set terminal ANSI colors from theme palette
         _vogix_palette="''${XDG_STATE_HOME:-$HOME/.local/state}/vogix/current-theme/console/palette"
+        ${configThemedTerminal}
         if [ -f "$_vogix_palette" ]; then
           _i=0
           while IFS= read -r _color; do

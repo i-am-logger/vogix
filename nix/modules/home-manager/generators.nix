@@ -81,6 +81,7 @@ let
     , colors
     , scheme
     , meta
+    , palettes
     ,
     }:
     app:
@@ -105,17 +106,31 @@ let
         # A generator written as `{ colors, meta }:` additionally receives the
         # theme identity (theme/variant/scheme/polarity) — the callPackage
         # idiom, detected with functionArgs. Existing `colors:` generators are
-        # untouched.
+        # untouched. One written as `{ colors, meta, palettes }:` also gets
+        # `palettes.dark` and `palettes.light`: the theme's colours for each
+        # polarity, this variant's for its own.
+        generatorArgs = builtins.functionArgs generator;
         generatedOutput =
-          if builtins.functionArgs generator ? meta
-          then generator { inherit colors meta; }
+          if generatorArgs ? meta || generatorArgs ? palettes
+          then generator { inherit colors meta palettes; }
           else generator colors;
+        isMultiFile = builtins.isAttrs generatedOutput && generatedOutput ? files;
         isHybrid = builtins.isAttrs generatedOutput && generatedOutput ? themeFile;
         isSettingsBased = settingsPath != null && !isHybrid;
         themeFileName = if appModule != null then appModule.themeFile or null else null;
       in
-      # Three cases: hybrid (theme+settings), settings-only, or theme-file-only
-      if isHybrid then
+      # Four cases: multi-file, hybrid, settings-only, or theme-file-only
+      if isMultiFile then
+      # MULTI-FILE app (baud): one file per `files` entry, path -> text
+        concatMapStringsSep "\n"
+          (path: ''
+            mkdir -p "$out/${app}/${dirOf path}"
+            cat > "$out/${app}/${path}" <<'EOF'
+            ${generatedOutput.files.${path}}
+            EOF
+          '')
+          (builtins.attrNames generatedOutput.files)
+      else if isHybrid then
       # HYBRID app (bat, btop): Generate BOTH theme file AND config file with merged settings
         let
           themeFileDir = dirOf themeFileName;
@@ -244,6 +259,20 @@ let
                 inherit scheme;
                 polarity = variantData.polarity or "dark";
               };
+              # Each polarity's colours, for apps that carry both (baud
+              # follows the desktop's light/dark itself): this variant for
+              # its own polarity, the theme's default variant for the other,
+              # and this variant again when the theme has none.
+              colorsOf = v: if scheme == "vogix16" then semanticColors v.colors else v.colors;
+              paletteFor = polarity:
+                if polarity == meta.polarity then colors
+                else
+                  let other = theme.variants.${theme.defaults.${polarity} or ""} or null;
+                  in if other != null && (other.polarity or "dark") == polarity then colorsOf other else colors;
+              palettes = {
+                dark = paletteFor "dark";
+                light = paletteFor "light";
+              };
             in
             pkgs.runCommand "vogix-theme-${themeVariantName}" { } ''
               mkdir -p $out
@@ -253,6 +282,7 @@ let
                   colors
                   scheme
                   meta
+                  palettes
                   ;
               }) themedApps}
               ${backgroundsSetup}
