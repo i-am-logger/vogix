@@ -693,7 +693,7 @@ in
         unset _vogix_palette _i _color _hex _bg _fg
       '';
 
-      programs.zsh.initExtra = mkIf (config.programs.zsh.enable or false) ''
+      programs.zsh.initContent = mkIf (config.programs.zsh.enable or false) ''
         # Vogix: set terminal ANSI colors from theme palette
         _vogix_palette="''${XDG_STATE_HOME:-$HOME/.local/state}/vogix/current-theme/console/palette"
         ${configThemedTerminal}

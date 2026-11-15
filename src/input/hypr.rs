@@ -164,7 +164,7 @@ impl Hypr {
                 dated.push((mtime, sock));
             }
         }
-        dated.sort_by(|a, b| b.0.cmp(&a.0));
+        dated.sort_by_key(|d| std::cmp::Reverse(d.0));
         out.extend(dated.into_iter().map(|(_, sock)| sock));
         out
     }

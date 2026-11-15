@@ -22,8 +22,10 @@ pub fn handle_hypr(command: &HyprCommands) -> Result<()> {
                 ));
             }
             let pairs: Vec<(&str, &str)> = args
-                .chunks_exact(2)
-                .map(|kv| (kv[0].as_str(), kv[1].as_str()))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|[k, v]| (k.as_str(), v.as_str()))
                 .collect();
             hypr.set_keywords(&pairs).map_err(to_err)
         }

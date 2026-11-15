@@ -393,7 +393,7 @@
               # palette push skips the terminals whose config vogix writes
               oscSkip = ''case "''${TERM_PROGRAM:-}" in baud|WezTerm) _vogix_palette= ;; esac'';
               oscOk = lib.hasInfix oscSkip config.programs.bash.initExtra
-                && lib.hasInfix oscSkip (config.programs.zsh.initContent or config.programs.zsh.initExtra);
+                && lib.hasInfix oscSkip config.programs.zsh.initContent;
             in
             assert runningVogix == [ ] || throw "login shells run vogix from ${lib.concatStringsSep ", " runningVogix}";
             assert unitOk || throw "vogix-theme-restore is not a oneshot without RemainAfterExit, wanted by and after graphical-session.target, running `${refresh}` at RUST_LOG=vogix=debug: ${builtins.toJSON unit}";

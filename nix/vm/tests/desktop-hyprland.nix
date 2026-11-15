@@ -1,11 +1,11 @@
-# The desktop shell on a real compositor: Hyprland 0.56 on the VM's
+# The desktop shell on a real compositor: nixpkgs' Hyprland on the VM's
 # virtio-gpu (DRM backend, software-rendered), started by greetd the way
 # the hosts start it, with the home-manager vogix desktop, the input
-# engine, PipeWire + WirePlumber and the session bus. Three nodes boot in
+# engine, PipeWire + WirePlumber and the session bus. The nodes boot in
 # turn: `lua` runs Hyprland's Lua config provider and every gate below
-# but the last, `hyprlang` the legacy provider and the gates whose command
-# path differs between the two, and `luks` a root filesystem on LUKS for
-# the last.
+# but the last, `hyprlang` (only before Hyprland 0.57, which removed it)
+# the legacy provider and the gates whose command path differs between
+# the two, and `luks` a root filesystem on LUKS for the last.
 #
 # Input goes through the compositor as a user's would: pointer moves and
 # clicks over the virtual-pointer protocol (wlrctl), keys through QEMU's
@@ -57,6 +57,10 @@
 
 let
   inherit (pkgs) lib;
+
+  # Hyprland 0.57 removed the hyprlang config provider and its IPC; the
+  # `hyprlang` node runs only against an older Hyprland
+  hyprlangSupported = lib.versionOlder pkgs.hyprland.version "0.57";
 
   # A StatusNotifierItem with a one-entry menu, as Qt exports any tray
   # application's: the item and its menu over com.canonical.dbusmenu. The
@@ -119,7 +123,6 @@ let
         device = "/dev/mapper/cryptroot";
         fsType = "ext4";
       };
-      boot.initrd.systemd.enable = true;
       boot.initrd.luks.devices.cryptroot = {
         device = disk;
         keyFile = key;
@@ -269,8 +272,9 @@ pkgs.testers.nixosTest {
 
   nodes = {
     lua = node { dialect = "lua"; networkManager = true; };
-    hyprlang = node { dialect = "hyprlang"; networkManager = false; };
     luks = node { dialect = "lua"; networkManager = false; luks = true; };
+  } // lib.optionalAttrs hyprlangSupported {
+    hyprlang = node { dialect = "hyprlang"; networkManager = false; };
   };
 
   testScript = ''
@@ -900,6 +904,7 @@ pkgs.testers.nixosTest {
     gate("lua mode-border-reload", lambda: gate_mode_border_reload(lua_desktop))
     lua.shutdown()
 
+  '' + lib.optionalString hyprlangSupported ''
     hyprlang_desktop = Desktop(hyprlang, "hyprlang")
     hyprlang_desktop.boot()
     gate("hyprlang mode-border", lambda: gate_mode_border(hyprlang_desktop))
@@ -909,6 +914,7 @@ pkgs.testers.nixosTest {
     gate("hyprlang mode-border-stall", lambda: gate_mode_border_stall(hyprlang_desktop))
     gate("hyprlang mode-border-reload", lambda: gate_mode_border_reload(hyprlang_desktop))
     hyprlang.shutdown()
+  '' + ''
 
     luks_desktop = Desktop(luks, "lua")
     luks_desktop.boot()
