@@ -112,7 +112,7 @@ let
         generatorArgs = builtins.functionArgs generator;
         generatedOutput =
           if generatorArgs ? meta || generatorArgs ? palettes
-          then generator { inherit colors meta palettes; }
+          then generator (builtins.intersectAttrs generatorArgs { inherit colors meta palettes; })
           else generator colors;
         isMultiFile = builtins.isAttrs generatedOutput && generatedOutput ? files;
         isHybrid = builtins.isAttrs generatedOutput && generatedOutput ? themeFile;
