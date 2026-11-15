@@ -252,10 +252,17 @@ impl ReloadDispatcher {
     /// Run the user apply hooks, all in parallel.
     ///
     /// Each hook runs as its own `sh -c` child with every `{{slot}}`
-    /// placeholder replaced by that slot's colour without the '#'; the call
+    /// placeholder replaced by that slot's colour without the '#', and
+    /// `{{polarity}}` by the variant's polarity ("dark" or "light"); the call
     /// returns once every child has exited. A hook that cannot start or
     /// exits non-zero is reported and does not fail the apply.
-    pub fn run_apply_hooks(&self, config: &Config, colors: &HashMap<String, String>, quiet: bool) {
+    pub fn run_apply_hooks(
+        &self,
+        config: &Config,
+        colors: &HashMap<String, String>,
+        polarity: &str,
+        quiet: bool,
+    ) {
         if config.hooks.is_empty() {
             return;
         }
@@ -264,7 +271,7 @@ impl ReloadDispatcher {
             .hooks
             .iter()
             .map(|(name, hook)| {
-                let command = substitute_slots(&hook.command, colors);
+                let command = substitute_placeholders(&hook.command, colors, polarity);
                 let child = Command::new("sh")
                     .arg("-c")
                     .arg(&command)
@@ -316,6 +323,16 @@ fn signal_outcome(
         ))),
         _ => Ok(ReloadOutcome::Reloaded(format!("sent {signal} signal"))),
     }
+}
+
+/// `command` with its `{{slot}}` placeholders substituted and every
+/// `{{polarity}}` replaced by `polarity`.
+fn substitute_placeholders(
+    command: &str,
+    colors: &HashMap<String, String>,
+    polarity: &str,
+) -> String {
+    substitute_slots(command, colors).replace("{{polarity}}", polarity)
 }
 
 /// `command` with every `{{slot}}` placeholder of a known slot replaced by
@@ -497,7 +514,12 @@ mod tests {
         colors.insert("base00".to_string(), "#ff0000".to_string());
         colors.insert("base01".to_string(), "#333333".to_string());
 
-        ReloadDispatcher::new().run_apply_hooks(&config_with(HashMap::new(), hooks), &colors, true);
+        ReloadDispatcher::new().run_apply_hooks(
+            &config_with(HashMap::new(), hooks),
+            &colors,
+            "dark",
+            true,
+        );
         for name in ["first", "second"] {
             assert_eq!(std::fs::read_to_string(out(name)).unwrap(), "ff0000 333333");
         }
@@ -511,5 +533,40 @@ mod tests {
             substitute_slots("x {{base00}} {{nope}} {{base00}}", &colors),
             "x 262626 {{nope}} 262626"
         );
+    }
+
+    #[test]
+    fn polarity_placeholders_become_the_variant_polarity() {
+        let mut colors = HashMap::new();
+        colors.insert("base00".to_string(), "#262626".to_string());
+        assert_eq!(
+            substitute_placeholders(
+                "dconf write /k \"'prefer-{{polarity}}'\" {{base00}} {{polarity}}",
+                &colors,
+                "light"
+            ),
+            "dconf write /k \"'prefer-light'\" 262626 light"
+        );
+    }
+
+    #[test]
+    fn hooks_run_with_the_polarity_substituted() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("polarity");
+        let mut hooks = BTreeMap::new();
+        hooks.insert(
+            "color-scheme".to_string(),
+            ApplyHook {
+                command: format!("printf 'prefer-{{{{polarity}}}}' > {}", out.display()),
+            },
+        );
+
+        ReloadDispatcher::new().run_apply_hooks(
+            &config_with(HashMap::new(), hooks),
+            &HashMap::new(),
+            "light",
+            true,
+        );
+        assert_eq!(std::fs::read_to_string(out).unwrap(), "prefer-light");
     }
 }

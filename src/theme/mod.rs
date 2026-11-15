@@ -14,6 +14,7 @@ mod query;
 pub mod types;
 
 use crate::errors::{Result, VogixError};
+use crate::scheme::Scheme;
 use std::path::PathBuf;
 
 // Re-export public API
@@ -40,4 +41,25 @@ pub fn verify_theme_variant_exists(theme: &str, variant: &str) -> Result<PathBuf
     }
 
     Ok(theme_path)
+}
+
+/// The polarity ("dark" or "light") of a theme variant, read from the
+/// config.toml manifest — the SAME value the Nix render layer wrote there —
+/// so the two layers cannot disagree on it. The "dark" fallback mirrors the
+/// Nix side's `variantData.polarity or "dark"`.
+pub fn variant_polarity(scheme: &Scheme, theme: &str, variant: &str) -> String {
+    discover_themes()
+        .ok()
+        .and_then(|themes| {
+            themes
+                .into_iter()
+                .find(|t| t.name == theme && t.scheme == *scheme)
+        })
+        .and_then(|t| {
+            t.variants
+                .into_iter()
+                .find(|v| v.name == variant)
+                .map(|v| v.polarity)
+        })
+        .unwrap_or_else(|| "dark".to_string())
 }
