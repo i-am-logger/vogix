@@ -384,10 +384,22 @@
                 && lib.hasInfix ''/bin/dconf write /org/gnome/desktop/interface/color-scheme "'prefer-{{polarity}}'""""''
                 setup
                 && !(lib.hasInfix "[hardware" setup);
+              # baud watches the theme paths its config names, not the
+              # current-theme link above them: a switch is heard only
+              # through a touch of those named links
+              baudOk = lib.hasInfix ''[apps."baud"]'' setup
+                && lib.hasInfix ''touch -h "''${XDG_CONFIG_HOME:-$HOME/.config}/baud/themes/vogix-dark" "''${XDG_CONFIG_HOME:-$HOME/.config}/baud/themes/vogix-light"'' setup;
+              # Colours set by OSC outlive a theme switch, so the shell
+              # palette push skips the terminals whose config vogix writes
+              oscSkip = ''case "''${TERM_PROGRAM:-}" in baud|WezTerm) _vogix_palette= ;; esac'';
+              oscOk = lib.hasInfix oscSkip config.programs.bash.initExtra
+                && lib.hasInfix oscSkip (config.programs.zsh.initContent or config.programs.zsh.initExtra);
             in
             assert runningVogix == [ ] || throw "login shells run vogix from ${lib.concatStringsSep ", " runningVogix}";
             assert unitOk || throw "vogix-theme-restore is not a oneshot without RemainAfterExit, wanted by and after graphical-session.target, running `${refresh}` at RUST_LOG=vogix=debug: ${builtins.toJSON unit}";
             assert hooksOk || throw "config.toml does not carry the apply hooks as [hooks.\"<name>\"] tables, or still has a [hardware] table";
+            assert baudOk || throw "baud's reload does not touch -h its named theme links";
+            assert oscOk || throw "the shell palette push does not skip baud and WezTerm";
             pkgs.runCommand "vogix-login-profile" { } ''
               echo "login shells run nothing from vogix; vogix-theme-restore restores each graphical session"
               touch $out
