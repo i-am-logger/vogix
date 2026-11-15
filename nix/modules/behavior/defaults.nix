@@ -125,6 +125,7 @@ rec {
     # Ctrl+C/V in GUI apps. POSIX termios: bare Ctrl+C in a terminal = SIGINT.
     terminalClasses = [
       "kitty"
+      "org.baud.terminal"
       "org.wezfurlong.wezterm"
       "wezterm"
       "vogix-console"
