@@ -2,17 +2,9 @@
   description = "Vogix - Runtime theme management for NixOS";
 
   inputs = {
+    # The desktop shell's QML runtime is nixpkgs' quickshell (≥0.3.1, built
+    # against the same Qt as the rest of pkgs).
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # The desktop shell's QML runtime, pinned to the v0.3.1 tag: nixpkgs still
-    # carries 0.3.0, and 0.3.1 fixes "session lock crashes on sleep, wake,
-    # DPMS, and unlocking" — a lock-screen must not ride the older build.
-    # `follows` is required: upstream warns that quickshell built against a
-    # different nixpkgs than its Qt deps crashes. Drop this input when nixpkgs
-    # reaches ≥0.3.1.
-    quickshell = {
-      url = "git+https://git.outfoxxed.me/quickshell/quickshell?ref=refs/tags/v0.3.1";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -178,15 +170,12 @@
       # (`services.hardware.openrgb.package = vogix.lib.openrgbPatched pkgs;`).
       lib.openrgbPatched = pkgs: pkgs.callPackage ./nix/packages/openrgb.nix { };
 
-      # Overlay to make vogix (and the desktop shell's QML runtime) available
-      # in pkgs. quickshell's own overlay is COMPOSED — its package is built
-      # against the consumer's final pkgs, never re-exported as a foreign
-      # instance, so its Qt deps always match the host nixpkgs (upstream warns
-      # a mismatch crashes).
-      overlays.default = final: prev:
-        (inputs.quickshell.overlays.default final prev) // {
-          inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
-        };
+      # Overlay to make vogix and the desktop shell's packages available in
+      # pkgs. The shell runs on the host nixpkgs' own quickshell, so its Qt
+      # deps always match (upstream warns a mismatch crashes).
+      overlays.default = _final: prev: {
+        inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
+      };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)
       overlays.liquidctl = _final: prev: {
@@ -670,7 +659,7 @@
             in
             pkgs.runCommand "vogix-desktop-qmllint"
               {
-                nativeBuildInputs = [ pkgs.qt6.qtdeclarative ];
+                nativeBuildInputs = [ pkgs.qt6.qtdeclarative pkgs.perl ];
                 qml = qsPkgs.vogix-desktop-qml;
                 qsQml = "${qsPkgs.quickshell}/lib/qt-6/qml";
                 mmQml = "${pkgs.qt6.qtmultimedia}/lib/qt-6/qml";
@@ -680,6 +669,16 @@
               # where qs/ IS the package.
               mkdir lintroot
               ln -s "$qml" lintroot/qs
+              # Qt 6.12's qmltyperegistrar writes an opaque, member-less stub
+              # into each module's qmltypes for every type another module
+              # defines (`Component { isTypeOpaque: true; name: "QuickshellScreenInfo"; … }`),
+              # and qmllint resolves the stub over the real type. Lint against
+              # a copy without the stubs, so every type keeps its members.
+              cp -r "$qsQml" qsqml
+              chmod -R u+w qsqml
+              find qsqml -name '*.qmltypes' -print0 \
+                | xargs -0 perl -0pi -e 's/\n *Component \{\s*isTypeOpaque: true[^{}]*\}//g'
+              qsQml=$PWD/qsqml
               find $qml -name '*.qml' -print0 | xargs -0 qmllint \
                 -I "$qsQml" -I "$mmQml" -I "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml" -I "$PWD/lintroot" \
                 --unused-imports warning --uncreatable-type disable --unresolved-type disable \

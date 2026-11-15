@@ -16,8 +16,8 @@ that drive it are in the [CLI reference](cli.md#desktop).
 
 ## Enabling it
 
-The shell needs three pieces from the vogix flake: the overlay (it brings the
-pinned quickshell 0.3.1 and the shell's QML package), the NixOS module (the
+The shell needs three pieces from the vogix flake: the overlay (the shell's
+QML package; quickshell itself is nixpkgs' own, 0.3.1 or later), the NixOS module (the
 lock's PAM service, the lock handler, UPower and power-profiles-daemon), and
 the home-manager option.
 
