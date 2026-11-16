@@ -18,6 +18,10 @@ FrameCell {
 
     property BarAxis axis: null
     readonly property bool vertical: axis?.vertical ?? false
+    // The fcitx5 engine in use, or "" while the keyboard is (or fcitx5 is
+    // absent): while there is one it is the lit label, and the xkb layouts
+    // under it dim.
+    readonly property string engine: Fcitx.chip("")
 
     title: "LANG"
     padH: 10
@@ -34,7 +38,8 @@ FrameCell {
             BarText {
                 required property string modelData
                 required property int index
-                readonly property bool active: KbLayout.layouts.length > 0
+                readonly property bool active: Fcitx.chip("") === ""
+                    && KbLayout.layouts.length > 0
                     && index === KbLayout.activeIndex
 
                 Layout.alignment: Qt.AlignCenter
@@ -45,6 +50,15 @@ FrameCell {
                     ? Tokens.color("bar", "foreground")
                     : Tokens.color("bar", "muted")
             }
+        }
+
+        BarText {
+            Layout.alignment: Qt.AlignCenter
+            visible: root.engine !== ""
+            text: root.engine.toUpperCase()
+            font.pixelSize: Metrics.bodySmall
+            font.bold: true
+            color: Tokens.color("bar", "foreground")
         }
 
         // Lit/dim rather than shown/hidden: a cell that changes width every
@@ -65,5 +79,5 @@ FrameCell {
     }
 
     interactive: true
-    onClicked: KbLayout.next()
+    onClicked: Fcitx.click()
 }

@@ -141,6 +141,8 @@ ShellRoot {
         }
         function dndStatus(): string { return Notifs.dnd ? "on" : "off"; }
         function count(): int { return Notifs.popups.length; }
+        // Each card's buttons, default action and icon source, as JSON.
+        function cards(): string { return Notifs.cards(); }
     }
 
     IpcHandler {
@@ -225,7 +227,9 @@ ShellRoot {
     IpcHandler {
         target: "keyboard"
 
-        function status(): string { return KbLayout.status(); }
+        function status(): string { return KbLayout.status() + Fcitx.status(); }
+        // What a click on the LANG chip does: "toggle" (fcitx5) or "xkb-next".
+        function click(): string { return Fcitx.click(); }
     }
 
     IpcHandler {

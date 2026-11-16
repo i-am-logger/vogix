@@ -11,6 +11,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
 import qs.Vogix
+import "lib/notifs.js" as NotifsLib
 
 Singleton {
     id: root
@@ -40,6 +41,10 @@ Singleton {
         id: server
         bodySupported: true
         persistenceSupported: true
+        // GetCapabilities lists `actions` and `icon-static` only because a
+        // card shows them: senders read the list to know (baud's notify.rs).
+        actionsSupported: true
+        imageSupported: true
         keepOnReload: true
 
         onNotification: n => {
@@ -61,7 +66,13 @@ Singleton {
                     : (rule.timeout ?? (n.expireTimeout > 0 ? n.expireTimeout
                         : (n.expireTimeout === 0 ? 0 : (root.conf.defaultTimeout ?? 5000)))),
                 at: Date.now(),
-                live: true
+                live: true,
+                // Plain copies: the live NotificationAction objects stay on
+                // the server object in liveRefs, which invoke() goes through.
+                actions: Array.from(n.actions ?? []).map(a => ({ identifier: a.identifier, text: a.text })),
+                appIcon: n.appIcon,
+                image: n.image,
+                desktopIcon: n.desktopEntry !== "" ? (DesktopEntries.byId(n.desktopEntry)?.icon ?? "") : ""
             };
             root.liveRefs[entry.key] = n;
             n.closed.connect(() => root.drop(entry.key));
@@ -84,6 +95,42 @@ Singleton {
             n.dismiss(); // closed() drops the entry
         else
             root.drop(key); // restored entry: no live object
+    }
+
+    // A button: invoke that action on the live notification. Quickshell
+    // sends ActionInvoked and closes the notification unless it is
+    // resident; closed() drops the card.
+    function invoke(key, identifier) {
+        const n = root.liveRefs[key];
+        const action = n ? Array.from(n.actions ?? []).find(a => a.identifier === identifier) : null;
+        if (action)
+            action.invoke();
+        else
+            root.dismiss(key);
+    }
+
+    // A click on the card body: the sender's default action when it has
+    // one, else a dismiss. A restored card has no live object, so it has
+    // no actions and its click dismisses.
+    function click(key) {
+        const entry = root.popups.find(p => p.key === key);
+        const action = entry && root.liveRefs[key] ? NotifsLib.defaultAction(entry.actions) : null;
+        if (action)
+            root.invoke(key, action.identifier);
+        else
+            root.dismiss(key);
+    }
+
+    // What each card offers, for `qs ipc call notify cards`: its button
+    // identifiers, its default action and its icon source.
+    function cards(): string {
+        return JSON.stringify(root.popups.map(p => ({
+            key: p.key,
+            appName: p.appName,
+            buttons: NotifsLib.buttons(p.actions).map(a => a.identifier),
+            defaultAction: NotifsLib.defaultAction(p.actions)?.identifier ?? "",
+            icon: NotifsLib.iconSource(p)
+        })));
     }
 
     function dismissNewest() {
@@ -110,12 +157,15 @@ Singleton {
 
     // ── persistence ──
     // Every field but the live server object survives a restart — `at`
-    // included, so a restored card still stamps when it ARRIVED.
+    // included, so a restored card still stamps when it ARRIVED. Not its
+    // actions (the sender's ids die with the server object) nor its image
+    // (an image hint is served by this process only).
     function save() {
         stateFile.setText(JSON.stringify(root.popups.map(p => ({
             key: p.key, appName: p.appName, summary: p.summary,
             body: p.body, urgency: p.urgency, accent: p.accent,
-            timeout: p.timeout, at: p.at, live: false
+            timeout: p.timeout, at: p.at, live: false,
+            actions: [], appIcon: p.appIcon ?? "", image: "", desktopIcon: p.desktopIcon ?? ""
         }))));
     }
 

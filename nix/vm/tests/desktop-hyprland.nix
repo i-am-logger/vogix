@@ -36,6 +36,8 @@
 #   panel-placement     a bar widget's panel opens beside its bar, centred
 #                       on the widget; a verb-opened one under the top bar
 #   notification-place  notification cards clear the top bar and right rail
+#   notification-default-action  a click on a card body invokes the
+#                       sender's default action and the card closes
 #   tray-menu           a tray item's menu opens against its icon
 #   screencast          a screen capture session lights PRIVACY while it runs
 #   vu-out              a −6 dBFS tone reads −6 dB on the output VU, at full
@@ -798,6 +800,20 @@ pkgs.testers.nixosTest {
         d.run("vogix desktop notify dismiss --all")
 
 
+    def gate_notification_default_action(d: Desktop) -> None:
+        # notify-send --wait prints the key of the action invoked; a click
+        # on the card body must invoke the sender's default action (not
+        # dismiss the card), and the card then closes.
+        d.run("systemd-run --user --collect --unit=vogix-test-notify-action sh -c "
+              "'notify-send -a vogix-test -t 60000 -A default=Open --wait Acting \"click the card\" "
+              "> /tmp/vogix-notify-action.out'")
+        card = d.await_layer(lambda s: s["w"] == 440, 10, "the acting card")
+        d.click(card["x"] + 100, card["y"] + card["h"] - 30)
+        d.poll("cat /tmp/vogix-notify-action.out", lambda o: o.strip() == "default", 5,
+               "a click on the card body invokes its default action")
+        d.await_no_layer(lambda s: s["w"] == 440, 5, "the card closes after its action")
+
+
     def gate_tray_menu(d: Desktop) -> None:
         d.run("systemd-run --user --collect --unit=vogix-test-tray vogix-test-tray")
         deadline = time.monotonic() + 30
@@ -893,6 +909,7 @@ pkgs.testers.nixosTest {
     gate("lua focus-brackets", lambda: gate_focus_brackets(lua_desktop))
     gate("lua panel-placement", lambda: gate_panel_placement(lua_desktop))
     gate("lua notification-place", lambda: gate_notification_placement(lua_desktop))
+    gate("lua notification-default-action", lambda: gate_notification_default_action(lua_desktop))
     gate("lua tray-menu", lambda: gate_tray_menu(lua_desktop))
     gate("lua screencast", lambda: gate_screencast(lua_desktop))
     gate("lua vu-out", lambda: gate_vu_out(lua_desktop))
