@@ -322,6 +322,9 @@ pkgs.runCommand "vogix-desktop-smoke"
   ${unitEnv}
   # No GPU and no GL in the build sandbox: Qt's software scene graph.
   export QT_QUICK_BACKEND=software
+  # The sandbox has no locale; a host's is UTF-8. Under C, qs 0.3.2 prints
+  # Qt's locale warning on stdout, ahead of every `ipc call` reply.
+  export LC_ALL=C.UTF-8
   R=$TMPDIR/result
   # Every step waits for an event: an answer from the shell, a state a
   # verb reports, a file's content, a process's exit. None waits a fixed

@@ -891,10 +891,14 @@ fn osd(
 /// qs conflates its failures onto stdout with exit 0 ("Target not found.",
 /// "No running instances…", "Not ready to accept queries yet"), so those
 /// are normalized to None here rather than surfacing as shell replies.
+/// It also logs to stdout: under a non-UTF-8 locale qs 0.3.2 prints Qt's
+/// locale warning ahead of the reply, so the client runs under C.UTF-8 (the
+/// locale Qt would switch to anyway; a relayed call does not depend on it).
 fn qs_ipc(call: &IpcCall) -> Option<String> {
     let mut child = Command::new("qs")
         .args(["-c", "vogix", "ipc", "call", call.target, call.function])
         .args(&call.args)
+        .env("LC_ALL", "C.UTF-8")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
