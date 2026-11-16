@@ -17,6 +17,7 @@ import qs.Components
 import qs.Geometry
 import qs.Services
 import qs.Vogix
+import "../Services/lib/notifs.js" as NotifsLib
 
 PanelWindow {
     id: root
@@ -74,6 +75,17 @@ PanelWindow {
 
                 required property var modelData
                 readonly property bool critical: card.modelData.urgency === 2
+                // The sender's image, icon name or desktop entry's icon, as
+                // an image URL: an icon name goes through the icon theme.
+                readonly property string iconUrl: {
+                    const src = NotifsLib.iconSource(card.modelData);
+                    if (src === "")
+                        return "";
+                    if (src.startsWith("/"))
+                        return "file://" + src;
+                    return src.includes(":") ? src : Quickshell.iconPath(src, true);
+                }
+                readonly property var buttons: NotifsLib.buttons(card.modelData.actions)
                 readonly property color accentColor:
                     card.modelData.accent && Theme.semantic[card.modelData.accent]
                         ? Theme.semantic[card.modelData.accent]
@@ -90,6 +102,14 @@ PanelWindow {
                     color: Tokens.color("notification", "background")
 
                     ScanlineOverlay {}
+                }
+
+                // The card body's click, beneath the frame so the buttons
+                // inside it take their own clicks: the sender's default
+                // action when it has one, else a dismiss.
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: Notifs.click(card.modelData.key)
                 }
 
                 FrameCell {
@@ -116,6 +136,17 @@ PanelWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
+
+                            Image {
+                                visible: card.iconUrl !== "" && status === Image.Ready
+                                source: card.iconUrl
+                                Layout.preferredWidth: Metrics.subtitle * 1.5
+                                Layout.preferredHeight: Metrics.subtitle * 1.5
+                                sourceSize.width: Metrics.subtitle * 3
+                                sourceSize.height: Metrics.subtitle * 3
+                                fillMode: Image.PreserveAspectFit
+                                asynchronous: true
+                            }
 
                             Text {
                                 Layout.fillWidth: true
@@ -151,6 +182,32 @@ PanelWindow {
                             maximumLineCount: 6
                             elide: Text.ElideRight
                         }
+
+                        // Every action but the default one, as text buttons
+                        // in the sender's order.
+                        RowLayout {
+                            Layout.alignment: Qt.AlignRight
+                            visible: card.buttons.length > 0
+                            spacing: 12
+
+                            Repeater {
+                                model: card.buttons
+
+                                Text {
+                                    required property var modelData
+
+                                    text: modelData.text
+                                    color: card.accentColor
+                                    font.family: Config.fontFamily
+                                    font.pixelSize: Metrics.bodySmall
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: Notifs.invoke(card.modelData.key, parent.modelData.identifier)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -180,11 +237,6 @@ PanelWindow {
                             running: card.modelData.timeout > 0
                         }
                     }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: Notifs.dismiss(card.modelData.key)
                 }
 
                 Timer {

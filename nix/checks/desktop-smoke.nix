@@ -249,6 +249,61 @@ let
       *) exit 1 ;;
     esac
   '';
+  # fcitx5's Controller1 on the test bus: group `Default` holding the
+  # keyboard and one engine, the engine in use. Toggle swaps them and logs
+  # each call to $1. Replies keep the daemon's shapes (InputMethodGroupInfo:
+  # the group's default layout, then each input method and its layout).
+  fcitxStub = pkgs.writers.writePython3 "fcitx-stub"
+    { libraries = [ pkgs.python3Packages.dbus-next ]; flakeIgnore = [ "E501" "F722" "F821" ]; } ''
+    import asyncio
+    import sys
+    from dbus_next.aio import MessageBus
+    from dbus_next.service import ServiceInterface, method, signal
+
+    LOG = sys.argv[1]
+
+
+    class Controller(ServiceInterface):
+        def __init__(self):
+            super().__init__("org.fcitx.Fcitx.Controller1")
+            self.current = "pinyin"
+
+        @method()
+        def CurrentInputMethod(self) -> 's':
+            return self.current
+
+        @method()
+        def CurrentInputMethodGroup(self) -> 's':
+            return "Default"
+
+        @method()
+        def InputMethodGroupInfo(self, name: 's') -> 'sa(ss)':
+            return ["us", [["keyboard-us", "us"], ["pinyin", "us"]]]
+
+        @method()
+        def Toggle(self):
+            with open(LOG, "a") as f:
+                f.write("Toggle\n")
+            self.current = "keyboard-us" if self.current == "pinyin" else "pinyin"
+
+        @signal()
+        def InputMethodGroupsChanged(self):
+            pass
+
+
+    async def main():
+        bus = await MessageBus().connect()
+        bus.export("/controller", Controller())
+        await bus.request_name("org.fcitx.Fcitx5")
+        await asyncio.get_running_loop().create_future()
+
+
+    asyncio.run(main())
+  '';
+  # A notification's icon, as a sender passes a file.
+  smokeIcon = pkgs.runCommand "vogix-smoke-icon.png" { nativeBuildInputs = [ pkgs.imagemagick ]; } ''
+    magick -size 16x16 xc:'#00ff00' png:$out
+  '';
   # The geometry run's data: every widget fed the widest realistic
   # content it shows.
   geometryFeed = import ./desktop-geometry-feed.nix { inherit pkgs; };
@@ -548,6 +603,40 @@ pkgs.runCommand "vogix-desktop-smoke"
   vuntil locks-back ' caps:on$' keyboard
   rm $XDG_STATE_HOME/vogix/input-locks.json
   vuntil locks-gone ' caps:unknown$' keyboard
+  # fcitx5: absent, the status has no im part. A stub on the bus (group:
+  # keyboard-us and the engine pinyin, pinyin in use) is followed by its
+  # name's owner; the LANG click then toggles it, once, and the status
+  # follows; gone again, the im part goes.
+  v im-absent keyboard
+  ${fcitxStub} $TMPDIR/fcitx-calls &
+  STUBPID=$!
+  vuntil im-present ' im:pinyin$' keyboard
+  ipc im-click keyboard click
+  await "the stub's Toggle" sh -c "[ -s $TMPDIR/fcitx-calls ]"
+  echo "im-toggles $(grep -c '^Toggle$' $TMPDIR/fcitx-calls)" >> $R
+  vuntil im-toggled ' im:keyboard-us$' keyboard
+  kill $STUBPID
+  wait $STUBPID 2>/dev/null
+  vuntil im-gone ' caps:unknown$' keyboard
+  # The server's capabilities: actions and icons only because a card shows
+  # them.
+  echo "notify-caps $(dbus-send --session --print-reply --dest=org.freedesktop.Notifications \
+    /org/freedesktop/Notifications org.freedesktop.Notifications.GetCapabilities \
+    | sed -n 's/^ *string "\(.*\)"$/\1/p' | sort | paste -sd' ')" >> $R
+  # A card with a default action, another action and an icon: one button
+  # (not the default's), its default action and an icon source. notify-send
+  # waits for the action, so it runs beside the shell until the card goes.
+  notify-send -a smoke-actions -t 60000 -A default=Open -A later=Later -i ${smokeIcon} \
+    "Actions summary" "a card that acts" > /dev/null 2>&1 &
+  ACTIONSPID=$!
+  await "the acting card" sh -c \
+    "qs -c vogix ipc call notify cards | jq -e '.[] | select(.appName == \"smoke-actions\")'"
+  echo "notify-card $(qs -c vogix ipc call notify cards \
+    | jq -c '.[] | select(.appName == "smoke-actions") | {buttons, defaultAction, icon: (.icon != "")}')" >> $R
+  qs -c vogix ipc call notify dismiss
+  await "the acting card dismissed" sh -c \
+    "! qs -c vogix ipc call notify cards | jq -e '.[] | select(.appName == \"smoke-actions\")'"
+  kill $ACTIONSPID 2>/dev/null
   # Two notifications, a critical one whose body wraps: cards in the
   # popup column, and the live set mirrored to the state file.
   notify-send -u critical -a smoke-critical "Critical summary" \
@@ -769,6 +858,18 @@ pkgs.runCommand "vogix-desktop-smoke"
   grep -q '^locks-null .* caps:unknown$' $TMPDIR/result
   grep -q '^locks-back .* caps:on$' $TMPDIR/result
   grep -q '^locks-gone .* caps:unknown$' $TMPDIR/result
+  # fcitx5: no im part while absent; the stub's engine shown, one Toggle
+  # per click, the keyboard after it, and gone with the stub.
+  grep -q '^im-absent .* caps:unknown$' $TMPDIR/result
+  grep -q '^im-present .* caps:unknown im:pinyin$' $TMPDIR/result
+  r 'im-click toggle'
+  r 'im-toggles 1'
+  grep -q '^im-toggled .* caps:unknown im:keyboard-us$' $TMPDIR/result
+  grep -q '^im-gone .* caps:unknown$' $TMPDIR/result
+  # Notifications that act: the capabilities the cards back, and a card's
+  # button, default action and icon.
+  r 'notify-caps actions body icon-static persistence'
+  r 'notify-card {"buttons":["later"],"defaultAction":"default","icon":true}'
   # The tailnet link's connection record: the shell saw it connected on
   # its first sample, so the start is inexact and bounded by the daemon's.
   jq -e '.exact == false and .daemonStartMs == 1790100514000' \

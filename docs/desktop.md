@@ -391,7 +391,13 @@ the space the bars leave free, on the focused monitor:
 - the header carries the arrival time (HH:mm:ss); the body shows up to six
   lines
 - a drain bar along the bottom shows the card's remaining lifetime
-- a click dismisses a card
+- the sender's icon sits before the summary: its image, else its icon name,
+  else its desktop entry's icon
+- the sender's actions are text buttons under the body, in its order; its
+  `default` action has no button, and a click on the card body invokes it
+  (the card then closes unless the sender marked it resident)
+- a click on a card without a default action dismisses it; a card restored
+  after a shell restart has no actions, so its click dismisses too
 - past `maxVisible` cards, the rest queue behind a `+N QUEUED` line; when the
   column is taller than the free space, the oldest cards leave the top first
 
@@ -446,6 +452,15 @@ no input engine running, or no grabbed keyboard with a CapsLock LED.
 `vogix desktop keyboard` prints the same state. On a horizontal bar the
 layouts and CAPS sit in a row; on a rail, which is too narrow for them side
 by side, they stack.
+
+With fcitx5 running (its `org.fcitx.Fcitx5` name owned on the session bus;
+the cell never starts it), the cell also follows fcitx5's input method. While
+an engine (any input method but a `keyboard-*` one) is in use, its name is
+the bright label and the layouts dim; a click toggles fcitx5 between the
+keyboard and the engine instead of switching the layout. A group with no
+engine changes nothing. fcitx5 reports no change of its input method, so the
+cell reads it again after its own click and on each focus change.
+`vogix desktop keyboard` then ends with ` im:<input method>`.
 
 ## Panels and popups
 
