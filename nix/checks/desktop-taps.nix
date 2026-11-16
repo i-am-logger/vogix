@@ -152,6 +152,9 @@ let
   inner = pkgs.writeShellScript "taps-inner" ''
     set -u
     export QS_NO_RELOAD_POPUP=1 QS_DISABLE_FILE_WATCHER=1 QT_QUICK_BACKEND=software
+    # The sandbox has no locale; a host's is UTF-8. Under C, qs 0.3.2 prints
+    # Qt's locale warning on stdout, ahead of every `ipc call` reply.
+    export LC_ALL=C.UTF-8
     # As the vogix-desktop unit sets it: a PipeWire that is not up yet is
     # waited for.
     export QS_PIPEWIRE_IMMEDIATE_RECONNECT=1

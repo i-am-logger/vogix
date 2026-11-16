@@ -19,10 +19,12 @@ Singleton {
     readonly property string pamService: conf.pamService ?? "vogix-lock"
     property bool pamPresent: false
 
-    // WlSessionLock (quickshell 0.3.1) emits lockStateChanged when a lock
-    // ends but not when one engages, so a binding on sessionLock.locked
-    // stays false for the whole lock. The state is re-read after a lock
-    // request and on each of its signals instead.
+    // WlSessionLock's lockStateChanged is not reliable across versions:
+    // 0.3.1 emits it when a lock ends but not when one engages, and 0.3.2's
+    // unlock() emits it only if the session is still locked afterwards, so
+    // a clean unlock emits nothing. A binding on sessionLock.locked would
+    // go stale either way. The state is re-read after a lock request, after
+    // an unlock, and on each of its signals instead.
     readonly property bool locked: root._locked
     readonly property bool secure: sessionLock.secure
     property bool _locked: false
@@ -92,6 +94,7 @@ Singleton {
                 root.authMessage = "";
                 root.authError = false;
                 sessionLock.locked = false;
+                root._locked = sessionLock.locked;
             } else {
                 // Wrong password / PAM failure: the screen STAYS locked.
                 if (root.authMessage === "") {

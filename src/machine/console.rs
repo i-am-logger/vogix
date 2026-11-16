@@ -37,9 +37,9 @@ pub struct ColourMap([u8; 48]);
 impl ColourMap {
     pub fn from_colours(colours: &[Rgb; 16]) -> Self {
         let mut bytes = [0u8; 48];
-        for (triplet, colour) in bytes.chunks_exact_mut(3).zip(colours) {
+        for (triplet, colour) in bytes.as_chunks_mut::<3>().0.iter_mut().zip(colours) {
             let (r, g, b) = colour.channels();
-            triplet.copy_from_slice(&[r, g, b]);
+            *triplet = [r, g, b];
         }
         Self(bytes)
     }

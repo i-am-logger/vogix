@@ -64,11 +64,13 @@ GridLayout {
                 if (slot.resolved.problem !== "")
                     console.warn("vogix: bar widget '" + slot.modelData + "' cannot render: " + slot.resolved.problem);
                 // Duck-typed injection: bracket access, because the static
-                // item type here is just Item.
-                if ("widgetName" in item)
-                    item["widgetName"] = slot.modelData;
-                if ("axis" in item)
-                    item["axis"] = root.axis;
+                // item type here is just Item. The keys are variables: Qt
+                // 6.12's qmllint resolves a literal key against Item.
+                const inject = { widgetName: slot.modelData, axis: root.axis };
+                for (const key in inject) {
+                    if (key in item)
+                        item[key] = inject[key];
+                }
             }
         }
     }
