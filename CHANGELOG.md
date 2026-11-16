@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.14.2...vogix-v0.15.0) (2026-11-16)
+
+
+### Features
+
+* **desktop:** notifications that act; the LANG chip follows fcitx5 ([#220](https://github.com/i-am-logger/vogix/issues/220)) ([59700df](https://github.com/i-am-logger/vogix/commit/59700df3043c522792a9812f2ec18abfb7f5befa))
+
 ## [0.14.2](https://github.com/i-am-logger/vogix/compare/vogix-v0.14.1...vogix-v0.14.2) (2026-11-16)
 
 
