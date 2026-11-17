@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.15.0...vogix-v0.16.0) (2026-11-17)
+
+
+### Features
+
+* **desktop:** a notification's click hands the sender an activation token ([#222](https://github.com/i-am-logger/vogix/issues/222)) ([e0c2e7d](https://github.com/i-am-logger/vogix/commit/e0c2e7d9c3e4cf43b0e9d9f909d71a0bb83ad1e2))
+
 ## [0.15.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.14.2...vogix-v0.15.0) (2026-11-16)
 
 
