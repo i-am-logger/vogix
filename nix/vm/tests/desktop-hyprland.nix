@@ -824,8 +824,10 @@ pkgs.testers.nixosTest {
         mon = "vogix-test-notify-monitor"
         d.run(f"systemd-run --user --collect --unit={mon} dbus-monitor --session "
               "\"type='signal',interface='org.freedesktop.Notifications'\"")
-        d.poll(f"systemctl --user is-active {mon}", lambda o: o.strip() == "active", 5, "the bus monitor runs")
-        time.sleep(1)  # dbus-monitor has subscribed once it is past startup
+        # The bus takes the monitor's name back (NameLost) as it makes it a
+        # monitor: every signal after that line reaches it.
+        d.poll(f"journalctl --user -u {mon} -o cat", lambda o: " member=NameLost" in o, 5,
+               "the bus monitor subscribed")
         d.run("systemd-run --user --collect --unit=vogix-test-notify-token sh -c "
               "'notify-send -a vogix-test -t 60000 -A default=Open --wait Token \"click the card\" "
               "> /tmp/vogix-notify-token.out'")
