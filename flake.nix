@@ -170,11 +170,18 @@
       # (`services.hardware.openrgb.package = vogix.lib.openrgbPatched pkgs;`).
       lib.openrgbPatched = pkgs: pkgs.callPackage ./nix/packages/openrgb.nix { };
 
+      # The host's own quickshell with activation tokens on notification
+      # actions (nix/packages/quickshell.nix), for a host that does not use
+      # the overlay.
+      lib.quickshellPatched = pkgs: pkgs.callPackage ./nix/packages/quickshell.nix { };
+
       # Overlay to make vogix and the desktop shell's packages available in
-      # pkgs. The shell runs on the host nixpkgs' own quickshell, so its Qt
-      # deps always match (upstream warns a mismatch crashes).
+      # pkgs. The shell runs on the host nixpkgs' own quickshell, built from
+      # the host's recipe and Qt (upstream warns a mismatch crashes), with
+      # vogix's patches.
       overlays.default = _final: prev: {
         inherit (self.packages.${prev.stdenv.hostPlatform.system}) vogix vogix-desktop-qml vogix-lock vogix-launcher vogix-sddm-theme;
+        quickshell = prev.callPackage ./nix/packages/quickshell.nix { inherit (prev) quickshell; };
       };
 
       # Liquidctl overlay (patched fork with Kraken 2024 Elite RGB ring support)

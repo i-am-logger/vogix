@@ -38,6 +38,8 @@
 #   notification-place  notification cards clear the top bar and right rail
 #   notification-default-action  a click on a card body invokes the
 #                       sender's default action and the card closes
+#   notification-activation-token  invoking it sends ActivationToken for
+#                       that notification before ActionInvoked
 #   tray-menu           a tray item's menu opens against its icon
 #   screencast          a screen capture session lights PRIVACY while it runs
 #   vu-out              a −6 dBFS tone reads −6 dB on the output VU, at full
@@ -211,6 +213,7 @@ let
     };
 
     environment.systemPackages = [
+      pkgs.dbus
       pkgs.jq
       pkgs.wlrctl
       pkgs.wl-mirror
@@ -814,6 +817,38 @@ pkgs.testers.nixosTest {
         d.await_no_layer(lambda s: s["w"] == 440, 5, "the card closes after its action")
 
 
+    def gate_notification_activation_token(d: Desktop) -> None:
+        # Invoking an action from a click sends ActivationToken(id, token)
+        # before ActionInvoked(id, key), so the sender can bring its window
+        # forward (vogix's patched quickshell). Watched on the session bus.
+        mon = "vogix-test-notify-monitor"
+        d.run(f"systemd-run --user --collect --unit={mon} dbus-monitor --session "
+              "\"type='signal',interface='org.freedesktop.Notifications'\"")
+        d.poll(f"systemctl --user is-active {mon}", lambda o: o.strip() == "active", 5, "the bus monitor runs")
+        time.sleep(1)  # dbus-monitor has subscribed once it is past startup
+        d.run("systemd-run --user --collect --unit=vogix-test-notify-token sh -c "
+              "'notify-send -a vogix-test -t 60000 -A default=Open --wait Token \"click the card\" "
+              "> /tmp/vogix-notify-token.out'")
+        card = d.await_layer(lambda s: s["w"] == 440, 10, "the acting card")
+        d.click(card["x"] + 100, card["y"] + card["h"] - 30)
+        d.poll("cat /tmp/vogix-notify-token.out", lambda o: o.strip() == "default", 5,
+               "the click invoked the default action")
+        lines = d.run(f"journalctl --user -u {mon} -o cat").splitlines()
+        d.run(f"systemctl --user stop {mon}")
+
+        def signal_id(member: str) -> tuple[int, str]:
+            for i, line in enumerate(lines):
+                if line.startswith("signal ") and f" member={member}" in line:
+                    return i, lines[i + 1].strip() if i + 1 < len(lines) else ""
+            raise Exception(f"no {member} signal on the bus: {lines[-20:]}")
+
+        token_at, token_id = signal_id("ActivationToken")
+        invoked_at, invoked_id = signal_id("ActionInvoked")
+        assert token_at < invoked_at, "ActivationToken came after ActionInvoked"
+        assert token_id == invoked_id, f"ActivationToken for {token_id}, ActionInvoked for {invoked_id}"
+        d.await_no_layer(lambda s: s["w"] == 440, 5, "the card closes after its action")
+
+
     def gate_tray_menu(d: Desktop) -> None:
         d.run("systemd-run --user --collect --unit=vogix-test-tray vogix-test-tray")
         deadline = time.monotonic() + 30
@@ -910,6 +945,7 @@ pkgs.testers.nixosTest {
     gate("lua panel-placement", lambda: gate_panel_placement(lua_desktop))
     gate("lua notification-place", lambda: gate_notification_placement(lua_desktop))
     gate("lua notification-default-action", lambda: gate_notification_default_action(lua_desktop))
+    gate("lua notification-activation-token", lambda: gate_notification_activation_token(lua_desktop))
     gate("lua tray-menu", lambda: gate_tray_menu(lua_desktop))
     gate("lua screencast", lambda: gate_screencast(lua_desktop))
     gate("lua vu-out", lambda: gate_vu_out(lua_desktop))
