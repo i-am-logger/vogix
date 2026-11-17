@@ -5,6 +5,13 @@ All notable changes to Vogix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.1](https://github.com/i-am-logger/vogix/compare/vogix-v0.16.0...vogix-v0.16.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **desktop:** the bus never starts an absent fcitx5 ([#224](https://github.com/i-am-logger/vogix/issues/224)) ([8ad2d1e](https://github.com/i-am-logger/vogix/commit/8ad2d1ee5a5eafcfde16b55e604a4c96f75363b8))
+
 ## [0.16.0](https://github.com/i-am-logger/vogix/compare/vogix-v0.15.0...vogix-v0.16.0) (2026-11-17)
 
 
