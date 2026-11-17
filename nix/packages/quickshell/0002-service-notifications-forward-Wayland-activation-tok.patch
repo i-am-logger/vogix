@@ -1,0 +1,226 @@
+From 34a2bb644cf82538caaf01784253c5ff3fd46b79 Mon Sep 17 00:00:00 2001
+From: Ido Samuelson <i-am-logger@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 20:34:52 -0700
+Subject: [PATCH 2/2] service/notifications: forward Wayland activation tokens
+ when invoking actions
+
+NotificationAction.invoke() requests an xdg-activation token for the
+input that invoked it and sends the server's ActivationToken signal with
+it before ActionInvoked, as the Desktop Notifications spec allows, so the
+client can activate its window. Without Wayland or a token, only
+ActionInvoked is sent, as before. A test checks the order.
+---
+ src/services/notifications/CMakeLists.txt     | 11 +++
+ src/services/notifications/notification.cpp   | 21 ++++-
+ src/services/notifications/notification.hpp   |  3 +
+ src/services/notifications/server.hpp         |  1 +
+ .../notifications/test/CMakeLists.txt         |  8 ++
+ src/services/notifications/test/action.cpp    | 85 +++++++++++++++++++
+ 6 files changed, 128 insertions(+), 1 deletion(-)
+ create mode 100644 src/services/notifications/test/CMakeLists.txt
+ create mode 100644 src/services/notifications/test/action.cpp
+
+diff --git a/src/services/notifications/CMakeLists.txt b/src/services/notifications/CMakeLists.txt
+index 58b6648..265dcc2 100644
+--- a/src/services/notifications/CMakeLists.txt
++++ b/src/services/notifications/CMakeLists.txt
+@@ -29,3 +29,14 @@ target_link_libraries(quickshell-service-notifications PRIVATE Qt::Quick Qt::DBu
+ target_link_libraries(quickshell PRIVATE quickshell-service-notificationsplugin)
+ 
+ qs_module_pch(quickshell-service-notifications SET dbus)
++
++if (WAYLAND)
++    target_compile_definitions(quickshell-service-notifications PRIVATE QS_WAYLAND)
++    target_link_libraries(quickshell-service-notifications PRIVATE
++        quickshell-wayland-activation
++    )
++endif()
++
++if (BUILD_TESTING)
++	add_subdirectory(test)
++endif()
+diff --git a/src/services/notifications/notification.cpp b/src/services/notifications/notification.cpp
+index b58087f..d01adc3 100644
+--- a/src/services/notifications/notification.cpp
++++ b/src/services/notifications/notification.cpp
+@@ -6,6 +6,7 @@
+ #include <qlogging.h>
+ #include <qloggingcategory.h>
+ #include <qobject.h>
++#include <qpointer.h>
+ #include <qproperty.h>
+ #include <qtmetamacros.h>
+ #include <qtypes.h>
+@@ -16,6 +17,10 @@
+ #include "dbusimage.hpp"
+ #include "server.hpp"
+ 
++#ifdef QS_WAYLAND
++#include "../../wayland/activation.hpp"
++#endif
++
+ namespace qs::service::notifications {
+ 
+ // NOLINTNEXTLINE(misc-use-internal-linkage)
+@@ -43,12 +48,26 @@ QString NotificationAction::identifier() const { return this->mIdentifier; }
+ QString NotificationAction::text() const { return this->mText; }
+ 
+ void NotificationAction::invoke() {
++#ifdef QS_WAYLAND
++	// A token for the input that invoked the action lets the client activate its window.
++	auto callback = [action = QPointer(this)](const QString& token) {
++		if (action) action->invokeWithToken(token);
++	};
++
++	if (qs::wayland::activation::requestActivationToken(callback)) return;
++#endif
++	this->invokeWithToken(QString());
++}
++
++void NotificationAction::invokeWithToken(const QString& token) {
+ 	if (this->notification->isRetained()) {
+ 		qCritical() << "Cannot invoke destroyed notification" << this;
+ 		return;
+ 	}
+ 
+-	NotificationServer::instance()->ActionInvoked(this->notification->id(), this->mIdentifier);
++	auto* server = NotificationServer::instance();
++	if (!token.isEmpty()) server->ActivationToken(this->notification->id(), token);
++	server->ActionInvoked(this->notification->id(), this->mIdentifier);
+ 
+ 	if (!this->notification->bindableResident().value()) {
+ 		this->notification->close(NotificationCloseReason::Dismissed);
+diff --git a/src/services/notifications/notification.hpp b/src/services/notifications/notification.hpp
+index 7f5246c..4ff6bc9 100644
+--- a/src/services/notifications/notification.hpp
++++ b/src/services/notifications/notification.hpp
+@@ -260,6 +260,9 @@ public:
+ 	/// Invoke the action. If @@Notification.resident is false it will be dismissed.
+ 	Q_INVOKABLE void invoke();
+ 
++	// Invoke the action, first sending `token` to the client if it is not empty.
++	void invokeWithToken(const QString& token);
++
+ 	[[nodiscard]] QString identifier() const;
+ 	[[nodiscard]] QString text() const;
+ 	void setText(const QString& text);
+diff --git a/src/services/notifications/server.hpp b/src/services/notifications/server.hpp
+index 8bd92a3..35dc9de 100644
+--- a/src/services/notifications/server.hpp
++++ b/src/services/notifications/server.hpp
+@@ -61,6 +61,7 @@ signals:
+ 	// NOLINTBEGIN
+ 	void NotificationClosed(quint32 id, quint32 reason);
+ 	void ActionInvoked(quint32 id, QString action);
++	void ActivationToken(quint32 id, QString activationToken);
+ 	void NotificationReplied(quint32 id, QString replyText);
+ 	// NOLINTEND
+ 
+diff --git a/src/services/notifications/test/CMakeLists.txt b/src/services/notifications/test/CMakeLists.txt
+new file mode 100644
+index 0000000..1a8d5f2
+--- /dev/null
++++ b/src/services/notifications/test/CMakeLists.txt
+@@ -0,0 +1,8 @@
++function (qs_test name)
++	add_executable(${name} ${ARGN})
++	target_link_libraries(${name} PRIVATE Qt::Quick Qt::Test Qt::DBus quickshell-service-notifications quickshell-core quickshell-window quickshell-ui quickshell-io)
++	target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_BINARY_DIR}/..)
++	add_test(NAME ${name} WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" COMMAND $<TARGET_FILE:${name}>)
++endfunction()
++
++qs_test(notificationaction action.cpp)
+diff --git a/src/services/notifications/test/action.cpp b/src/services/notifications/test/action.cpp
+new file mode 100644
+index 0000000..017f6a4
+--- /dev/null
++++ b/src/services/notifications/test/action.cpp
+@@ -0,0 +1,85 @@
++#include <qobject.h>
++#include <qstringlist.h>
++#include <qtest.h>
++#include <qtestcase.h>
++#include <qtmetamacros.h>
++
++#include "../notification.hpp"
++#include "../server.hpp"
++
++using qs::service::notifications::Notification;
++using qs::service::notifications::NotificationAction;
++using qs::service::notifications::NotificationServer;
++
++class TestNotificationAction: public QObject {
++	Q_OBJECT;
++
++private slots:
++	// The spec allows an ActivationToken signal before ActionInvoked, carrying a token the
++	// client can use to activate a toplevel. When the server has one, it must arrive first.
++	static void tokenIsSentBeforeTheAction() {
++		auto seen = record();
++		auto* notification = new Notification(5, nullptr);
++		auto* action = new NotificationAction("default", "Open", notification);
++		notification->bindableResident().setValue(true);
++
++		action->invokeWithToken("token-1");
++
++		QCOMPARE(*seen, QStringList({"ActivationToken 5 token-1", "ActionInvoked 5 default"}));
++		delete notification;
++	}
++
++	// Without a token (no input to request one for), only ActionInvoked is sent.
++	static void withoutATokenOnlyTheActionIsSent() {
++		auto seen = record();
++		auto* notification = new Notification(6, nullptr);
++		auto* action = new NotificationAction("later", "Later", notification);
++		notification->bindableResident().setValue(true);
++
++		action->invokeWithToken(QString());
++
++		QCOMPARE(*seen, QStringList({"ActionInvoked 6 later"}));
++		delete notification;
++	}
++
++	// invoke() off Wayland has no token to request and invokes at once.
++	static void invokeOffWaylandInvokesAtOnce() {
++		auto seen = record();
++		auto* notification = new Notification(7, nullptr);
++		auto* action = new NotificationAction("default", "Open", notification);
++		notification->bindableResident().setValue(true);
++
++		action->invoke();
++
++		QCOMPARE(*seen, QStringList({"ActionInvoked 7 default"}));
++		delete notification;
++	}
++
++private:
++	static std::shared_ptr<QStringList> record() {
++		auto list = std::make_shared<QStringList>();
++		auto* server = NotificationServer::instance();
++		auto* receiver = new QObject(server);
++		QObject::connect(
++		    server,
++		    &NotificationServer::ActivationToken,
++		    receiver,
++		    [list](quint32 id, const QString& token) {
++			    list->append(QString("ActivationToken %1 %2").arg(id).arg(token));
++		    }
++		);
++		QObject::connect(
++		    server,
++		    &NotificationServer::ActionInvoked,
++		    receiver,
++		    [list](quint32 id, const QString& action) {
++			    list->append(QString("ActionInvoked %1 %2").arg(id).arg(action));
++		    }
++		);
++		QObject::connect(server, &QObject::destroyed, receiver, [receiver] { delete receiver; });
++		return list;
++	}
++};
++
++QTEST_MAIN(TestNotificationAction);
++#include "action.moc"
+-- 
+2.55.0
+

@@ -395,7 +395,10 @@ the space the bars leave free, on the focused monitor:
   else its desktop entry's icon
 - the sender's actions are text buttons under the body, in its order; its
   `default` action has no button, and a click on the card body invokes it
-  (the card then closes unless the sender marked it resident)
+  (the card then closes unless the sender marked it resident). Invoking an
+  action from a click also sends the sender an xdg-activation token first
+  (`ActivationToken`), so it can bring its window forward; this needs the
+  overlay's quickshell (0.3.2 patched by vogix, or `vogix.lib.quickshellPatched`)
 - a click on a card without a default action dismisses it; a card restored
   after a shell restart has no actions, so its click dismisses too
 - past `maxVisible` cards, the rest queue behind a `+N QUEUED` line; when the

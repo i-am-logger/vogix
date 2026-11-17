@@ -1,0 +1,321 @@
+From b28f94bfa68f84ef6468f122a5a7b719f6afad6c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Domen=20Ko=C5=BEar?= <domen@cachix.org>
+Date: Sun, 20 Sep 2026 14:22:02 -0500
+Subject: [PATCH 1/2] service/tray: forward Wayland activation tokens on
+ primary clicks
+
+(cherry picked from commit 3c5323bcf564da06838acf34b77d88c82005e83e)
+---
+ src/services/status_notifier/CMakeLists.txt   |  7 ++
+ src/services/status_notifier/item.cpp         | 38 ++++++++
+ src/services/status_notifier/item.hpp         |  2 +
+ .../org.kde.StatusNotifierItem.xml            |  3 +
+ src/wayland/CMakeLists.txt                    | 10 +++
+ src/wayland/activation.cpp                    | 89 +++++++++++++++++++
+ src/wayland/activation.hpp                    | 20 +++++
+ src/wayland/wlr_layershell/CMakeLists.txt     |  2 +-
+ src/wayland/wlr_layershell/surface.cpp        |  5 ++
+ src/wayland/wlr_layershell/surface.hpp        |  2 +
+ 10 files changed, 177 insertions(+), 1 deletion(-)
+ create mode 100644 src/wayland/activation.cpp
+ create mode 100644 src/wayland/activation.hpp
+
+diff --git a/src/services/status_notifier/CMakeLists.txt b/src/services/status_notifier/CMakeLists.txt
+index 7e0bf2b..88db0c2 100644
+--- a/src/services/status_notifier/CMakeLists.txt
++++ b/src/services/status_notifier/CMakeLists.txt
+@@ -52,3 +52,10 @@ target_link_libraries(quickshell-service-statusnotifier PRIVATE Qt::Quick Qt::DB
+ target_link_libraries(quickshell PRIVATE quickshell-service-statusnotifierplugin)
+ 
+ qs_module_pch(quickshell-service-statusnotifier SET dbus)
++
++if (WAYLAND)
++    target_compile_definitions(quickshell-service-statusnotifier PRIVATE QS_WAYLAND)
++    target_link_libraries(quickshell-service-statusnotifier PRIVATE
++        quickshell-wayland-activation
++    )
++endif()
+diff --git a/src/services/status_notifier/item.cpp b/src/services/status_notifier/item.cpp
+index 67bde01..3a4520c 100644
+--- a/src/services/status_notifier/item.cpp
++++ b/src/services/status_notifier/item.cpp
+@@ -12,6 +12,7 @@
+ #include <qobject.h>
+ #include <qpainter.h>
+ #include <qpixmap.h>
++#include <qpointer.h>
+ #include <qqmlengine.h>
+ #include <qrect.h>
+ #include <qsize.h>
+@@ -30,6 +31,10 @@
+ #include "host.hpp"
+ #include "watcher.hpp"
+ 
++#ifdef QS_WAYLAND
++#include "../../wayland/activation.hpp"
++#endif
++
+ using namespace qs::dbus;
+ using namespace qs::dbus::dbusmenu;
+ using namespace qs::menu::platform;
+@@ -219,6 +224,39 @@ QPixmap StatusNotifierItem::createPixmap(const QSize& size) const {
+ }
+ 
+ void StatusNotifierItem::activate() {
++#ifdef QS_WAYLAND
++	auto callback = [item = QPointer(this)](const QString& token) {
++		if (item) item->activateWithToken(token);
++	};
++
++	if (qs::wayland::activation::requestActivationToken(callback)) return;
++#endif
++	this->activateWithoutToken();
++}
++
++void StatusNotifierItem::activateWithToken(const QString& token) {
++	if (token.isEmpty()) {
++		this->activateWithoutToken();
++		return;
++	}
++
++	auto* call = new QDBusPendingCallWatcher(this->item->ProvideXdgActivationToken(token), this);
++	QObject::connect(
++	    call,
++	    &QDBusPendingCallWatcher::finished,
++	    this,
++	    [this](QDBusPendingCallWatcher* call) {
++		    const QDBusPendingReply<> reply = *call;
++		    if (reply.isError() && reply.error().type() != QDBusError::UnknownMethod) {
++			    qCWarning(logStatusNotifierItem) << "Error providing activation token:" << reply.error();
++		    }
++		    delete call;
++		    this->activateWithoutToken();
++	    }
++	);
++}
++
++void StatusNotifierItem::activateWithoutToken() {
+ 	auto pendingCall = this->item->Activate(0, 0);
+ 	auto* call = new QDBusPendingCallWatcher(pendingCall, this);
+ 
+diff --git a/src/services/status_notifier/item.hpp b/src/services/status_notifier/item.hpp
+index bd8fe8c..6caee54 100644
+--- a/src/services/status_notifier/item.hpp
++++ b/src/services/status_notifier/item.hpp
+@@ -169,6 +169,8 @@ private slots:
+ 	void onGetAllFailed() const;
+ 
+ private:
++	void activateWithToken(const QString& token);
++	void activateWithoutToken();
+ 	void updateMenuState();
+ 	void updatePixmapIndex();
+ 	void onMenuPathChanged();
+diff --git a/src/services/status_notifier/org.kde.StatusNotifierItem.xml b/src/services/status_notifier/org.kde.StatusNotifierItem.xml
+index 0aa43c7..0cd3b8a 100644
+--- a/src/services/status_notifier/org.kde.StatusNotifierItem.xml
++++ b/src/services/status_notifier/org.kde.StatusNotifierItem.xml
+@@ -29,6 +29,9 @@
+       <arg type="i" direction="in" name="x"/>
+       <arg type="i" direction="in" name="y"/>
+     </method>
++    <method name="ProvideXdgActivationToken">
++      <arg type="s" direction="in" name="token"/>
++    </method>
+     <method name="Activate">
+       <arg type="i" direction="in" name="x"/>
+       <arg type="i" direction="in" name="y"/>
+diff --git a/src/wayland/CMakeLists.txt b/src/wayland/CMakeLists.txt
+index 509fd91..115d310 100644
+--- a/src/wayland/CMakeLists.txt
++++ b/src/wayland/CMakeLists.txt
+@@ -73,6 +73,16 @@ endfunction()
+ 
+ # -----
+ 
++wl_proto(wlp-xdg-activation xdg-activation-v1 "${WAYLAND_PROTOCOLS}/staging/xdg-activation")
++
++qt_add_library(quickshell-wayland-activation STATIC
++	activation.cpp
++)
++
++target_link_libraries(quickshell-wayland-activation PRIVATE
++	Qt::Gui Qt::WaylandClient Qt::WaylandClientPrivate wlp-xdg-activation
++)
++
+ qt_add_library(quickshell-wayland STATIC
+ 	wl_proxy_safe_deref.cpp
+ 	platformmenu.cpp
+diff --git a/src/wayland/activation.cpp b/src/wayland/activation.cpp
+new file mode 100644
+index 0000000..01369d2
+--- /dev/null
++++ b/src/wayland/activation.cpp
+@@ -0,0 +1,89 @@
++#include "activation.hpp"
++#include <functional>
++#include <utility>
++
++#include <private/qwaylanddisplay_p.h>
++#include <private/qwaylandinputdevice_p.h>
++#include <private/qwaylandintegration_p.h>
++#include <private/qwaylandwindow_p.h>
++#include <qguiapplication.h>
++#include <qnamespace.h>
++#include <qobject.h>
++#include <qpointer.h>
++#include <qstring.h>
++#include <qtclasshelpermacros.h>
++#include <qtmetamacros.h>
++#include <qtypes.h>
++#include <qwayland-xdg-activation-v1.h>
++#include <qwaylandclientextension.h>
++
++#include "wayland-xdg-activation-v1-client-protocol.h"
++
++namespace qs::wayland::activation {
++namespace {
++
++class ActivationManager
++    : public QWaylandClientExtensionTemplate<ActivationManager>
++    , public QtWayland::xdg_activation_v1 {
++public:
++	ActivationManager(): QWaylandClientExtensionTemplate(1) { this->initialize(); }
++};
++
++class ActivationToken
++    : public QObject
++    , public QtWayland::xdg_activation_token_v1 {
++public:
++	ActivationToken(::xdg_activation_token_v1* token, QtWaylandClient::QWaylandWindow* window)
++	    : QObject(window)
++	    , QtWayland::xdg_activation_token_v1(token)
++	    , window(window) {}
++
++	~ActivationToken() override { this->destroy(); }
++	Q_DISABLE_COPY_MOVE(ActivationToken);
++
++private:
++	void xdg_activation_token_v1_done(const QString& token) override {
++		this->deleteLater();
++		if (this->window) emit this->window->xdgActivationTokenCreated(token);
++	}
++
++	QPointer<QtWaylandClient::QWaylandWindow> window;
++};
++
++} // namespace
++
++bool requestActivationToken(std::function<void(const QString&)> callback) {
++	if (QGuiApplication::platformName() != "wayland") return false;
++
++	auto* display = QtWaylandClient::QWaylandIntegration::instance()->display();
++	auto* window = display->lastInputWindow();
++	if (!window || !window->surface() || !display->lastInputDevice()) return false;
++
++	QObject::connect(
++	    window,
++	    &QtWaylandClient::QWaylandWindow::xdgActivationTokenCreated,
++	    window,
++	    std::move(callback),
++	    Qt::SingleShotConnection
++	);
++	window->requestXdgActivationToken(display->lastInputSerial());
++	return true;
++}
++
++void requestXdgActivationToken(QtWaylandClient::QWaylandWindow* window, quint32 serial) {
++	auto* display = window->display();
++	auto* seat = display->lastInputDevice();
++
++	static auto* manager = new ActivationManager(); // NOLINT
++	if (!manager->isActive() || !window->surface() || !seat) {
++		emit window->xdgActivationTokenCreated({});
++		return;
++	}
++
++	auto* token = new ActivationToken(manager->get_activation_token(), window);
++	token->set_serial(serial, seat->object());
++	token->set_surface(window->surface());
++	token->commit();
++}
++
++} // namespace qs::wayland::activation
+diff --git a/src/wayland/activation.hpp b/src/wayland/activation.hpp
+new file mode 100644
+index 0000000..85893ae
+--- /dev/null
++++ b/src/wayland/activation.hpp
+@@ -0,0 +1,20 @@
++#pragma once
++
++#include <functional>
++
++#include <qstring.h>
++#include <qtypes.h>
++
++namespace QtWaylandClient { // NOLINT(readability-identifier-naming)
++class QWaylandWindow;
++}
++
++namespace qs::wayland::activation {
++
++// Request a token using Qt's most recent input event. Returns false if unable to request a token.
++bool requestActivationToken(std::function<void(const QString&)> callback);
++
++// Request an activation token for a window to be delivered via QWaylandWindow::xdgActivationTokenCreated
++void requestXdgActivationToken(QtWaylandClient::QWaylandWindow* window, quint32 serial);
++
++} // namespace qs::wayland::activation
+diff --git a/src/wayland/wlr_layershell/CMakeLists.txt b/src/wayland/wlr_layershell/CMakeLists.txt
+index 444f512..89ee980 100644
+--- a/src/wayland/wlr_layershell/CMakeLists.txt
++++ b/src/wayland/wlr_layershell/CMakeLists.txt
+@@ -21,7 +21,7 @@ wl_proto(wlp-xdg-shell xdg-shell "${WAYLAND_PROTOCOLS}/stable/xdg-shell")
+ 
+ target_link_libraries(quickshell-wayland-layershell PRIVATE
+ 	Qt::Quick Qt::WaylandClient Qt::WaylandClientPrivate wayland-client
+-	wlp-layer-shell wlp-xdg-shell
++	wlp-layer-shell wlp-xdg-shell quickshell-wayland-activation
+ )
+ 
+ qs_module_pch(quickshell-wayland-layershell SET large)
+diff --git a/src/wayland/wlr_layershell/surface.cpp b/src/wayland/wlr_layershell/surface.cpp
+index 0b0e7d7..e260f6f 100644
+--- a/src/wayland/wlr_layershell/surface.cpp
++++ b/src/wayland/wlr_layershell/surface.cpp
+@@ -20,6 +20,7 @@
+ #include <wayland-xdg-shell-client-protocol.h>
+ 
+ #include "../../window/panelinterface.hpp"
++#include "../activation.hpp"
+ #include "shell_integration.hpp"
+ #include "wlr_layershell.hpp"
+ 
+@@ -130,6 +131,10 @@ LayerSurfaceBridge* LayerSurfaceBridge::init(QWindow* window, LayerSurfaceState
+ 	return bridge;
+ }
+ 
++void LayerSurface::requestXdgActivationToken(quint32 serial) {
++	activation::requestXdgActivationToken(this->window(), serial);
++}
++
+ LayerSurface::LayerSurface(LayerShellIntegration* shell, QtWaylandClient::QWaylandWindow* window)
+     : QtWaylandClient::QWaylandShellSurface(window) {
+ 
+diff --git a/src/wayland/wlr_layershell/surface.hpp b/src/wayland/wlr_layershell/surface.hpp
+index d782d71..aef2b72 100644
+--- a/src/wayland/wlr_layershell/surface.hpp
++++ b/src/wayland/wlr_layershell/surface.hpp
+@@ -66,6 +66,8 @@ public:
+ 	void applyConfigure() override;
+ 	void setWindowGeometry(const QRect& /*geometry*/) override {}
+ 
++	void requestXdgActivationToken(quint32 serial) override;
++
+ 	void attachPopup(QtWaylandClient::QWaylandShellSurface* popup) override;
+ 
+ 	void commit();
+-- 
+2.55.0
+
