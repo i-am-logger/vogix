@@ -300,6 +300,12 @@ let
 
     asyncio.run(main())
   '';
+  # fcitx5 as a host's bus can start it: a service file names it. Started,
+  # it notes that it was and exits without taking the name.
+  fcitxActivation = pkgs.writeShellScript "fcitx-activation" ''
+    echo activated >> "$TMPDIR/fcitx-activations"
+    exit 1
+  '';
   # A notification's icon, as a sender passes a file.
   smokeIcon = pkgs.runCommand "vogix-smoke-icon.png" { nativeBuildInputs = [ pkgs.imagemagick ]; } ''
     magick -size 16x16 xc:'#00ff00' png:$out
@@ -353,6 +359,13 @@ pkgs.runCommand "vogix-desktop-smoke"
   export XDG_RUNTIME_DIR=$TMPDIR/rt
   mkdir -p $XDG_CONFIG_HOME/vogix-desktop $XDG_CONFIG_HOME/quickshell $XDG_STATE_HOME/vogix/desktop $XDG_RUNTIME_DIR
   chmod 700 $XDG_RUNTIME_DIR
+  # fcitx5 activatable on the test bus, as its package makes it on a host.
+  # The session bus reads $XDG_DATA_HOME/dbus-1/services; unset, it takes
+  # the passwd home, which the sandbox does not have.
+  export XDG_DATA_HOME=$HOME/.local/share
+  mkdir -p $XDG_DATA_HOME/dbus-1/services
+  printf '[D-BUS Service]\nName=org.fcitx.Fcitx5\nExec=%s\n' ${fcitxActivation} \
+    > $XDG_DATA_HOME/dbus-1/services/org.fcitx.Fcitx5.service
   # The `vogix` quickshell config, as home-manager registers it.
   ln -s $qml $XDG_CONFIG_HOME/quickshell/vogix
   cp $themeJsonPath $XDG_CONFIG_HOME/vogix-desktop/theme.json
@@ -716,6 +729,8 @@ pkgs.runCommand "vogix-desktop-smoke"
   vuntil schema1 '^top:' bar status
   kill -0 $QSPID 2>/dev/null && echo SCHEMA1-ALIVE >> $R
   stop
+  # Every shell of the run, fcitx5 absent or gone: none started it.
+  echo "im-activations $(cat $TMPDIR/fcitx-activations 2>/dev/null | wc -l)" >> $R
   echo DONE >> $R
   INNER
   chmod +x inner.sh
@@ -866,6 +881,8 @@ pkgs.runCommand "vogix-desktop-smoke"
   r 'im-toggles 1'
   grep -q '^im-toggled .* caps:unknown im:keyboard-us$' $TMPDIR/result
   grep -q '^im-gone .* caps:unknown$' $TMPDIR/result
+  # Asking whether fcitx5 is there never starts it.
+  r 'im-activations 0'
   # Notifications that act: the capabilities the cards back, and a card's
   # button, default action and icon.
   r 'notify-caps actions body icon-static persistence'
