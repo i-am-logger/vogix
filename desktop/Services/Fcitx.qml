@@ -2,7 +2,8 @@ pragma Singleton
 // fcitx5's input method, for the LANG chip. fcitx5 is present while its
 // bus name has an owner: asked with NameHasOwner and followed with
 // NameOwnerChanged, never by calling it, so asking never starts fcitx5 by
-// activation. While present, the chip's state is the current group's input
+// activation; each next call of a read waits on presence too, so fcitx5
+// gone between two calls is not started again. While present, the chip's state is the current group's input
 // methods and the one in use, read with dbus-send through lib/fcitx.js.
 // fcitx5 signals a change of its groups (InputMethodGroupsChanged) but not
 // of the input method in use, which it keeps per input context: that is
@@ -117,7 +118,7 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 root.group = FcitxLib.strings(text.split("\n"))[0] ?? "";
-                if (root.group !== "")
+                if (root.group !== "" && root.present)
                     infoProc.running = true;
             }
         }
@@ -131,7 +132,8 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 root.ims = FcitxLib.groupInfo(text.split("\n")).ims;
-                currentProc.running = true;
+                if (root.present)
+                    currentProc.running = true;
             }
         }
     }
@@ -152,7 +154,7 @@ Singleton {
         command: root._call("Toggle", [])
 
         onRunningChanged: {
-            if (!running)
+            if (!running && root.present)
                 currentProc.running = true;
         }
     }
